@@ -339,19 +339,43 @@ function wrapTextForPdfFont(font, text, fontSize, maxWidth){
   }
   return lines;
 }
-function safeDrawText(page, text, opts){
+function safeDrawText(page, text, opts, fallbackFont){
   try{
     page.drawText(text, opts);
+    return;
   }catch(e){
-    // Ký tự lạ không có trong font (vd icon đặc biệt) -> thay bằng '?' để không làm hỏng cả file khi lưu
-    const cleaned = String(text).replace(/[^\x00-\x7FàáảãạăắằẳẵặâấầẩẫậèéẻẽẹêếềểễệìíỉĩịòóỏõọôốồổỗộơớờởỡợùúủũụưứừửữựỳýỷỹỵđÀÁẢÃẠĂẮẰẲẴẶÂẤẦẨẪẬÈÉẺẼẸÊẾỀỂỄỆÌÍỈĨỊÒÓỎÕỌÔỐỒỔỖỘƠỚỜỞỠỢÙÚỦŨỤƯỨỪỬỮỰỲÝỶỸỴĐ]/g, '?');
-    try{ page.drawText(cleaned, opts); }catch(e2){ /* bỏ qua nếu vẫn lỗi */ }
+    console.warn('Không vẽ được chữ bằng font Việt hoá, thử lại với chữ đã lọc:', e);
+  }
+  // Ký tự lạ không có trong font (vd icon đặc biệt) -> thay bằng '?' để không làm hỏng cả file khi lưu
+  const cleaned = String(text).replace(/[^\x00-\x7FàáảãạăắằẳẵặâấầẩẫậèéẻẽẹêếềểễệìíỉĩịòóỏõọôốồổỗộơớờởỡợùúủũụưứừửữựỳýỷỹỵđÀÁẢÃẠĂẮẰẲẴẶÂẤẦẨẪẬÈÉẺẼẸÊẾỀỂỄỆÌÍỈĨỊÒÓỎÕỌÔỐỒỔỖỘƠỚỜỞỠỢÙÚỦŨỤƯỨỪỬỮỰỲÝỶỸỴĐ]/g, '?');
+  try{
+    page.drawText(cleaned, opts);
+    return;
+  }catch(e2){
+    console.warn('Vẫn không vẽ được bằng font Việt hoá (kể cả sau khi lọc), chuyển sang font dự phòng:', e2);
+  }
+  // QUAN TRỌNG (sửa lỗi "sau khi lưu chỉ thấy mảng trắng, không thấy chữ"): nếu vì bất kỳ lý do gì
+  // (font nhúng bị lỗi/không tương thích với 1 số ký tự) mà VẪN không vẽ được chữ ngay cả sau khi đã
+  // lọc, tuyệt đối không được bỏ qua trong im lặng như trước — làm vậy sẽ chỉ còn lại phần nền che
+  // (trắng hoặc màu) mà không có chữ nào cả, đúng như hiện tượng người dùng gặp phải. Ở đây ta vẽ
+  // bằng một font chuẩn CHẮC CHẮN dùng được (Helvetica có sẵn trong PDF, không cần nhúng) để chữ luôn
+  // hiện ra được, dù có thể mất dấu tiếng Việt trong trường hợp xấu nhất này.
+  if(fallbackFont){
+    try{
+      const asciiOnly = String(text).replace(/[^\x00-\x7F]/g, (ch)=>{
+        const noAccent = ch.normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+        return /^[\x00-\x7F]$/.test(noAccent) ? noAccent : '?';
+      });
+      page.drawText(asciiOnly, { ...opts, font: fallbackFont });
+    }catch(e3){
+      console.warn('Vẽ chữ bằng font dự phòng cũng thất bại:', e3);
+    }
   }
 }
 // Vẽ 1 chỉnh sửa lên trang PDF thật (pdf-lib), giữ nguyên nội dung vector gốc của trang
 // (khác với cách cũ là chụp toàn trang thành ảnh PNG rồi nhúng lại — cách đó biến cả trang
 // thành ảnh, làm mất chữ gốc dạng văn bản thật và khiến việc "sửa văn bản gốc" không có tác dụng thật sự).
-function drawEditOnPdfPage(page, ed, H, font){
+function drawEditOnPdfPage(page, ed, H, font, fallbackFont){
   if(ed.type === 'highlight'){
     const [r,g,b] = hexToRgbFloats(ed.color);
     page.drawRectangle({ x: ed.x, y: H-(ed.y+ed.h), width: ed.w, height: ed.h, color: rgb(r,g,b), opacity: 0.35 });
@@ -370,7 +394,7 @@ function drawEditOnPdfPage(page, ed, H, font){
     const lines = wrapTextForPdfFont(font, String(ed.text), fontSize, Math.max(ed.w-4, fontSize));
     let baseY = H - ed.y - fontSize*0.85;
     for(const line of lines){
-      safeDrawText(page, line, { x: ed.x+2, y: baseY, size: fontSize, font, color: rgb(r,g,b) });
+      safeDrawText(page, line, { x: ed.x+2, y: baseY, size: fontSize, font, color: rgb(r,g,b) }, fallbackFont);
       baseY -= fontSize*1.15;
     }
   } else if(ed.type === 'draw'){
@@ -1814,12 +1838,24 @@ async function exportPdfAs(filename){
   const spinnerLabel = spinner.lastChild;
   spinner.classList.add('show');
   try{
-    if(typeof fontkit === 'undefined'){
-      throw new Error('Thư viện fontkit chưa tải được (kiểm tra kết nối mạng / tường lửa chặn cdn.jsdelivr.net).');
-    }
     const outDoc = await PDFDocument.create();
-    outDoc.registerFontkit(fontkit);
-    const editFont = await outDoc.embedFont(getVietFontBytes(), { subset: true });
+    // Font dự phòng CHẮC CHẮN dùng được (chuẩn PDF, không cần tải/nhúng gì thêm) — dùng khi font
+    // Việt hoá nhúng sẵn vì lý do gì đó không vẽ được (xem safeDrawText), để chữ luôn hiện ra được
+    // trong file PDF lưu ra, thay vì chỉ còn lại mảng nền che mà không có chữ nào cả.
+    const fallbackFont = await outDoc.embedFont(StandardFonts.Helvetica);
+    let editFont;
+    try{
+      if(typeof fontkit === 'undefined'){
+        throw new Error('Thư viện fontkit chưa tải được (kiểm tra kết nối mạng / tường lửa chặn cdn.jsdelivr.net).');
+      }
+      outDoc.registerFontkit(fontkit);
+      editFont = await outDoc.embedFont(getVietFontBytes(), { subset: true });
+    }catch(fontErr){
+      // Không để lỗi nhúng font Việt hoá làm hỏng CẢ QUÁ TRÌNH xuất file — vẫn xuất PDF bình thường,
+      // chỉ là chữ sửa sẽ dùng font dự phòng (có thể mất dấu tiếng Việt) thay vì dừng hẳn giữa chừng.
+      console.warn('Không nhúng được font Việt hoá, dùng font dự phòng cho toàn bộ chữ đã sửa:', fontErr);
+      editFont = fallbackFont;
+    }
 
     // Cache PDFDocument (pdf-lib) của từng file nguồn để không phải nạp lại nhiều lần
     const srcDocCache = new Map();
@@ -1847,7 +1883,7 @@ async function exportPdfAs(filename){
         pageObj = outDoc.addPage([p.width, p.height]);
         H = p.height;
       }
-      for(const ed of p.edits) drawEditOnPdfPage(pageObj, ed, H, editFont);
+      for(const ed of p.edits) drawEditOnPdfPage(pageObj, ed, H, editFont, fallbackFont);
     }
 
     const bytes = await outDoc.save();
