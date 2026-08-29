@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="vi">
 <head>
@@ -1597,6 +1596,50 @@ function measureTextWidth(text, font){
   return max;
 }
 
+// QUAN TRỌNG (sửa lỗi "bấm Edit Text, sửa xong rồi Lưu thành bản khác thì chữ vừa sửa không
+// hiện ra, chỉ thấy nền trắng hoặc vài ký tự"): trước đây, khung (x,y,w,h) của một chỉnh sửa chữ
+// được giữ NGUYÊN theo kích thước của dòng chữ GỐC vừa bấm vào (hoặc một khung mặc định rất hẹp
+// 150px nếu gõ chữ mới vào chỗ trống) — bất kể nội dung MỚI người dùng gõ vào dài hay ngắn hơn
+// bao nhiêu. Khi xuất PDF (xem drawEditOnPdfPage/wrapTextForPdfFont), chữ được "bẻ dòng" theo
+// đúng chiều rộng hẹp đó, nên nếu chữ mới dài hơn nhiều, nó bị bẻ thành RẤT NHIỀU dòng và các dòng
+// phía dưới bị đẩy xuống VƯỢT QUÁ mép dưới trang PDF (toạ độ y bị âm) -> nằm ngoài trang, không
+// trình đọc PDF nào hiển thị được -> người dùng chỉ thấy được vài dòng đầu (vài ký tự) hoặc, nếu
+// khung gốc rất nhỏ/nằm gần cuối trang, gần như toàn bộ chữ bị đẩy ra ngoài -> chỉ còn lại mảng
+// nền trắng (đã che chữ cũ) mà không thấy chữ mới đâu cả.
+// Hàm này đo lại đúng kiểu ngắt dòng mà lúc xuất PDF sẽ dùng (cùng thuật toán với
+// wrapTextForPdfFont), rồi tính ra kích thước khung vừa đủ chứa HẾT nội dung (rộng tối đa tới
+// mép phải trang, cao đủ cho đúng số dòng sau khi ngắt) — nhờ vậy những gì hiển thị trên màn hình
+// (canvas) và những gì xuất ra file PDF luôn khớp nhau, không bao giờ bị "mất chữ" vì tràn trang.
+function computeAutoBoxSize(text, fontFamily, fontSize, x){
+  const c = measureTextWidth._c || (measureTextWidth._c = document.createElement('canvas').getContext('2d'));
+  c.font = fontSize+'px '+(fontFamily || 'Arial');
+  const pageW = (pages.length && pdfCanvas.width) ? (pdfCanvas.width / scale) : 800;
+  // Chiều rộng tối đa cho phép: từ điểm x hiện tại tới sát mép phải trang (chừa lề nhỏ), nhưng
+  // không nhỏ hơn 80pt để tránh kiểu ngắt dòng "mỗi dòng chỉ 1 chữ" khi x đã gần sát mép phải.
+  const maxWidth = Math.max(80, pageW - x - 8);
+  const rawLines = String(text || ' ').split('\n');
+  const wrapped = [];
+  let neededWidth = 0;
+  for(const raw of rawLines){
+    const words = raw.split(' ');
+    let curLine = '';
+    for(const w of words){
+      const test = curLine ? curLine+' '+w : w;
+      const testWidth = c.measureText(test).width;
+      if(testWidth > maxWidth && curLine){
+        wrapped.push(curLine);
+        neededWidth = Math.max(neededWidth, c.measureText(curLine).width);
+        curLine = w;
+      } else curLine = test;
+    }
+    wrapped.push(curLine);
+    neededWidth = Math.max(neededWidth, c.measureText(curLine).width);
+  }
+  const w = Math.min(maxWidth, Math.max(24, neededWidth + 6));
+  const h = Math.max(fontSize*1.3, wrapped.length*fontSize*1.15 + fontSize*0.3);
+  return { w, h };
+}
+
 function openEditInput(screenX, screenY, screenW, screenH, initialText, onCommit){
   // Nếu đang có một ô nhập khác còn mở (chưa chốt), chốt nó lại trước để không bao giờ mất
   // chỉnh sửa trước đó, kể cả trong các trường hợp trình duyệt không tự bắn "blur" đúng lúc.
@@ -1679,7 +1722,8 @@ overlayCanvas.addEventListener('mousedown', (e)=>{
       if(val && val.trim()){
         pushUndo(currentIndex);
         const newIdx = cur().edits.length;
-        cur().edits.push({type:'text', x:pdfP.x, y:pdfP.y, w:160/scale, h:20, text:val, fontSize:currentFontSize, fontFamily: currentFontFamily, color: currentColor, bg:false});
+        const auto = computeAutoBoxSize(val, currentFontFamily, currentFontSize, pdfP.x);
+        cur().edits.push({type:'text', x:pdfP.x, y:pdfP.y, w:auto.w, h:auto.h, text:val, fontSize:currentFontSize, fontFamily: currentFontFamily, color: currentColor, bg:false});
         selectedEditIndex = newIdx;
         redrawOverlay();
       }
@@ -1757,6 +1801,12 @@ function editLineAt(px, py, editType, customLines){
           ed.text = val;
           ed.fontFamily = currentFontFamily;
           ed.fontSize = currentFontSize;
+          // Nới khung vừa đủ chứa hết nội dung mới (không bao giờ để hẹp hơn nội dung thực tế);
+          // nếu đã có nền che (bg) thì không thu hẹp lại, chỉ nới rộng thêm khi cần, để không lộ
+          // lại chữ cũ ở phần đã che trước đó.
+          const auto = computeAutoBoxSize(val, ed.fontFamily, ed.fontSize, ed.x);
+          ed.w = ed.bg ? Math.max(ed.w, auto.w) : auto.w;
+          ed.h = ed.bg ? Math.max(ed.h, auto.h) : auto.h;
         }
         else { p.edits.splice(hitIdx,1); selectedEditIndex = -1; }
         redrawOverlay();
@@ -1773,8 +1823,9 @@ function editLineAt(px, py, editType, customLines){
       if(val && val.trim()){
         pushUndo(currentIndex);
         const newIdx = p.edits.length;
+        const auto = computeAutoBoxSize(val, currentFontFamily, currentFontSize, pdfP.x);
         p.edits.push({
-          type:'text', x:pdfP.x, y:pdfP.y, w:150/scale, h:(defaultFS*1.4)/scale,
+          type:'text', x:pdfP.x, y:pdfP.y, w:auto.w, h:auto.h,
           text:val, fontSize: currentFontSize, fontFamily: currentFontFamily, color: currentColor, bg:false
         });
         selectedEditIndex = newIdx;
@@ -1822,6 +1873,12 @@ function editLineAt(px, py, editType, customLines){
           existing.edit.bg = true;
           existing.edit.bgColor = existing.edit.bgColor || sampleBackgroundColor(existing.edit.x, existing.edit.y, existing.edit.w, existing.edit.h);
         }
+        // QUAN TRỌNG (sửa lỗi chữ mới không hiện ra khi xuất PDF): nới khung vừa đủ chứa hết nội
+        // dung MỚI (có thể dài hơn khung của dòng chữ gốc rất nhiều) — chỉ nới rộng ra, không thu
+        // hẹp lại, để phần nền che vẫn tiếp tục che đúng chỗ chữ cũ. Xem computeAutoBoxSize.
+        const auto = computeAutoBoxSize(val, existing.edit.fontFamily, existing.edit.fontSize, existing.edit.x);
+        existing.edit.w = Math.max(existing.edit.w, auto.w);
+        existing.edit.h = Math.max(existing.edit.h, auto.h);
       } else {
         p.edits.splice(existing.index, 1); selectedEditIndex = -1; // xoá hết chữ -> bỏ luôn chỉnh sửa, để nền/khoảng trắng đã che vẫn còn (đã xoá dòng gốc)
       }
@@ -1834,9 +1891,17 @@ function editLineAt(px, py, editType, customLines){
       const padY = Math.max(1, fontSize*0.12);
       const cx0 = line.x0, cy0 = line.y0 - padY, cw = line.x1-line.x0, ch = (line.y1-line.y0) + padY*2;
       const bgColor = sampleBackgroundColor(cx0, cy0, cw, ch);
+      // QUAN TRỌNG (sửa lỗi chữ mới không hiện ra khi xuất PDF): nếu chữ mới dài/nhiều dòng hơn
+      // hẳn dòng chữ gốc, khung che (cw x ch) theo kích thước dòng gốc sẽ quá hẹp, khiến lúc xuất
+      // PDF chữ bị ngắt dòng tràn ra ngoài trang và biến mất — xem giải thích đầy đủ ở
+      // computeAutoBoxSize. Ở đây lấy khung LỚN HƠN giữa kích thước dòng gốc và kích thước vừa đủ
+      // cho nội dung mới, để nền che vẫn đúng chỗ chữ cũ mà chữ mới luôn có đủ chỗ để hiện ra.
+      const auto = computeAutoBoxSize(val, currentFontFamily, fontSize, cx0);
+      const finalW = Math.max(cw, auto.w);
+      const finalH = Math.max(ch, auto.h);
       const newIdx = p.edits.length;
       p.edits.push({
-        type: editType, x: cx0, y: cy0, w: cw, h: ch,
+        type: editType, x: cx0, y: cy0, w: finalW, h: finalH,
         text: val, fontSize, fontFamily: currentFontFamily, color:'#000000', bg:true, bgColor
       });
       selectedEditIndex = newIdx;
@@ -1864,7 +1929,14 @@ overlayCanvas.addEventListener('dblclick', (e)=>{
     selectedEditIndex = idx;
     openEditInput(ed.x*scale, ed.y*scale, ed.w*scale, ed.h*scale, ed.text, (val)=>{
       pushUndo(currentIndex);
-      if(val && val.trim()){ ed.text = val; }
+      if(val && val.trim()){
+        ed.text = val;
+        // Nới khung vừa đủ chứa hết nội dung mới, không bao giờ hẹp hơn nội dung thực tế
+        // (xem computeAutoBoxSize) — tránh chữ bị tràn ra ngoài trang khi xuất PDF.
+        const auto = computeAutoBoxSize(val, ed.fontFamily || 'Arial', ed.fontSize || 12, ed.x);
+        ed.w = ed.bg ? Math.max(ed.w, auto.w) : auto.w;
+        ed.h = ed.bg ? Math.max(ed.h, auto.h) : auto.h;
+      }
       else { edits.splice(idx,1); selectedEditIndex = -1; }
       redrawOverlay();
     });
