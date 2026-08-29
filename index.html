@@ -1399,12 +1399,31 @@ function computePageLines(items){
 // Tìm chỉnh sửa văn bản (textfix/ocrfix) đã có sẵn mà trùng khớp phần lớn với 1 dòng đang xét,
 // để khi bấm sửa lại đúng dòng đã từng sửa trước đó thì tiếp tục sửa trên bản đã sửa (không tạo
 // chồng thêm một lớp "che" mới đè lên lớp cũ).
+// QUAN TRỌNG (sửa lỗi "nội dung sửa trên phần mềm và file xuất ra không khớp nhau" — chữ của
+// dòng NÀY bị ghi đè NHẦM vào dòng KHÁC ở gần đó, ví dụ 2 ô liền kề trong sơ đồ tổ chức): hàm này
+// TRƯỚC ĐÂY so khớp dựa trên khung HIỂN THỊ hiện tại của chỉnh sửa (ed.x/ed.y/ed.w/ed.h). Từ khi
+// khung đó được tự động NỚI RỘNG để chứa đủ nội dung dài hơn (xem computeAutoBoxSize), một chỉnh
+// sửa ở dòng A có thể phình to tới mức LẤN SANG vùng của dòng B ngay bên cạnh/bên dưới. Lần tới
+// khi người dùng bấm sửa dòng B, hàm này nhận NHẦM chỉnh sửa của dòng A là "đã trùng", khiến nội
+// dung mới bị ghi đè vào chỉnh sửa của dòng A (ở đúng vị trí dòng A) thay vì tạo chỉnh sửa mới cho
+// dòng B — kết quả: dòng B trên màn hình tưởng như đã sửa xong, nhưng khi xuất ra thì dòng A lại
+// bị đổi chữ nhầm còn dòng B vẫn giữ nguyên chữ gốc — hoàn toàn không khớp với thao tác vừa làm.
+// Để tránh việc "khung càng phình to càng dễ nhận nhầm dòng khác", hàm này giờ so khớp dựa trên
+// VỊ TRÍ/KÍCH THƯỚC GỐC của dòng chữ lúc BẮT ĐẦU sửa (ed.srcX0/srcY0/srcX1/srcY1 — cố định, không
+// đổi dù khung hiển thị có phình to thế nào), thay vì khung hiển thị có thể đã phình to đó.
 function findOverlappingTextEdit(edits, x0, y0, x1, y1){
   const lineArea = Math.max(1, (x1-x0)*(y1-y0));
   for(let i=edits.length-1;i>=0;i--){
     const ed = edits[i];
     if(ed.type!=='textfix' && ed.type!=='ocrfix') continue;
-    const ex0=ed.x, ey0=ed.y, ex1=ed.x+ed.w, ey1=ed.y+ed.h;
+    // Ưu tiên dùng vùng GỐC đã lưu lúc tạo chỉnh sửa (ổn định, không đổi theo khung hiển thị);
+    // chỉ dùng khung hiển thị hiện tại làm phương án dự phòng cho các chỉnh sửa cũ được tạo ra
+    // trước khi có trường srcX0/srcY0/srcX1/srcY1 này (để không phá vỡ dữ liệu đã lưu trước đó).
+    const hasSrc = typeof ed.srcX0 === 'number';
+    const ex0 = hasSrc ? ed.srcX0 : ed.x;
+    const ey0 = hasSrc ? ed.srcY0 : ed.y;
+    const ex1 = hasSrc ? ed.srcX1 : ed.x+ed.w;
+    const ey1 = hasSrc ? ed.srcY1 : ed.y+ed.h;
     const overlapW = Math.min(x1,ex1)-Math.max(x0,ex0);
     const overlapH = Math.min(y1,ey1)-Math.max(y0,ey0);
     if(overlapW>0 && overlapH>0 && (overlapW*overlapH) > lineArea*0.4){
@@ -1902,7 +1921,11 @@ function editLineAt(px, py, editType, customLines){
       const newIdx = p.edits.length;
       p.edits.push({
         type: editType, x: cx0, y: cy0, w: finalW, h: finalH,
-        text: val, fontSize, fontFamily: currentFontFamily, color:'#000000', bg:true, bgColor
+        text: val, fontSize, fontFamily: currentFontFamily, color:'#000000', bg:true, bgColor,
+        // Lưu lại vị trí/kích thước GỐC của dòng chữ (trước khi khung được nới rộng ra cho nội
+        // dung mới) — dùng để so khớp ở findOverlappingTextEdit, không đổi kể cả khi ed.x/y/w/h
+        // đã phình to hơn nhiều so với dòng gốc lúc ban đầu.
+        srcX0: line.x0, srcY0: line.y0, srcX1: line.x1, srcY1: line.y1
       });
       selectedEditIndex = newIdx;
     } else {
