@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="vi">
 <head>
@@ -222,6 +223,100 @@
   </form>
 </div>
 
+<!-- ===================== MODAL: ĐỔI MẬT KHẨU ===================== -->
+<div id="changePasswordModal" style="
+  position:fixed;inset:0;z-index:1100;display:none;
+  background:rgba(0,0,0,.55);
+  align-items:center;justify-content:center;
+  font-family:'Segoe UI',Roboto,Arial,sans-serif;color:#eceff1;">
+  <form id="changePasswordForm" style="
+    background:#25282e;border:1px solid #454a52;border-radius:10px;
+    padding:26px 26px;width:320px;box-shadow:0 10px 40px rgba(0,0,0,.5);">
+    <div style="font-weight:600;font-size:15px;margin-bottom:4px;">🔑 Đổi mật khẩu</div>
+    <div style="font-size:12px;color:#9aa0a8;margin-bottom:16px;">Áp dụng cho tài khoản đang đăng nhập.</div>
+
+    <label style="display:block;font-size:12px;color:#9aa0a8;margin-bottom:4px;">Mật khẩu hiện tại</label>
+    <input id="cpOldPassword" type="password" autocomplete="current-password" required style="
+      width:100%;box-sizing:border-box;padding:9px 10px;margin-bottom:12px;
+      background:#1c1e22;border:1px solid #454a52;border-radius:6px;color:#eceff1;font-size:13px;">
+
+    <label style="display:block;font-size:12px;color:#9aa0a8;margin-bottom:4px;">Mật khẩu mới (tối thiểu 8 ký tự)</label>
+    <input id="cpNewPassword" type="password" autocomplete="new-password" required minlength="8" style="
+      width:100%;box-sizing:border-box;padding:9px 10px;margin-bottom:12px;
+      background:#1c1e22;border:1px solid #454a52;border-radius:6px;color:#eceff1;font-size:13px;">
+
+    <label style="display:block;font-size:12px;color:#9aa0a8;margin-bottom:4px;">Nhập lại mật khẩu mới</label>
+    <input id="cpNewPassword2" type="password" autocomplete="new-password" required minlength="8" style="
+      width:100%;box-sizing:border-box;padding:9px 10px;margin-bottom:8px;
+      background:#1c1e22;border:1px solid #454a52;border-radius:6px;color:#eceff1;font-size:13px;">
+
+    <div id="cpError" style="min-height:18px;color:#ff8a80;font-size:12px;margin-bottom:4px;"></div>
+    <div id="cpSuccess" style="min-height:18px;color:#8bd17c;font-size:12px;margin-bottom:4px;"></div>
+
+    <div style="display:flex;gap:8px;margin-top:10px;">
+      <button type="button" id="cpCancelBtn" style="
+        flex:1;padding:10px;border:1px solid #454a52;border-radius:6px;background:transparent;color:#eceff1;
+        font-weight:600;font-size:13px;cursor:pointer;">Huỷ</button>
+      <button id="cpSubmitBtn" type="submit" style="
+        flex:1;padding:10px;border:none;border-radius:6px;background:#e2402c;color:#fff;
+        font-weight:600;font-size:13px;cursor:pointer;">Đổi mật khẩu</button>
+    </div>
+  </form>
+</div>
+
+<!-- ===================== MODAL: QUẢN LÝ NGƯỜI DÙNG (chỉ admin) ===================== -->
+<div id="userManageModal" style="
+  position:fixed;inset:0;z-index:1100;display:none;
+  background:rgba(0,0,0,.55);
+  align-items:center;justify-content:center;
+  font-family:'Segoe UI',Roboto,Arial,sans-serif;color:#eceff1;">
+  <div style="
+    background:#25282e;border:1px solid #454a52;border-radius:10px;
+    padding:22px 24px;width:460px;max-width:92vw;max-height:86vh;overflow:auto;
+    box-shadow:0 10px 40px rgba(0,0,0,.5);">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+      <div style="font-weight:600;font-size:15px;">👥 Quản lý người dùng</div>
+      <button type="button" id="umCloseBtn" style="
+        background:transparent;border:none;color:#9aa0a8;font-size:18px;cursor:pointer;line-height:1;">✕</button>
+    </div>
+    <div style="font-size:12px;color:#9aa0a8;margin-bottom:14px;">Tạo tài khoản mới để cấp quyền đăng nhập phần mềm cho người khác.</div>
+
+    <form id="addUserForm" style="border:1px solid #454a52;border-radius:8px;padding:14px;margin-bottom:16px;background:#1c1e22;">
+      <div style="font-size:12.5px;font-weight:600;margin-bottom:10px;">Thêm tài khoản mới</div>
+      <div style="display:flex;gap:8px;margin-bottom:10px;">
+        <div style="flex:1;">
+          <label style="display:block;font-size:11.5px;color:#9aa0a8;margin-bottom:4px;">Tên đăng nhập</label>
+          <input id="auUsername" type="text" required style="
+            width:100%;box-sizing:border-box;padding:8px 9px;
+            background:#2b2f36;border:1px solid #454a52;border-radius:6px;color:#eceff1;font-size:12.5px;">
+        </div>
+        <div style="width:110px;">
+          <label style="display:block;font-size:11.5px;color:#9aa0a8;margin-bottom:4px;">Quyền</label>
+          <select id="auRole" style="
+            width:100%;box-sizing:border-box;padding:8px 9px;
+            background:#2b2f36;border:1px solid #454a52;border-radius:6px;color:#eceff1;font-size:12.5px;">
+            <option value="user" selected>User</option>
+            <option value="admin">Admin</option>
+          </select>
+        </div>
+      </div>
+      <label style="display:block;font-size:11.5px;color:#9aa0a8;margin-bottom:4px;">Mật khẩu (tối thiểu 8 ký tự)</label>
+      <input id="auPassword" type="password" autocomplete="new-password" required minlength="8" style="
+        width:100%;box-sizing:border-box;padding:8px 9px;margin-bottom:10px;
+        background:#2b2f36;border:1px solid #454a52;border-radius:6px;color:#eceff1;font-size:12.5px;">
+      <div id="auError" style="min-height:16px;color:#ff8a80;font-size:11.5px;margin-bottom:6px;"></div>
+      <div id="auSuccess" style="min-height:16px;color:#8bd17c;font-size:11.5px;margin-bottom:6px;"></div>
+      <button id="auSubmitBtn" type="submit" style="
+        width:100%;padding:9px;border:none;border-radius:6px;background:#e2402c;color:#fff;
+        font-weight:600;font-size:12.5px;cursor:pointer;">+ Tạo tài khoản</button>
+    </form>
+
+    <div style="font-size:12.5px;font-weight:600;margin-bottom:8px;">Danh sách tài khoản</div>
+    <div id="umListError" style="min-height:16px;color:#ff8a80;font-size:11.5px;margin-bottom:4px;"></div>
+    <div id="userListContainer" style="display:flex;flex-direction:column;gap:6px;"></div>
+  </div>
+</div>
+
 <div id="appContainer" style="display:none;">
 <div id="titlebar">
   <div class="logo">PDF</div>
@@ -229,6 +324,12 @@
   <span id="filename"></span>
   <span style="margin-left:auto;display:flex;align-items:center;gap:10px;font-size:12px;">
     <span id="loggedInUserLabel" style="opacity:.85"></span>
+    <button id="btnManageUsers" title="Quản lý người dùng" style="display:none;
+      background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.3);color:#fff;
+      padding:4px 10px;border-radius:5px;cursor:pointer;font-size:12px;">👥 Người dùng</button>
+    <button id="btnChangePassword" title="Đổi mật khẩu" style="
+      background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.3);color:#fff;
+      padding:4px 10px;border-radius:5px;cursor:pointer;font-size:12px;">🔑 Đổi mật khẩu</button>
     <button id="btnLogout" title="Đăng xuất" style="
       background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.3);color:#fff;
       padding:4px 10px;border-radius:5px;cursor:pointer;font-size:12px;">Đăng xuất</button>
@@ -351,12 +452,20 @@ const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbwj1dSyJ_noTVcy
 /* Dạng: https://script.google.com/macros/s/AKfycb..../exec */
 
 const SESSION_STORAGE_KEY = 'pdfEditorAuthToken';
+let currentAuthToken = null;
+let currentUsername = null;
+let currentUserRole = 'user';
 
-function showAppUI(username){
+function showAppUI(username, role, token){
   document.getElementById('loginScreen').style.display = 'none';
   document.getElementById('appContainer').style.display = '';
+  currentUsername = username || null;
+  currentUserRole = role || 'user';
+  if(token) currentAuthToken = token;
   const label = document.getElementById('loggedInUserLabel');
-  if(label) label.textContent = username ? ('👤 ' + username) : '';
+  if(label) label.textContent = username ? ('👤 ' + username + (currentUserRole==='admin' ? ' (admin)' : '')) : '';
+  const manageBtn = document.getElementById('btnManageUsers');
+  if(manageBtn) manageBtn.style.display = (currentUserRole === 'admin') ? '' : 'none';
 }
 
 function showLoginError(msg){
@@ -383,7 +492,7 @@ async function tryRestoreSession(){
   try{
     const result = await callAuthApi({ action: 'verify', token: token });
     if(result && result.success){
-      showAppUI(result.username);
+      showAppUI(result.username, result.role, token);
     } else {
       sessionStorage.removeItem(SESSION_STORAGE_KEY);
       document.getElementById('loginScreen').style.display = 'flex';
@@ -408,7 +517,7 @@ document.getElementById('loginForm').addEventListener('submit', async function(e
     if(result && result.success){
       sessionStorage.setItem(SESSION_STORAGE_KEY, result.token);
       document.getElementById('loginPassword').value = '';
-      showAppUI(result.username);
+      showAppUI(result.username, result.role, result.token);
     } else {
       showLoginError((result && result.message) || 'Sai tên đăng nhập hoặc mật khẩu.');
     }
@@ -425,6 +534,140 @@ document.getElementById('btnLogout').addEventListener('click', async function(){
   sessionStorage.removeItem(SESSION_STORAGE_KEY);
   try{ if(token) await callAuthApi({ action: 'logout', token: token }); }catch(e){}
   location.reload();
+});
+
+/* ---------- Đổi mật khẩu ---------- */
+const changePasswordModal = document.getElementById('changePasswordModal');
+function openChangePasswordModal(){
+  document.getElementById('changePasswordForm').reset();
+  document.getElementById('cpError').textContent = '';
+  document.getElementById('cpSuccess').textContent = '';
+  changePasswordModal.style.display = 'flex';
+  document.getElementById('cpOldPassword').focus();
+}
+function closeChangePasswordModal(){ changePasswordModal.style.display = 'none'; }
+document.getElementById('btnChangePassword').addEventListener('click', openChangePasswordModal);
+document.getElementById('cpCancelBtn').addEventListener('click', closeChangePasswordModal);
+changePasswordModal.addEventListener('click', function(e){ if(e.target === changePasswordModal) closeChangePasswordModal(); });
+
+document.getElementById('changePasswordForm').addEventListener('submit', async function(e){
+  e.preventDefault();
+  const oldPassword = document.getElementById('cpOldPassword').value;
+  const newPassword = document.getElementById('cpNewPassword').value;
+  const newPassword2 = document.getElementById('cpNewPassword2').value;
+  const errEl = document.getElementById('cpError');
+  const okEl = document.getElementById('cpSuccess');
+  const btn = document.getElementById('cpSubmitBtn');
+  errEl.textContent = ''; okEl.textContent = '';
+  if(newPassword.length < 8){ errEl.textContent = 'Mật khẩu mới phải có ít nhất 8 ký tự.'; return; }
+  if(newPassword !== newPassword2){ errEl.textContent = 'Hai lần nhập mật khẩu mới không khớp.'; return; }
+  btn.disabled = true; btn.textContent = 'Đang xử lý…';
+  try{
+    const token = sessionStorage.getItem(SESSION_STORAGE_KEY);
+    const result = await callAuthApi({ action: 'changePassword', token: token, oldPassword: oldPassword, newPassword: newPassword });
+    if(result && result.success){
+      okEl.textContent = 'Đổi mật khẩu thành công.';
+      document.getElementById('changePasswordForm').reset();
+      setTimeout(closeChangePasswordModal, 1200);
+    } else {
+      errEl.textContent = (result && result.message) || 'Đổi mật khẩu thất bại.';
+    }
+  }catch(err){
+    errEl.textContent = err.message;
+  }finally{
+    btn.disabled = false; btn.textContent = 'Đổi mật khẩu';
+  }
+});
+
+/* ---------- Quản lý người dùng (chỉ admin) ---------- */
+const userManageModal = document.getElementById('userManageModal');
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+async function refreshUserList(){
+  const container = document.getElementById('userListContainer');
+  const listErr = document.getElementById('umListError');
+  listErr.textContent = '';
+  container.innerHTML = '<div style="font-size:12px;color:#9aa0a8;">Đang tải…</div>';
+  try{
+    const token = sessionStorage.getItem(SESSION_STORAGE_KEY);
+    const result = await callAuthApi({ action: 'listUsers', token: token });
+    if(!result || !result.success){
+      listErr.textContent = (result && result.message) || 'Không tải được danh sách.';
+      container.innerHTML = '';
+      return;
+    }
+    container.innerHTML = '';
+    result.users.forEach(function(u){
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:8px 10px;background:#1c1e22;border:1px solid #454a52;border-radius:6px;';
+      const isSelf = currentUsername && u.username.toLowerCase() === currentUsername.toLowerCase();
+      row.innerHTML =
+        '<div style="flex:1;min-width:0;">'+
+          '<div style="font-size:12.5px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+escapeHtml(u.username)+(isSelf?' <span style="opacity:.6;font-weight:400;">(bạn)</span>':'')+'</div>'+
+          '<div style="font-size:11px;color:#9aa0a8;">'+(u.role==='admin'?'Admin':'User')+(u.locked?' · <span style="color:#ff8a80;">đang khoá tạm</span>':'')+'</div>'+
+        '</div>'+
+        '<button type="button" data-username="'+escapeHtml(u.username)+'" class="umDeleteBtn" style="'+
+          'background:transparent;border:1px solid #6b3a35;color:#ff8a80;border-radius:5px;padding:5px 9px;font-size:11.5px;cursor:pointer;'+
+          (isSelf ? 'opacity:.35;cursor:not-allowed;' : '')+'"'+(isSelf?' disabled':'')+'>Xoá</button>';
+      container.appendChild(row);
+    });
+    container.querySelectorAll('.umDeleteBtn:not([disabled])').forEach(function(btn){
+      btn.addEventListener('click', async function(){
+        const username = btn.getAttribute('data-username');
+        if(!confirm('Xoá tài khoản "'+username+'"? Hành động này không thể hoàn tác.')) return;
+        btn.disabled = true; btn.textContent = 'Đang xoá…';
+        try{
+          const token = sessionStorage.getItem(SESSION_STORAGE_KEY);
+          const result = await callAuthApi({ action: 'deleteUser', token: token, targetUsername: username });
+          if(result && result.success){ refreshUserList(); }
+          else { listErr.textContent = (result && result.message) || 'Xoá thất bại.'; btn.disabled = false; btn.textContent = 'Xoá'; }
+        }catch(err){ listErr.textContent = err.message; btn.disabled = false; btn.textContent = 'Xoá'; }
+      });
+    });
+  }catch(err){
+    listErr.textContent = err.message;
+    container.innerHTML = '';
+  }
+}
+function openUserManageModal(){
+  document.getElementById('addUserForm').reset();
+  document.getElementById('auError').textContent = '';
+  document.getElementById('auSuccess').textContent = '';
+  userManageModal.style.display = 'flex';
+  refreshUserList();
+}
+function closeUserManageModal(){ userManageModal.style.display = 'none'; }
+document.getElementById('btnManageUsers').addEventListener('click', openUserManageModal);
+document.getElementById('umCloseBtn').addEventListener('click', closeUserManageModal);
+userManageModal.addEventListener('click', function(e){ if(e.target === userManageModal) closeUserManageModal(); });
+
+document.getElementById('addUserForm').addEventListener('submit', async function(e){
+  e.preventDefault();
+  const newUsername = document.getElementById('auUsername').value.trim();
+  const newPassword = document.getElementById('auPassword').value;
+  const role = document.getElementById('auRole').value;
+  const errEl = document.getElementById('auError');
+  const okEl = document.getElementById('auSuccess');
+  const btn = document.getElementById('auSubmitBtn');
+  errEl.textContent = ''; okEl.textContent = '';
+  if(newPassword.length < 8){ errEl.textContent = 'Mật khẩu phải có ít nhất 8 ký tự.'; return; }
+  btn.disabled = true; btn.textContent = 'Đang tạo…';
+  try{
+    const token = sessionStorage.getItem(SESSION_STORAGE_KEY);
+    const result = await callAuthApi({ action: 'addUser', token: token, newUsername: newUsername, newPassword: newPassword, role: role });
+    if(result && result.success){
+      okEl.textContent = 'Đã tạo tài khoản "'+newUsername+'".';
+      document.getElementById('addUserForm').reset();
+      refreshUserList();
+    } else {
+      errEl.textContent = (result && result.message) || 'Tạo tài khoản thất bại.';
+    }
+  }catch(err){
+    errEl.textContent = err.message;
+  }finally{
+    btn.disabled = false; btn.textContent = '+ Tạo tài khoản';
+  }
 });
 
 tryRestoreSession();
@@ -557,6 +800,37 @@ let activeTool = 'select';
 let currentColor = '#e2402c';
 let currentFontFamily = 'Arial';
 let currentFontSize = 14;
+// Tham chiếu tới ô nhập liệu (textarea) nổi đang mở, nếu có — dùng để cập nhật font/cỡ chữ
+// NGAY LẬP TỨC khi người dùng đổi 2 ô "Font chữ"/"Cỡ chữ" trong lúc đang gõ sửa, thay vì
+// phải gõ xong rồi mới thấy đổi (hoặc tệ hơn là không đổi được gì cả).
+let activeEditInputEl = null;
+function refreshActiveEditInputFont(){
+  if(!activeEditInputEl) return;
+  activeEditInputEl.style.fontFamily = currentFontFamily;
+  const fontPx = Math.max(11, currentFontSize*scale);
+  activeEditInputEl.style.fontSize = fontPx+'px';
+  activeEditInputEl.dispatchEvent(new Event('input')); // để ô tự tính lại kích thước khung theo font mới
+}
+// Đồng bộ 2 ô "Font chữ"/"Cỡ chữ" trên thanh công cụ theo font/cỡ ban đầu của đoạn chữ SẮP sửa
+// (không phải đoạn đang chọn bằng công cụ Select) — dùng ngay trước khi mở ô nhập liệu để sửa,
+// để: (1) người dùng biết đang sửa với font/cỡ nào, (2) nếu họ đổi trong lúc gõ thì áp dụng đúng.
+function setActiveEditFont(fontFamily, fontSize){
+  currentFontFamily = fontFamily || 'Arial';
+  currentFontSize = Math.round(fontSize) || 14;
+  const famSel = document.getElementById('fontFamilySelect');
+  const sizeSel = document.getElementById('fontSizeSelect');
+  famSel.value = currentFontFamily;
+  if(famSel.value !== currentFontFamily){ famSel.value = 'Arial'; currentFontFamily = 'Arial'; }
+  const rounded = String(currentFontSize);
+  sizeSel.value = rounded;
+  if(sizeSel.value !== rounded){
+    // Cỡ chữ gốc không khớp option có sẵn -> chọn option gần nhất thay vì luôn rơi về 14
+    const opts = Array.from(sizeSel.options).map(o=>Number(o.value));
+    const nearest = opts.reduce((a,b)=> Math.abs(b-currentFontSize)<Math.abs(a-currentFontSize) ? b : a);
+    sizeSel.value = String(nearest);
+    currentFontSize = nearest;
+  }
+}
 let originalFileName = 'document.pdf';
 let tesseractWorker = null;
 
@@ -988,6 +1262,7 @@ document.getElementById('fontFamilySelect').onchange = (e)=>{
     const ed = cur().edits[selectedEditIndex];
     if(isTextEdit(ed)){ pushUndo(currentIndex); ed.fontFamily = currentFontFamily; redrawOverlay(); }
   }
+  refreshActiveEditInputFont();
 };
 document.getElementById('fontSizeSelect').onchange = (e)=>{
   currentFontSize = Number(e.target.value) || 14;
@@ -995,6 +1270,7 @@ document.getElementById('fontSizeSelect').onchange = (e)=>{
     const ed = cur().edits[selectedEditIndex];
     if(isTextEdit(ed)){ pushUndo(currentIndex); ed.fontSize = currentFontSize; redrawOverlay(); }
   }
+  refreshActiveEditInputFont();
 };
 // Khi chọn (select) một khối văn bản trên trang, đồng bộ 2 ô Font chữ / Cỡ chữ theo khối đó
 // để người dùng biết đang chỉnh sửa với thông số nào.
@@ -1328,9 +1604,14 @@ function openEditInput(screenX, screenY, screenW, screenH, initialText, onCommit
   const inp = document.createElement('textarea');
   inp.id = 'editInput';
   inp.style.left = screenX+'px'; inp.style.top = screenY+'px';
-  const fontPx = Math.max(13, screenH*0.75);
+  // Dùng đúng font chữ / cỡ chữ đang được chọn trên thanh công cụ (currentFontFamily/currentFontSize)
+  // thay vì luôn cứng Arial — nhờ đó ô nhập liệu hiển thị đúng như chữ sẽ được lưu, và nếu người
+  // dùng đổi 2 ô "Font chữ"/"Cỡ chữ" trong lúc đang gõ, chữ trong ô sẽ đổi theo NGAY LẬP TỨC
+  // (xem refreshActiveEditInputFont, được gọi từ sự kiện onchange của 2 ô đó).
+  const fontPx = Math.max(11, currentFontSize*scale);
+  inp.style.fontFamily = currentFontFamily;
   inp.style.fontSize = fontPx+'px';
-  const font = fontPx+'px Arial,sans-serif';
+  const font = fontPx+'px '+currentFontFamily;
   const pageMaxW = Math.max(200, (pageWrap.clientWidth || 800) - screenX - 6);
   const pageMaxH = Math.max(160, (pageWrap.clientHeight || 1000) - screenY - 6);
 
@@ -1338,7 +1619,8 @@ function openEditInput(screenX, screenY, screenW, screenH, initialText, onCommit
   // cũng có thể tự kéo giãn góc dưới-phải (resize:both trong CSS) nếu muốn.
   function sizeToContent(){
     const text = inp.value || initialText || '';
-    const neededW = Math.min(pageMaxW, Math.max(screenW, measureTextWidth(text, font) + 24));
+    const measureFont = Math.max(11, currentFontSize*scale)+'px '+currentFontFamily;
+    const neededW = Math.min(pageMaxW, Math.max(screenW, measureTextWidth(text, measureFont) + 24));
     inp.style.width = neededW+'px';
     inp.style.height = 'auto';
     const neededH = Math.min(pageMaxH, Math.max(screenH, inp.scrollHeight));
@@ -1349,6 +1631,7 @@ function openEditInput(screenX, screenY, screenW, screenH, initialText, onCommit
   inp.style.width = Math.max(screenW, 80)+'px';
   inp.style.height = Math.max(screenH, 22)+'px';
   pageWrap.appendChild(inp);
+  activeEditInputEl = inp;
   sizeToContent();
   inp.addEventListener('input', sizeToContent);
 
@@ -1357,6 +1640,7 @@ function openEditInput(screenX, screenY, screenW, screenH, initialText, onCommit
   function commit(){
     if(done) return; done = true;
     if(pendingEditCommit === commit) pendingEditCommit = null;
+    if(activeEditInputEl === inp) activeEditInputEl = null;
     if(inp.parentNode) inp.parentNode.removeChild(inp);
     onCommit(inp.value);
   }
@@ -1367,6 +1651,7 @@ function openEditInput(screenX, screenY, screenW, screenH, initialText, onCommit
       ev.preventDefault();
       done = true;
       if(pendingEditCommit === commit) pendingEditCommit = null;
+      if(activeEditInputEl === inp) activeEditInputEl = null;
       if(inp.parentNode) inp.parentNode.removeChild(inp);
     }
   });
@@ -1389,10 +1674,13 @@ overlayCanvas.addEventListener('mousedown', (e)=>{
   const pdfP = toPdfSpace(px, py);
 
   if(activeTool === 'addtext'){
+    setActiveEditFont(currentFontFamily, currentFontSize);
     openEditInput(px, py, 160, 26, '', (val)=>{
       if(val && val.trim()){
         pushUndo(currentIndex);
+        const newIdx = cur().edits.length;
         cur().edits.push({type:'text', x:pdfP.x, y:pdfP.y, w:160/scale, h:20, text:val, fontSize:currentFontSize, fontFamily: currentFontFamily, color: currentColor, bg:false});
+        selectedEditIndex = newIdx;
         redrawOverlay();
       }
     });
@@ -1462,9 +1750,14 @@ function editLineAt(px, py, editType, customLines){
     if(hitIdx >= 0 && isTextEdit(p.edits[hitIdx])){
       const ed = p.edits[hitIdx];
       selectedEditIndex = hitIdx;
+      setActiveEditFont(ed.fontFamily, ed.fontSize);
       openEditInput(ed.x*scale, ed.y*scale, ed.w*scale, ed.h*scale, ed.text, (val)=>{
         pushUndo(currentIndex);
-        if(val && val.trim()){ ed.text = val; }
+        if(val && val.trim()){
+          ed.text = val;
+          ed.fontFamily = currentFontFamily;
+          ed.fontSize = currentFontSize;
+        }
         else { p.edits.splice(hitIdx,1); selectedEditIndex = -1; }
         redrawOverlay();
       });
@@ -1474,14 +1767,17 @@ function editLineAt(px, py, editType, customLines){
     // độ dài văn bản (hộp nhập sẽ tự phình theo nội dung). Đúng ý "trỏ chuột vào đâu thì sửa
     // được ở đó", không bắt buộc phải trúng một dòng chữ có sẵn.
     const pdfP = toPdfSpace(px, py);
+    setActiveEditFont(currentFontFamily, currentFontSize || 14);
     const defaultFS = currentFontSize || 14;
     openEditInput(px, py, 150, defaultFS*1.4, '', (val)=>{
       if(val && val.trim()){
         pushUndo(currentIndex);
+        const newIdx = p.edits.length;
         p.edits.push({
           type:'text', x:pdfP.x, y:pdfP.y, w:150/scale, h:(defaultFS*1.4)/scale,
-          text:val, fontSize: defaultFS, fontFamily: currentFontFamily, color: currentColor, bg:false
+          text:val, fontSize: currentFontSize, fontFamily: currentFontFamily, color: currentColor, bg:false
         });
+        selectedEditIndex = newIdx;
         redrawOverlay();
       }
     });
@@ -1500,12 +1796,26 @@ function editLineAt(px, py, editType, customLines){
   const bh = existing ? existing.edit.h : (line.y1-line.y0);
   const sx = bx*scale, sy = by*scale, sw = bw*scale, sh = bh*scale;
 
+  // Đồng bộ font chữ/cỡ chữ trên thanh công cụ theo đúng dòng SẮP sửa (chữ đã sửa trước đó thì
+  // theo font đã lưu, chữ gốc PDF/OCR thì theo cỡ chữ đo được) — để: (1) người dùng biết đang
+  // sửa với font/cỡ nào, (2) nếu đổi 2 ô Font/Cỡ trong lúc gõ thì áp dụng đúng vào chữ đang sửa.
+  setActiveEditFont(
+    existing ? (existing.edit.fontFamily || 'Arial') : 'Arial',
+    existing ? (existing.edit.fontSize || line.fontSize || 12) : (line.fontSize || 12)
+  );
+
   openEditInput(sx, sy, sw, sh, initialText, (val)=>{
-    if(val === initialText) return; // không đổi gì -> giữ nguyên, không tạo chỉnh sửa mới
+    if(val === initialText && currentFontFamily === (existing ? existing.edit.fontFamily : 'Arial')
+       && currentFontSize === Math.round(existing ? existing.edit.fontSize : (line.fontSize||12))){
+      return; // không đổi gì cả (kể cả font/cỡ) -> giữ nguyên, không tạo chỉnh sửa mới
+    }
     pushUndo(currentIndex);
     if(existing){
       if(val && val.trim()){
         existing.edit.text = val;
+        existing.edit.fontFamily = currentFontFamily;
+        existing.edit.fontSize = currentFontSize;
+        selectedEditIndex = existing.index;
         // Đảm bảo luôn có nền che (phòng trường hợp bản chỉnh sửa này được tạo từ phiên bản
         // cũ chưa che nền), để chữ cũ không bị lộ ra khi xem/xuất file.
         if(!existing.edit.bg){
@@ -1513,10 +1823,10 @@ function editLineAt(px, py, editType, customLines){
           existing.edit.bgColor = existing.edit.bgColor || sampleBackgroundColor(existing.edit.x, existing.edit.y, existing.edit.w, existing.edit.h);
         }
       } else {
-        p.edits.splice(existing.index, 1); // xoá hết chữ -> bỏ luôn chỉnh sửa, để nền/khoảng trắng đã che vẫn còn (đã xoá dòng gốc)
+        p.edits.splice(existing.index, 1); selectedEditIndex = -1; // xoá hết chữ -> bỏ luôn chỉnh sửa, để nền/khoảng trắng đã che vẫn còn (đã xoá dòng gốc)
       }
     } else if(val && val.trim()){
-      const fontSize = line.fontSize || 12;
+      const fontSize = currentFontSize || line.fontSize || 12;
       // Che đúng phạm vi dòng chữ cũ bằng màu nền lấy mẫu thật tại đó (không phải trắng cứng),
       // rồi mới vẽ chữ mới đè lên trên -> chữ cũ THỰC SỰ BIẾN MẤT, không bị chồng với chữ mới.
       // Nới rộng nhẹ vùng che (padY) để không bị sót nét chữ cũ (dấu, đuôi chữ g/y/p...) lộ ra
@@ -1524,10 +1834,12 @@ function editLineAt(px, py, editType, customLines){
       const padY = Math.max(1, fontSize*0.12);
       const cx0 = line.x0, cy0 = line.y0 - padY, cw = line.x1-line.x0, ch = (line.y1-line.y0) + padY*2;
       const bgColor = sampleBackgroundColor(cx0, cy0, cw, ch);
+      const newIdx = p.edits.length;
       p.edits.push({
         type: editType, x: cx0, y: cy0, w: cw, h: ch,
         text: val, fontSize, fontFamily: currentFontFamily, color:'#000000', bg:true, bgColor
       });
+      selectedEditIndex = newIdx;
     } else {
       // Xoá hẳn nội dung dòng (không nhập gì) -> che theo màu nền thật tại đó
       const padY = Math.max(1, (line.fontSize||12)*0.12);
