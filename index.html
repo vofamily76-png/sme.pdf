@@ -2389,7 +2389,19 @@ async function exportPdfAs(filename){
         throw new Error('Thư viện fontkit chưa tải được (kiểm tra kết nối mạng / tường lửa chặn cdn.jsdelivr.net).');
       }
       outDoc.registerFontkit(fontkit);
-      editFont = await outDoc.embedFont(getVietFontBytes(), { subset: true });
+      // QUAN TRỌNG (sửa lỗi GỐC RỄ khiến chữ vừa sửa hiện ra thiếu/vỡ nát sau khi xuất PDF, ví dụ
+      // "BẢN THANH TOÁN XE OTO" chỉ còn hiện "BẢN   N     N E"): trước đây nhúng font Việt hoá với
+      // { subset: true } — tức là pdf-lib/fontkit chỉ nhúng RÚT GỌN đúng những glyph cần dùng, và
+      // TỰ XÂY LẠI bảng glyph đó dần dần mỗi khi gọi drawText thêm một lần nữa. Đã kiểm chứng trực
+      // tiếp (dựng lại đúng Chrome thật + đúng các thư viện pdf.js/pdf-lib/fontkit của ứng dụng,
+      // nạp file PDF thật của người dùng, chạy đúng quy trình xuất file): với font tiếng Việt đang
+      // dùng, khi có TỪ 2 LƯỢT vẽ chữ (drawText) trở lên bằng CÙNG một font đã "subset", pdf-lib bị
+      // lỗi xây sai bảng glyph, khiến rất nhiều ký tự bị vẽ SAI/THIẾU hẳn glyph (biến mất) dù không
+      // hề báo lỗi (không throw) — hoàn toàn không liên quan tới khung chỉnh sửa hay logic tô đè.
+      // Nhúng font KHÔNG rút gọn ({ subset: false }, nhúng trọn bộ file font ~190KB) tránh được lỗi
+      // xây bảng glyph dần dần này — mọi glyph đã có sẵn đầy đủ ngay từ đầu — đổi lại là dung lượng
+      // file PDF xuất ra lớn hơn một chút, đánh đổi hoàn toàn xứng đáng để chữ luôn hiện ra đúng.
+      editFont = await outDoc.embedFont(getVietFontBytes(), { subset: false });
     }catch(fontErr){
       // Không để lỗi nhúng font Việt hoá làm hỏng CẢ QUÁ TRÌNH xuất file — vẫn xuất PDF bình thường,
       // chỉ là chữ sửa sẽ dùng font dự phòng (có thể mất dấu tiếng Việt) thay vì dừng hẳn giữa chừng.
