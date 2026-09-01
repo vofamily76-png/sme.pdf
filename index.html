@@ -147,12 +147,22 @@
   #floatingHighlightBtn:hover{ background:var(--accent-dim); }
 
   /* floating edit input */
+  /* QUAN TRỌNG (theo yêu cầu "chỉnh trực tiếp lên text gốc, không phải một layer khác"): trước
+     đây ô nhập nổi này có viền màu đậm 2px + đổ bóng rõ rệt, nhìn giống hẳn một khung/panel giao
+     diện nổi lên TRÊN tài liệu, tách biệt hẳn với chữ gốc (xem ảnh người dùng gửi). Giờ bỏ viền
+     màu + đổ bóng, chỉ còn một đường viền chấm mảnh, MỜ, gần như không nhận ra khi không nhìn kỹ,
+     đủ để người dùng biết ranh giới vùng đang gõ nhưng không còn cảm giác "một lớp UI khác đè
+     lên trên" nữa. Màu nền cũng không còn trắng cứng mà được set ĐỘNG ngay lúc mở ô nhập (xem
+     openEditInput) trùng với đúng màu nền thật của trang tại vị trí đó (giấy trắng, giấy ngả
+     vàng, nền màu...) — nhờ vậy ô nhập hoà lẫn vào trang thay vì nổi bật thành một khối trắng.
+  */
   #editInput{
-    position:absolute;z-index:50;border:2px solid var(--accent);background:#fff;color:#111;
-    font-family:Arial,sans-serif;padding:3px 5px;outline:none;
+    position:absolute;z-index:50;border:1px dashed rgba(0,0,0,.22);background:#fff;color:#111;
+    font-family:Arial,sans-serif;padding:1px 2px;outline:none;
     white-space:pre-wrap;word-break:break-word;overflow:hidden;
-    min-width:80px;min-height:22px;resize:both;box-shadow:0 2px 10px rgba(0,0,0,.35);
+    min-width:80px;min-height:22px;resize:both;box-shadow:none;
   }
+  #editInput:focus{ border-color:rgba(0,0,0,.32); }
 
   /* right panel (OCR text) */
   #rightPanel{
@@ -1666,6 +1676,11 @@ function openEditInput(screenX, screenY, screenW, screenH, initialText, onCommit
   const inp = document.createElement('textarea');
   inp.id = 'editInput';
   inp.style.left = screenX+'px'; inp.style.top = screenY+'px';
+  // QUAN TRỌNG (chỉnh trực tiếp lên text gốc, không phải một layer khác): lấy đúng màu nền thật
+  // của trang tại vị trí đang sửa (đã lấy mẫu pixel thật từ canvas, xem sampleBackgroundColor) để
+  // set làm nền cho ô nhập — nhờ vậy khi đang gõ, ô nhập hoà lẫn với màu giấy/nền xung quanh thay
+  // vì luôn hiện thành một khối TRẮNG CỨNG rõ rệt tách biệt khỏi phần còn lại của tài liệu.
+  inp.style.background = sampleBackgroundColor(screenX/scale, screenY/scale, Math.max(1,screenW/scale), Math.max(1,screenH/scale));
   // Dùng đúng font chữ / cỡ chữ đang được chọn trên thanh công cụ (currentFontFamily/currentFontSize)
   // thay vì luôn cứng Arial — nhờ đó ô nhập liệu hiển thị đúng như chữ sẽ được lưu, và nếu người
   // dùng đổi 2 ô "Font chữ"/"Cỡ chữ" trong lúc đang gõ, chữ trong ô sẽ đổi theo NGAY LẬP TỨC
@@ -1682,7 +1697,7 @@ function openEditInput(screenX, screenY, screenW, screenH, initialText, onCommit
   function sizeToContent(){
     const text = inp.value || initialText || '';
     const measureFont = Math.max(11, currentFontSize*scale)+'px '+currentFontFamily;
-    const neededW = Math.min(pageMaxW, Math.max(screenW, measureTextWidth(text, measureFont) + 24));
+    const neededW = Math.min(pageMaxW, Math.max(screenW, measureTextWidth(text, measureFont) + 10));
     inp.style.width = neededW+'px';
     inp.style.height = 'auto';
     const neededH = Math.min(pageMaxH, Math.max(screenH, inp.scrollHeight));
