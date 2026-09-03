@@ -34,6 +34,22 @@
     font-size:13px;
   }
   /* ===== Title bar ===== */
+  /* ===== Khung bọc toàn bộ ứng dụng =====
+     TRƯỚC ĐÂY: #appContainer không có luật CSS riêng nào — JS chỉ bật nó lên bằng
+     style.display=''; vì vậy trình duyệt coi nó là một khối "block" bình thường, KHÔNG được ép
+     giãn đúng 100% chiều cao cửa sổ (dù thẻ <body> đã có height:100vh + display:flex). Hệ quả:
+     chiều cao thật của #appContainer chỉ dựa theo NỘI DUNG bên trong tại từng thời điểm (số
+     trang PDF, có đang cuộn hay không, v.v.) — mỗi khi nội dung PDF thay đổi/dựng lại (mở file
+     nhiều trang, cuộn qua lại), chiều cao đó có thể co lại bất chợt, để lộ một khoảng trống lớn
+     màu nền <body> phía dưới và đẩy thanh trạng thái (#statusbar) lên lưng chừng màn hình thay vì
+     luôn nằm SÁT ĐÁY cửa sổ (kề thanh taskbar Windows) như mong muốn — đồng thời khiến khu vực
+     toolbar/titlebar phía trên trông như "biến mất" vì bố cục bị xô lệch theo. Giờ ép
+     #appContainer LUÔN chiếm đúng 100% chiều cao cửa sổ và LUÔN là một flex-column thật sự (giống
+     hệt <body>), để #body (vùng giữa, flex:1) tự động giãn lấp đầy đúng phần còn lại bất kể nội
+     dung PDF bên trong thế nào -> #statusbar vì vậy luôn cố định sát đáy màn hình. */
+  #appContainer{
+    display:flex;flex-direction:column;height:100%;min-height:0;
+  }
   #titlebar{
     background:linear-gradient(180deg,#c23a26,var(--accent));
     color:#fff;
