@@ -93,8 +93,10 @@
   /* ===== Body layout ===== */
   #body{flex:1;display:flex;min-height:0;}
   #sidebar{
-    width:170px;background:var(--bg-panel);border-right:1px solid var(--border);
-    overflow-y:auto;padding:10px 8px;flex-shrink:0;
+    /* Thu hẹp sidebar thumbnail lại (170px -> 132px) để nhường thêm không gian ngang thật sự
+       cho vùng xem/sửa PDF chính (#canvasArea) — nhất là với các trang PDF khổ ngang/rộng. */
+    width:132px;background:var(--bg-panel);border-right:1px solid var(--border);
+    overflow-y:auto;padding:10px 6px;flex-shrink:0;
   }
   #sidebar .thumb{
     background:#fff;margin-bottom:10px;border:2px solid transparent;border-radius:3px;
@@ -187,7 +189,10 @@
 
   /* right panel (OCR text) */
   #rightPanel{
-    width:280px;background:var(--bg-panel);border-left:1px solid var(--border);
+    /* Thu hẹp panel OCR bên phải (280px -> 240px) — panel này chỉ hiện khi cần (rightPanel.show),
+       nên khi ẩn thì #canvasArea đã tự động chiếm toàn bộ phần còn thiếu; khi hiện thì để lại
+       nhiều không gian ngang hơn cho vùng xem PDF chính so với trước. */
+    width:240px;background:var(--bg-panel);border-left:1px solid var(--border);
     display:none;flex-direction:column;flex-shrink:0;
   }
   #rightPanel.show{display:flex;}
@@ -790,17 +795,16 @@ function safeDrawText(page, text, opts, fallbackFont){
 // khái niệm "wordSpacing" — gọi drawText() cho cả một dòng chữ sẽ luôn dùng đúng khoảng cách tự
 // nhiên của font nhúng (Noto Sans), bỏ qua hoàn toàn phần canh chỉnh đó, nên file xuất ra bị giãn
 // cách khác hẳn so với những gì thấy trên màn hình. Hàm này tính lại cùng một kiểu "extra" như
-// applyOriginalSpacing() nhưng đo bằng chính font pdf-lib sẽ dùng để nhúng vào PDF, với 2 mức ưu
-// tiên để chọn ĐỘ RỘNG MỤC TIÊU cần khớp theo:
-//   1) Nếu chỉnh sửa này bắt nguồn từ một dòng chữ có sẵn trong tài liệu gốc (PDF thật/OCR, tức
-//      có ed.origLineW) -> khớp đúng độ rộng THẬT của dòng gốc đó (chính xác nhất).
-//   2) Nếu là chữ HOÀN TOÀN MỚI do người dùng tự gõ thêm (không có dòng gốc nào để so, ví dụ dùng
-//      công cụ "Thêm văn bản" gõ vào chỗ trống) -> KHÔNG có origLineW để dựa vào. Trường hợp này
-//      trước đây bị bỏ sót hoàn toàn (không hề canh chỉnh gì), khiến PDF xuất ra bị giãn theo đúng
-//      "khẩu vị" mặc định của font Noto Sans nhúng sẵn — thường RỘNG hơn nhiều so với các font hệ
-//      thống người dùng nhìn thấy khi đang gõ (Arial, Times New Roman...). Nay lấy chính độ rộng mà
-//      TRÌNH DUYỆT đã đo/hiển thị lúc gõ (dùng đúng font hệ thống ed.fontFamily, qua measureTextWidth
-//      đã có sẵn) làm mục tiêu, để PDF xuất ra trông giống HỆT những gì đã thấy trên màn hình.
+// applyOriginalSpacing() nhưng đo bằng chính font pdf-lib sẽ dùng để nhúng vào PDF.
+//
+// LỖI ĐÃ SỬA THÊM (chỉ sửa vài chữ nhưng cả dòng bị giãn xa nhau bất thường): trước đây khi chỉnh
+// sửa bắt nguồn từ một dòng chữ có sẵn (ed.origLineW), hàm sẽ cố khớp đúng ĐỘ RỘNG CỦA DÒNG CHỮ GỐC
+// trong tài liệu ban đầu — nên dù người dùng chỉ đổi một vài ký tự, khoảng cách vẫn bị ép giãn/co
+// theo đúng độ dài cũ, không hợp lý và KHÁC với những gì đã thấy lúc đang gõ. Theo đúng yêu cầu
+// "chỉnh sửa trên màn hình sao thì xuất ra y vậy", giờ đây LUÔN lấy đúng độ rộng mà TRÌNH DUYỆT đã
+// đo/hiển thị lúc gõ (dùng đúng font hệ thống ed.fontFamily, qua measureTextWidth) làm mục tiêu —
+// không còn phụ thuộc vào độ rộng dòng chữ gốc trong tài liệu nữa — để PDF xuất ra khớp ĐÚNG với
+// bản xem trước trên màn hình, bất kể người dùng sửa ít hay nhiều so với nội dung ban đầu.
 function computeWordSpacingExtraForPdf(font, ed){
   const text = ed.text, fontSize = ed.fontSize || 12;
   if(!text) return 0;
@@ -812,22 +816,12 @@ function computeWordSpacingExtraForPdf(font, ed){
   if(!isFinite(pdfNaturalW) || pdfNaturalW<=0) return 0;
 
   let targetW;
-  if(ed.origLineW){
-    targetW = ed.origLineW;
-  } else {
-    try{
-      targetW = measureTextWidth(firstLine, `${fontSize}px ${ed.fontFamily || 'Arial'}`);
-    }catch(e){ return 0; }
-  }
+  try{
+    targetW = measureTextWidth(firstLine, `${fontSize}px ${ed.fontFamily || 'Arial'}`);
+  }catch(e){ return 0; }
   if(!isFinite(targetW) || targetW<=0) return 0;
-  // GIỚI HẠN AN TOÀN CHẶT HƠN (sửa lỗi khoảng cách bị kéo giãn CÒN RỘNG HƠN sau khi "sửa"): trước
-  // đây cho phép sai lệch tới 80% (0.5x–1.8x) và bù tối đa tới 1.2×cỡ chữ MỖI khoảng trắng — nếu độ
-  // rộng "mục tiêu" (origLineW đo từ OCR/PDF, vốn có thể không chính xác tuyệt đối do bbox rộng hơn
-  // thực tế) bị đo hơi rộng hơn thực tế, phần bù này có thể kéo giãn thêm tới ~50% độ rộng chữ —
-  // khiến khoảng cách sau khi "sửa" còn RỘNG HƠN cả trước khi sửa, đúng như hiện tượng gặp phải. Thu
-  // hẹp lại: chỉ chấp nhận sai lệch trong khoảng 25% (0.75x–1.35x) và bù tối đa 0.3×cỡ chữ mỗi
-  // khoảng trắng — đủ để bù chênh lệch font (thường chỉ ~5-10%) mà không thể gây méo lớn nếu số đo
-  // gốc không hoàn toàn chính xác.
+  // Giới hạn an toàn: chỉ bù chênh lệch NHỎ giữa font hệ thống (xem trước) và font nhúng PDF (thường
+  // chỉ ~5-10%), không cho phép lệch quá xa để tránh méo chữ nếu số đo có sai số.
   if(pdfNaturalW < targetW*0.75 || pdfNaturalW > targetW*1.35) return 0;
 
   let extra = (targetW - pdfNaturalW) / gaps;
@@ -901,6 +895,18 @@ function drawEditOnPdfPage(page, ed, H, font, fallbackFont){
 let pages = [];
 let nextId = 1;
 let currentIndex = 0;      // vị trí (0-based) trong mảng pages
+// SỬA LỖI "mất thanh công cụ / giao diện bị vỡ khi mở file nhiều trang rồi bấm Edit Text":
+// nguyên nhân là renderPage() có nhiều bước "await" (chờ pdf.js dựng trang, chờ render...) —
+// với file NHIỀU TRANG, IntersectionObserver theo dõi cuộn (setupPageObserver) có thể gọi
+// renderPage() cho một trang KHÁC ngay trong lúc lần renderPage() trước đó còn đang dang dở.
+// Cả 2 lần gọi cùng lúc ghi đè lên chung MỘT bộ canvas/pageWrap dùng chung cho toàn bộ trình
+// soạn thảo (pdfCanvas/overlayCanvas/textLayer), khiến DOM/canvas rơi vào trạng thái không nhất
+// quán (kích thước, vị trí, sự kiện chuột đều sai) — nhìn như "toolbar/khung sửa biến mất" dù
+// thật ra là bộ khung chỉnh sửa đã bị kẹt/lệch giữa 2 trang. renderToken dùng để mỗi lần gọi
+// renderPage() tự nhận diện được nó có còn là lần gọi MỚI NHẤT hay không sau mỗi lần "await";
+// nếu đã có một lần gọi renderPage() khác mới hơn bắt đầu thì lần gọi cũ bỏ dở ngay, không đụng
+// vào canvas/pageWrap nữa (xem các chỗ kiểm tra `if(myToken !== renderToken) return;` bên dưới).
+let renderToken = 0;
 let scale = 1.2;
 const BASE_SCALE = 1;
 let activeTool = 'select';
@@ -1108,6 +1114,11 @@ document.getElementById('btnDeletePage').onclick = async () => {
 // ---------- Vẽ trang lên canvas ----------
 async function renderPage(idx, opts){
   const { scrollIntoView = true } = opts || {};
+  // Lần gọi renderPage() này tự đánh dấu mình là "mới nhất". Nếu trong lúc đang await bên dưới
+  // có một lần gọi renderPage() khác (VD: do IntersectionObserver bắt được khi cuộn qua trang
+  // khác) chen vào, biến renderToken sẽ bị lần gọi đó tăng lên -> myToken không còn khớp nữa ->
+  // lần gọi hiện tại phải DỪNG NGAY, không được đụng vào canvas/pageWrap/DOM dùng chung nữa.
+  const myToken = ++renderToken;
   flushPendingEdit(); // chốt chỉnh sửa dang dở trước khi chuyển sang trang khác
   const prevLiveIdx = liveSlotIdx;
   currentIndex = idx;
@@ -1115,15 +1126,18 @@ async function renderPage(idx, opts){
   hoverLine = null;
   document.getElementById('pageNumInput').value = idx+1;
   const p = cur();
+  if(!p) return; // phòng trường hợp idx không còn hợp lệ (trang vừa bị xoá bởi thao tác khác)
   let w,h;
   if(p.type==='pdf'){
     const page = await p.doc.getPage(p.srcPage);
+    if(myToken !== renderToken) return; // đã có lần renderPage khác mới hơn -> bỏ dở, không vẽ đè
     const viewport = page.getViewport({scale});
     w = viewport.width; h = viewport.height;
     pdfCanvas.width = overlayCanvas.width = w;
     pdfCanvas.height = overlayCanvas.height = h;
     const ctx = pdfCanvas.getContext('2d');
     await page.render({canvasContext: ctx, viewport}).promise;
+    if(myToken !== renderToken) return; // kiểm tra lại lần nữa sau khi render xong (render cũng mất thời gian)
   } else {
     w = p.width*scale; h = p.height*scale;
     pdfCanvas.width = overlayCanvas.width = w;
@@ -1132,6 +1146,7 @@ async function renderPage(idx, opts){
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0,0,w,h);
   }
+  if(myToken !== renderToken) return;
   pageWrap.style.width = w+'px';
   pageWrap.style.height = h+'px';
   // Gắn khung chỉnh sửa thật (#pageWrap: pdfCanvas/overlayCanvas/textLayer) vào đúng ô của trang
@@ -1371,31 +1386,16 @@ function drawEdit(ctx, e, s){
   }
 }
 
-// LỖI ĐÃ SỬA (khoảng cách giữa các từ trong chữ vừa sửa khác với file gốc): khi vẽ lại một dòng
-// chữ đã có sẵn trong tài liệu gốc (chữ PDF thật hoặc chữ nhận diện OCR) bằng font thay thế
-// (Arial/Times New Roman...), độ rộng ký tự - đặc biệt là ký tự khoảng trắng - của font thay thế
-// gần như luôn KHÁC với font thật sự dùng trong tài liệu gốc, khiến khoảng cách giữa các từ bị
-// giãn ra hoặc co lại một cách rõ rệt so với bản gốc dù nội dung chữ giống hệt nhau. Hàm này tính
-// lại khoảng cách giữa các từ (ctx.wordSpacing) sao cho TỔNG độ rộng của dòng chữ mới khớp với độ
-// rộng thật của dòng chữ gốc (origLineW, đo được từ chữ PDF/OCR gốc lúc bắt đầu sửa) — nhờ vậy chữ
-// sau khi sửa "khít" đúng vào đúng khoảng đã có, giữ được mật độ/khoảng cách như bản gốc.
+// LỖI ĐÃ SỬA (chỉ sửa vài chữ trong đoạn nhưng cả dòng bị giãn cách xa nhau bất thường): trước đây
+// hàm này luôn cố kéo giãn/co khoảng cách giữa các từ (ctx.wordSpacing) sao cho TỔNG độ rộng của
+// dòng chữ MỚI khớp đúng bằng độ rộng của dòng chữ GỐC (origLineW, đo từ PDF/OCR ban đầu) — nên dù
+// người dùng chỉ đổi một vài ký tự (độ dài gần như không đổi), phần mềm vẫn ép khoảng cách theo đúng
+// độ rộng cũ, gây ra hiện tượng chữ bị giãn rời rạc không hợp lý, và quan trọng hơn là khác hẳn với
+// những gì người dùng đã thấy ngay lúc đang gõ (ô nhập liệu luôn hiển thị khoảng cách TỰ NHIÊN, không
+// hề giãn). Theo đúng yêu cầu "chỉnh sửa trên màn hình sao thì xuất ra y vậy", hàm này giờ LUÔN dùng
+// khoảng cách tự nhiên của font — không còn cố khớp theo độ rộng dòng gốc nữa.
 function applyOriginalSpacing(ctx, e, s){
   ctx.wordSpacing = '0px';
-  if(!e.origLineW || !e.text) return;
-  const firstLine = String(e.text).split('\n')[0];
-  const gaps = (firstLine.match(/ /g) || []).length;
-  if(!gaps) return;
-  const naturalW = ctx.measureText(firstLine).width;
-  const targetW = e.origLineW * s;
-  if(!isFinite(naturalW) || !isFinite(targetW) || naturalW <= 0 || targetW <= 0) return;
-  // Chỉ áp dụng khi độ dài chữ mới không lệch quá xa so với dòng gốc (người dùng chỉ chỉnh sửa nhẹ,
-  // không phải thay hẳn bằng một đoạn văn bản dài/ngắn khác hoàn toàn) — tránh làm chữ bị dồn ép
-  // hoặc kéo giãn bất thường khi nội dung đã đổi khác nhiều so với dòng gốc.
-  if(naturalW < targetW*0.75 || naturalW > targetW*1.35) return;
-  let extra = (targetW - naturalW) / gaps;
-  const maxAbs = (e.fontSize*s) * 0.3;
-  extra = Math.max(-maxAbs, Math.min(maxAbs, extra));
-  ctx.wordSpacing = extra.toFixed(2)+'px';
 }
 
 function wrapText(ctx, text, x, y, maxWidth, lineHeight){
@@ -1485,43 +1485,55 @@ const toolLabels = {
 };
 document.querySelectorAll('.tbtn[data-tool]').forEach(btn=>{
   btn.onclick = ()=>{
-    const tool = btn.dataset.tool;
-    // Nếu đã có một vùng được chọn sẵn trên trang hiện tại và người dùng bấm nút
-    // "Sửa văn bản (OCR)" hoặc "Edit Text" thì sửa nhanh toàn bộ vùng đó
-    // thay vì chuyển công cụ sang chế độ nhấn-từng-chữ.
-    if(tool === 'ocr' && getCurrentRegion()){
-      bulkEditRegion(tool);
-      return;
-    }
-    if(tool === 'edittext' && pages.length && getCurrentRegion()){
-      ensureEditTextReady(currentIndex).then(()=> bulkEditRegion('edittext'));
-      return;
-    }
-    activeTool = tool;
-    document.querySelectorAll('.tbtn[data-tool]').forEach(b=>b.classList.remove('active'));
-    btn.classList.add('active');
-    document.getElementById('toolLabel').textContent = 'Công cụ: ' + toolLabels[activeTool];
-    selectedEditIndex = -1;
-    hoverLine = null;
-    overlayCanvas.className = 'tool-' + activeTool;
-    redrawOverlay();
-    // Chuẩn bị sẵn dữ liệu vị trí từng dòng chữ ngay khi chọn công cụ, để việc "trỏ chuột vào đâu highlight
-    // sửa được ngay đó" hoạt động mượt mà mà không phải đợi tới lần bấm chuột đầu tiên.
-    if(tool === 'ocr' && pages.length && !cur().ocrWords){
-      runOcrForPage(currentIndex, true).then(()=>{ if(activeTool==='ocr') redrawOverlay(); }).catch(()=>{});
-    } else if(tool === 'edittext' && pages.length && !cur().editTextMode){
-      // Nạp sẵn chữ PDF thật ngay (nhanh) để bấm sửa được lập tức; OCR sẽ tự chạy thêm ở nền
-      // (xem ensureEditTextReady/kickOffOcrForEditText) và tự merge vào khi xong, không cần đợi.
-      ensureEditTextReady(currentIndex).then(()=>{ if(activeTool==='edittext') redrawOverlay(); }).catch(()=>{});
-    }
-    // Bật/tắt lớp văn bản có thể chọn-copy tương ứng với công cụ "Chọn văn bản".
-    textLayer.classList.toggle('active', tool === 'textselect');
-    floatingHighlightBtn.style.display = 'none';
-    window.getSelection().removeAllRanges();
-    if(tool === 'textselect' && pages.length){
-      showTextLayerForCurrentPage(currentIndex);
-    } else {
-      textLayer.innerHTML = '';
+    // QUAN TRỌNG: toàn bộ xử lý bấm nút công cụ được bọc trong try/catch. Trước đây nếu một bước
+    // xử lý bên trong (VD: redrawOverlay/ensureEditTextReady) gặp lỗi bất ngờ ở đúng thời điểm dữ
+    // liệu trang đang được cập nhật dở (thường gặp khi file có NHIỀU TRANG và người dùng vừa cuộn
+    // vừa bấm "Edit Text"), lỗi sẽ "ném" (throw) giữa chừng khiến các dòng code còn lại của hàm
+    // (bật/tắt class active, cập nhật nhãn công cụ, v.v.) không chạy được nữa — nhìn như các nút
+    // trên thanh công cụ bị "mất tác dụng"/biến mất trạng thái dù DOM vẫn còn đó. Bọc try/catch để
+    // dù bước chuẩn bị dữ liệu bên trong có lỗi, các nút công cụ vẫn LUÔN được cập nhật đúng trạng
+    // thái, không bao giờ bị "kẹt".
+    try{
+      const tool = btn.dataset.tool;
+      // Nếu đã có một vùng được chọn sẵn trên trang hiện tại và người dùng bấm nút
+      // "Sửa văn bản (OCR)" hoặc "Edit Text" thì sửa nhanh toàn bộ vùng đó
+      // thay vì chuyển công cụ sang chế độ nhấn-từng-chữ.
+      if(tool === 'ocr' && getCurrentRegion()){
+        bulkEditRegion(tool);
+        return;
+      }
+      if(tool === 'edittext' && pages.length && getCurrentRegion()){
+        ensureEditTextReady(currentIndex).then(()=> bulkEditRegion('edittext')).catch(err=>console.warn('Edit Text (vùng chọn) lỗi:', err));
+        return;
+      }
+      activeTool = tool;
+      document.querySelectorAll('.tbtn[data-tool]').forEach(b=>b.classList.remove('active'));
+      btn.classList.add('active');
+      document.getElementById('toolLabel').textContent = 'Công cụ: ' + toolLabels[activeTool];
+      selectedEditIndex = -1;
+      hoverLine = null;
+      overlayCanvas.className = 'tool-' + activeTool;
+      try{ redrawOverlay(); }catch(err){ console.warn('Không vẽ lại được lớp overlay:', err); }
+      // Chuẩn bị sẵn dữ liệu vị trí từng dòng chữ ngay khi chọn công cụ, để việc "trỏ chuột vào đâu highlight
+      // sửa được ngay đó" hoạt động mượt mà mà không phải đợi tới lần bấm chuột đầu tiên.
+      if(tool === 'ocr' && pages.length && cur() && !cur().ocrWords){
+        runOcrForPage(currentIndex, true).then(()=>{ if(activeTool==='ocr') redrawOverlay(); }).catch(err=>console.warn('OCR lỗi:', err));
+      } else if(tool === 'edittext' && pages.length && cur() && !cur().editTextMode){
+        // Nạp sẵn chữ PDF thật ngay (nhanh) để bấm sửa được lập tức; OCR sẽ tự chạy thêm ở nền
+        // (xem ensureEditTextReady/kickOffOcrForEditText) và tự merge vào khi xong, không cần đợi.
+        ensureEditTextReady(currentIndex).then(()=>{ if(activeTool==='edittext') redrawOverlay(); }).catch(err=>console.warn('Chuẩn bị Edit Text lỗi:', err));
+      }
+      // Bật/tắt lớp văn bản có thể chọn-copy tương ứng với công cụ "Chọn văn bản".
+      textLayer.classList.toggle('active', tool === 'textselect');
+      floatingHighlightBtn.style.display = 'none';
+      window.getSelection().removeAllRanges();
+      if(tool === 'textselect' && pages.length){
+        showTextLayerForCurrentPage(currentIndex).catch(err=>console.warn('Không dựng được lớp chọn văn bản:', err));
+      } else {
+        textLayer.innerHTML = '';
+      }
+    }catch(err){
+      console.warn('Lỗi khi chuyển công cụ:', err);
     }
   };
 });
@@ -1541,6 +1553,33 @@ document.getElementById('whiteoutColorSwatch').oninput = (e)=>{
 
 // ---------- Font chữ & cỡ chữ ----------
 function isTextEdit(ed){ return ed && (ed.type==='text' || ed.type==='ocrfix' || ed.type==='textfix'); }
+// SỬA LỖI "chữ dính/chồng lên nhau sau khi Edit Text rồi xuất file" (khác với lỗi chèn sai khoảng
+// trắng đã sửa trước đó): nguyên nhân ở đây là CHỮ CŨ CỦA PDF GỐC không được che (whiteout) đủ kín
+// trước khi vẽ chữ mới đè lên, hoặc có 2 chỉnh sửa (edit) chồng lấn nhau cùng được vẽ ra (một chỉnh
+// sửa cũ + một chỉnh sửa mới tạo thêm ở gần như đúng chỗ đó) — khi xuất PDF, nét chữ còn sót lại của
+// bản trước lộ ra ngay dưới/đè lên chữ mới, tạo cảm giác chữ bị "dính"/chồng nét vào nhau. Hàm này
+// dọn dẹp: xoá (hoặc để việc che nền của chỉnh sửa MỚI tự phủ lên) mọi chỉnh sửa dạng chữ/whiteout
+// khác đã có từ trước mà vùng của nó chồng lấn đáng kể (>30%) với vùng chỉnh sửa SẮP được tạo/cập
+// nhật — luôn gọi ngay trước khi push/cập nhật một chỉnh sửa chữ để đảm bảo không bao giờ có 2 lớp
+// chữ chồng nhau tại cùng một vị trí.
+function removeOverlappingTextEdits(p, x0, y0, x1, y1, exceptEdit){
+  if(!p || !p.edits || !p.edits.length) return;
+  for(let i=p.edits.length-1;i>=0;i--){
+    const ed = p.edits[i];
+    if(ed === exceptEdit) continue;
+    if(!isTextEdit(ed) && ed.type!=='whiteout') continue;
+    const ex0=ed.x, ey0=ed.y, ex1=ed.x+ed.w, ey1=ed.y+ed.h;
+    const overlapW = Math.min(x1,ex1)-Math.max(x0,ex0);
+    const overlapH = Math.min(y1,ey1)-Math.max(y0,ey0);
+    if(overlapW<=0 || overlapH<=0) continue;
+    const edArea = Math.max(1, (ex1-ex0)*(ey1-ey0));
+    if((overlapW*overlapH)/edArea > 0.3){
+      p.edits.splice(i,1);
+      if(selectedEditIndex === i) selectedEditIndex = -1;
+      else if(selectedEditIndex > i) selectedEditIndex--;
+    }
+  }
+}
 document.getElementById('fontFamilySelect').onchange = (e)=>{
   currentFontFamily = e.target.value;
   if(pages.length && selectedEditIndex>=0){
@@ -1606,6 +1645,42 @@ document.getElementById('btnClearRegion').onclick = ()=>{
 // Trả về từng dòng kèm bounding box của riêng dòng đó (thay vì gộp chung cả vùng thành 1 khối chữ nhật),
 // để sau này chỉ cần "vẽ đè" (whiteout) lên đúng những dòng bị thay đổi, dòng nào không đổi thì giữ
 // nguyên hiển thị gốc của PDF/OCR, không bị che mất.
+// SỬA LỖI "chữ bị dính vào nhau / khoảng trắng chèn sai chỗ sau khi sửa & xuất PDF": trước đây khi
+// gộp các "text item" của pdf.js thành một dòng chữ, code LUÔN chèn cứng một dấu cách giữa MỌI cặp
+// item cạnh nhau (group.map(i=>i.text).join(' ')) — bất kể giữa 2 item đó trong PDF gốc có thực sự
+// cách nhau hay không. Nhiều PDF (đặc biệt PDF tiếng Việt xuất từ Word/thiết kế) tách một TỪ DUY NHẤT
+// thành nhiều "item" nhỏ (ví dụ do đổi font/kiểu chữ giữa từ, do bị bẻ dấu, do kerning...) mà giữa
+// chúng KHÔNG hề có khoảng trắng thật (x1 của item trước gần như trùng x0 của item sau). Việc chèn
+// cứng dấu cách vào những chỗ này làm một từ như "Độc" bị tách thành "Đ ộc", "Vũng" thành "Vũ ng"...
+// Ngược lại, ranh giới TỪ THẬT (có khoảng trắng) đôi khi lại nằm NGAY TRONG một item (pdf.js đã tự gộp
+// sẵn) nên không cần thêm gì — nhưng nếu lỡ giữa 2 item liền sau đó cũng có khoảng cách thật mà không
+// được nhận ra, 2 từ sẽ bị dính liền không dấu cách. Hàm dưới đây chỉ chèn dấu cách giữa 2 item khi
+// khoảng trống NGANG thực tế giữa chúng (x0 của item sau − x1 của item trước) đủ lớn so với cỡ chữ —
+// đúng với cách các trình soạn thảo PDF khác (Acrobat...) suy ra ranh giới từ, thay vì đoán mò cố định.
+function joinLineItemsText(group){
+  let text = '';
+  let prevX1 = null, prevFs = null;
+  for(const it of group){
+    const fs = it.fontSize || prevFs || 10;
+    const raw = it.text || '';
+    if(prevX1 !== null && text){
+      const alreadyHasSpace = /\s$/.test(text) || /^\s/.test(raw);
+      if(!alreadyHasSpace){
+        const gap = it.x0 - prevX1;
+        // Ngưỡng nhỏ (15% cỡ chữ): đủ để coi là ranh giới từ thật, nhưng không quá lớn để không
+        // bỏ sót các từ đứng khá sát nhau. Khoảng cách bằng 0 hoặc âm (item sau đè/nối sát item
+        // trước, ví dụ dấu thanh tách rời) chắc chắn KHÔNG phải ranh giới từ -> không chèn dấu cách.
+        if(gap > Math.max(fs, prevFs||fs) * 0.15){
+          text += ' ';
+        }
+      }
+    }
+    text += raw;
+    prevX1 = it.x1;
+    prevFs = fs;
+  }
+  return text.replace(/[ \t]+/g,' ').trim();
+}
 function collectRegionLines(items, region){
   if(!items || !items.length) return { lines: [], avgFontSize: null };
   const rx2 = region.x + region.w, ry2 = region.y + region.h;
@@ -1627,7 +1702,7 @@ function collectRegionLines(items, region){
   }
   if(curLine.length) groups.push(curLine);
   const lines = groups.map(group=>{
-    const text = group.map(i=>i.text).join(' ').replace(/\s+/g,' ').trim();
+    const text = joinLineItemsText(group);
     return {
       text,
       x0: Math.min(...group.map(i=>i.x0)),
@@ -1692,7 +1767,7 @@ function computePageLines(items){
   }
 
   return segments.map(group=>{
-    const text = group.map(i=>i.text).join(' ').replace(/\s+/g,' ').trim();
+    const text = joinLineItemsText(group);
     return {
       text,
       x0: Math.min(...group.map(i=>i.x0)),
@@ -1808,9 +1883,11 @@ function buildRegionEdits(mode, region, originalLines, editedText, fallbackFontS
     y1 = Math.max(y1, y0 + fontSize*1.15);
     lastBottom = Math.max(lastBottom, y1);
 
-    // Nới rộng nhẹ vùng che theo chiều dọc để không sót nét chữ cũ (dấu, đuôi chữ g/y/p...) ở
-    // mép trên/dưới sau khi xuất PDF.
-    const padY = Math.max(1, fontSize*0.12);
+    // Nới rộng vùng che theo chiều dọc để không sót nét chữ cũ (dấu tiếng Việt chồng dấu thanh
+    // như ầ/ẫ/ệ cao/sâu hơn hẳn chữ Latin thường, dấu đuôi chữ g/y/p...) ở mép trên/dưới sau khi
+    // xuất PDF — trước đây chỉ nới 12% cỡ chữ là QUÁ MỎNG, để sót nét chữ cũ đè lên chữ mới,
+    // trông như chữ bị dính/chồng vào nhau (xem giải thích chi tiết ở editLineAt).
+    const padY = Math.max(3, fontSize*0.35);
     const cy0 = y0 - padY, ch = (y1-y0) + padY*2;
 
     // Lấy mẫu màu nền thật ngay tại đúng phạm vi dòng sắp bị thay thế (khi trang còn hiển thị nguyên gốc,
@@ -1873,11 +1950,17 @@ async function bulkEditRegion(mode){
         // Vùng chọn không khớp được chữ gốc nào (vùng trắng) -> coi như thêm chữ mới toàn vùng
         if(newVal.trim()){
           const bgColor = sampleBackgroundColor(region.x, region.y, region.w, region.h);
+          removeOverlappingTextEdits(cur(), region.x, region.y, region.x+region.w, region.y+region.h);
           cur().edits.push({ type: mode==='ocr' ? 'ocrfix' : 'textfix', x:region.x, y:region.y, w:region.w, h:region.h, text:newVal, fontSize, fontFamily: currentFontFamily, color: currentFontColor, bg:true, bgColor });
         }
       } else {
         const newEdits = buildRegionEdits(mode, region, originalLines, newVal, fontSize);
-        if(newEdits.length) cur().edits.push(...newEdits);
+        if(newEdits.length){
+          // Dọn mọi chỉnh sửa cũ chồng lấn với TOÀN BỘ vùng vừa xử lý trước khi thêm các chỉnh sửa
+          // mới, để không có 2 lớp chữ (bản cũ + bản mới) cùng được vẽ đè lên nhau khi xuất PDF.
+          removeOverlappingTextEdits(cur(), region.x, region.y, region.x+region.w, region.y+region.h);
+          cur().edits.push(...newEdits);
+        }
       }
       redrawOverlay();
     });
@@ -2154,6 +2237,8 @@ function editLineAt(px, py, editType, customLines){
           const auto = computeAutoBoxSize(val, ed.fontFamily, ed.fontSize, ed.x);
           ed.w = ed.bg ? Math.max(ed.w, auto.w) : auto.w;
           ed.h = ed.bg ? Math.max(ed.h, auto.h) : auto.h;
+          // Dọn mọi chỉnh sửa khác chồng lấn lên vùng vừa nới rộng, để không có 2 lớp chữ đè nhau.
+          removeOverlappingTextEdits(p, ed.x, ed.y, ed.x+ed.w, ed.y+ed.h, ed);
         }
         else { p.edits.splice(hitIdx,1); selectedEditIndex = -1; }
         redrawOverlay();
@@ -2170,8 +2255,9 @@ function editLineAt(px, py, editType, customLines){
       val = normalizeEditText(val);
       if(val && val.trim()){
         pushUndo(currentIndex);
-        const newIdx = p.edits.length;
         const auto = computeAutoBoxSize(val, currentFontFamily, currentFontSize, pdfP.x);
+        removeOverlappingTextEdits(p, pdfP.x, pdfP.y, pdfP.x+auto.w, pdfP.y+auto.h);
+        const newIdx = p.edits.length;
         p.edits.push({
           type:'text', x:pdfP.x, y:pdfP.y, w:auto.w, h:auto.h,
           text:val, fontSize: currentFontSize, fontFamily: currentFontFamily, color: currentFontColor, bg:false
@@ -2236,6 +2322,8 @@ function editLineAt(px, py, editType, customLines){
         const auto = computeAutoBoxSize(val, existing.edit.fontFamily, existing.edit.fontSize, existing.edit.x);
         existing.edit.w = Math.max(existing.edit.w, auto.w);
         existing.edit.h = Math.max(existing.edit.h, auto.h);
+        // Dọn mọi chỉnh sửa khác chồng lấn lên vùng vừa nới rộng, để không có 2 lớp chữ đè nhau.
+        removeOverlappingTextEdits(p, existing.edit.x, existing.edit.y, existing.edit.x+existing.edit.w, existing.edit.y+existing.edit.h, existing.edit);
       } else {
         p.edits.splice(existing.index, 1); selectedEditIndex = -1; // xoá hết chữ -> bỏ luôn chỉnh sửa, để nền/khoảng trắng đã che vẫn còn (đã xoá dòng gốc)
       }
@@ -2245,8 +2333,14 @@ function editLineAt(px, py, editType, customLines){
       // rồi mới vẽ chữ mới đè lên trên -> chữ cũ THỰC SỰ BIẾN MẤT, không bị chồng với chữ mới.
       // Nới rộng nhẹ vùng che (padY) để không bị sót nét chữ cũ (dấu, đuôi chữ g/y/p...) lộ ra
       // ở mép trên/dưới sau khi xuất PDF.
-      const padY = Math.max(1, fontSize*0.12);
-      const cx0 = line.x0, cy0 = line.y0 - padY, cw = line.x1-line.x0, ch = (line.y1-line.y0) + padY*2;
+      // SỬA LỖI "chữ dính/chồng nét sau khi xuất file": trước đây padY chỉ bằng 12% cỡ chữ — QUÁ MỎNG
+      // để che hết dấu tiếng Việt (dấu mũ/móc chồng dấu thanh như ầ, ẫ, ệ... thường cao/sâu hơn nhiều
+      // so với chữ Latin thường), nên đôi khi vẫn còn sót lại một phần nét/dấu của CHỮ GỐC lộ ra ngay
+      // sát mép trên/dưới khung che — khi chữ MỚI được vẽ đè lên, phần nét sót đó chồng lên chữ mới,
+      // trông như chữ bị dính/chồng vào nhau. Nới rộng khung che nhiều hơn hẳn theo cả 2 chiều dọc VÀ
+      // ngang (trước đây không hề có padX) để chắc chắn che kín toàn bộ chữ gốc trước khi vẽ chữ mới.
+      const padY = Math.max(3, fontSize*0.35), padX = Math.max(2, fontSize*0.1);
+      const cx0 = line.x0 - padX, cy0 = line.y0 - padY, cw = (line.x1-line.x0) + padX*2, ch = (line.y1-line.y0) + padY*2;
       const bgColor = sampleBackgroundColor(cx0, cy0, cw, ch);
       // QUAN TRỌNG (sửa lỗi chữ mới không hiện ra khi xuất PDF): nếu chữ mới dài/nhiều dòng hơn
       // hẳn dòng chữ gốc, khung che (cw x ch) theo kích thước dòng gốc sẽ quá hẹp, khiến lúc xuất
@@ -2256,6 +2350,9 @@ function editLineAt(px, py, editType, customLines){
       const auto = computeAutoBoxSize(val, currentFontFamily, fontSize, cx0);
       const finalW = Math.max(cw, auto.w);
       const finalH = Math.max(ch, auto.h);
+      // Dọn mọi chỉnh sửa khác (kể cả whiteout/text cũ) chồng lấn lên vùng SẮP tạo, để tuyệt đối
+      // không có 2 lớp chữ vẽ chồng lên nhau tại cùng một chỗ.
+      removeOverlappingTextEdits(p, cx0, cy0, cx0+finalW, cy0+finalH);
       const newIdx = p.edits.length;
       p.edits.push({
         type: editType, x: cx0, y: cy0, w: finalW, h: finalH,
@@ -2271,10 +2368,13 @@ function editLineAt(px, py, editType, customLines){
       });
       selectedEditIndex = newIdx;
     } else {
-      // Xoá hẳn nội dung dòng (không nhập gì) -> che theo màu nền thật tại đó
-      const padY = Math.max(1, (line.fontSize||12)*0.12);
-      const cx0 = line.x0, cy0 = line.y0 - padY, cw = line.x1-line.x0, ch = (line.y1-line.y0) + padY*2;
+      // Xoá hẳn nội dung dòng (không nhập gì) -> che theo màu nền thật tại đó (nới rộng padY/padX
+      // như trên để che kín cả dấu tiếng Việt, không sót nét chữ cũ).
+      const fs0 = line.fontSize||12;
+      const padY = Math.max(3, fs0*0.35), padX = Math.max(2, fs0*0.1);
+      const cx0 = line.x0 - padX, cy0 = line.y0 - padY, cw = (line.x1-line.x0) + padX*2, ch = (line.y1-line.y0) + padY*2;
       const bgColor = sampleBackgroundColor(cx0, cy0, cw, ch);
+      removeOverlappingTextEdits(p, cx0, cy0, cx0+cw, cy0+ch);
       p.edits.push({ type:'whiteout', x: cx0, y: cy0, w: cw, h: ch, color:'#ffffff', bgColor });
     }
     redrawOverlay();
@@ -2302,6 +2402,8 @@ overlayCanvas.addEventListener('dblclick', (e)=>{
         const auto = computeAutoBoxSize(val, ed.fontFamily || 'Arial', ed.fontSize || 12, ed.x);
         ed.w = ed.bg ? Math.max(ed.w, auto.w) : auto.w;
         ed.h = ed.bg ? Math.max(ed.h, auto.h) : auto.h;
+        // Dọn mọi chỉnh sửa khác chồng lấn lên vùng vừa nới rộng, để không có 2 lớp chữ đè nhau.
+        removeOverlappingTextEdits(cur(), ed.x, ed.y, ed.x+ed.w, ed.y+ed.h, ed);
       }
       else { edits.splice(idx,1); selectedEditIndex = -1; }
       redrawOverlay();
