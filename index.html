@@ -82,7 +82,7 @@
   .sep{width:1px;align-self:stretch;background:var(--border);margin:2px 6px;}
   .tbtn.primary{background:var(--accent);}
   .tbtn.primary:hover{background:var(--accent-dim);}
-  #colorSwatch{width:20px;height:20px;border-radius:4px;border:1px solid var(--border);cursor:pointer;padding:0;}
+  #colorSwatch, #whiteoutColorSwatch{width:20px;height:20px;border-radius:4px;border:1px solid var(--border);cursor:pointer;padding:0;}
   #fontFamilySelect, #fontSizeSelect{
     background:#1c1e22;color:var(--text-light);border:1px solid var(--border);
     border-radius:5px;padding:5px 6px;font-size:12px;cursor:pointer;
@@ -382,6 +382,7 @@
   <button class="tbtn" data-tool="highlight" id="toolHighlight"><span class="ic">🖍️</span>Đánh dấu</button>
   <button class="tbtn" data-tool="draw" id="toolDraw"><span class="ic">✏️</span>Vẽ tự do</button>
   <button class="tbtn" data-tool="whiteout" id="toolWhiteout"><span class="ic">▭</span>Che (Whiteout)</button>
+  <input type="color" id="whiteoutColorSwatch" value="#ffffff" title="Màu dùng để che (mặc định trắng, có thể chọn màu tùy ý)">
   <input type="color" id="colorSwatch" value="#e2402c" title="Màu">
   <select id="fontFamilySelect" title="Font chữ">
     <option value="Arial" selected>Arial</option>
@@ -900,6 +901,10 @@ let scale = 1.2;
 const BASE_SCALE = 1;
 let activeTool = 'select';
 let currentColor = '#e2402c';
+// Màu riêng dùng cho công cụ "Che (Whiteout)" — tách biệt khỏi currentColor (màu của Đánh dấu/Vẽ/
+// Thêm văn bản), để người dùng có thể che bằng bất kỳ màu nào (không chỉ trắng) mà không ảnh hưởng
+// tới màu đang chọn cho các công cụ khác. Mặc định vẫn là trắng để giữ đúng hành vi cũ nếu không đổi.
+let currentWhiteoutColor = '#ffffff';
 let currentFontFamily = 'Arial';
 let currentFontSize = 14;
 // Tham chiếu tới ô nhập liệu (textarea) nổi đang mở, nếu có — dùng để cập nhật font/cỡ chữ
@@ -1470,7 +1475,7 @@ const toolLabels = {
   ocr:'Sửa văn bản (OCR) — dùng cho PDF scan/ảnh, trỏ chuột vào dòng chữ để thấy khung cam báo có thể sửa, bấm vào để sửa ngay. Mẹo: dùng "Chọn vùng" trước để sửa nhanh cả đoạn nhiều dòng.',
   highlight:'Đánh dấu (kéo để chọn vùng)',
   draw:'Vẽ tự do',
-  whiteout:'Che nội dung (kéo để chọn vùng)'
+  whiteout:'Che nội dung (kéo để chọn vùng) — chọn màu ở ô "Màu che" bên cạnh để che bằng màu tùy ý, không chỉ trắng'
 };
 document.querySelectorAll('.tbtn[data-tool]').forEach(btn=>{
   btn.onclick = ()=>{
@@ -1516,6 +1521,7 @@ document.querySelectorAll('.tbtn[data-tool]').forEach(btn=>{
 });
 document.getElementById('toolSelect').classList.add('active');
 document.getElementById('colorSwatch').oninput = (e)=> currentColor = e.target.value;
+document.getElementById('whiteoutColorSwatch').oninput = (e)=> currentWhiteoutColor = e.target.value;
 
 // ---------- Font chữ & cỡ chữ ----------
 function isTextEdit(ed){ return ed && (ed.type==='text' || ed.type==='ocrfix' || ed.type==='textfix'); }
@@ -2292,6 +2298,12 @@ overlayCanvas.addEventListener('mousemove', (e)=>{
     redrawOverlay();
     const x = Math.min(dragStart.x, px), y = Math.min(dragStart.y, py);
     const w = Math.abs(px-dragStart.x), h = Math.abs(py-dragStart.y);
+    if(activeTool==='whiteout'){
+      // Tô trước (mờ) đúng màu người dùng đã chọn ở ô "Màu che" ngay trong lúc đang kéo, để thấy
+      // trước kết quả sẽ che bằng màu gì trước khi thả chuột.
+      octx.fillStyle = hexToRgba(currentWhiteoutColor, 0.55);
+      octx.fillRect(x,y,w,h);
+    }
     octx.strokeStyle = activeTool==='whiteout' ? '#333' : currentColor;
     octx.setLineDash([4,3]); octx.strokeRect(x,y,w,h); octx.setLineDash([]);
   } else if(draggingRegionSel && regionDragStart){
@@ -2363,7 +2375,15 @@ window.addEventListener('mouseup', (e)=>{
     if(w>4 && h>4 && (activeTool==='highlight' || activeTool==='whiteout')){
       const p1 = toPdfSpace(x,y), p2 = toPdfSpace(x+w, y+h);
       pushUndo(currentIndex);
-      cur().edits.push({ type: activeTool==='highlight' ? 'highlight' : 'whiteout', x:p1.x, y:p1.y, w:p2.x-p1.x, h:p2.y-p1.y, color: currentColor });
+      if(activeTool==='whiteout'){
+        // QUAN TRỌNG: hàm vẽ thật sự (drawEdit ở màn hình VÀ drawEditOnPdfPage lúc xuất PDF) đọc
+        // màu che từ "bgColor" chứ không phải "color" — nên phải lưu màu người dùng chọn vào đúng
+        // trường bgColor thì mới có tác dụng (trước đây chỉ lưu vào "color" nên whiteout luôn ra
+        // màu trắng mặc định dù đã chọn màu khác).
+        cur().edits.push({ type:'whiteout', x:p1.x, y:p1.y, w:p2.x-p1.x, h:p2.y-p1.y, color: currentWhiteoutColor, bgColor: currentWhiteoutColor });
+      } else {
+        cur().edits.push({ type:'highlight', x:p1.x, y:p1.y, w:p2.x-p1.x, h:p2.y-p1.y, color: currentColor });
+      }
     }
     draggingRect = false; dragStart = null; redrawOverlay();
   }
