@@ -382,6 +382,9 @@
   <button class="tbtn" data-tool="draw" id="toolDraw"><span class="ic">✏️</span>Vẽ tự do</button>
   <button class="tbtn" data-tool="whiteout" id="toolWhiteout"><span class="ic">▭</span>Che (Whiteout)</button>
   <input type="color" id="colorSwatch" value="#e2402c" title="Màu">
+  <span style="display:inline-flex;align-items:center;gap:4px;font-size:11.5px;color:var(--text-dim);margin-left:2px;">
+    <input type="color" id="whiteoutColorSwatch" value="#ffffff" title="Chọn màu che (Whiteout) tùy ý">Màu che
+  </span>
   <select id="fontFamilySelect" title="Font chữ">
     <option value="Arial" selected>Arial</option>
     <option value="'Times New Roman',serif">Times New Roman</option>
@@ -899,6 +902,7 @@ let scale = 1.2;
 const BASE_SCALE = 1;
 let activeTool = 'select';
 let currentColor = '#e2402c';
+let currentWhiteoutColor = '#ffffff';
 let currentFontFamily = 'Arial';
 let currentFontSize = 14;
 // Tham chiếu tới ô nhập liệu (textarea) nổi đang mở, nếu có — dùng để cập nhật font/cỡ chữ
@@ -1469,7 +1473,7 @@ const toolLabels = {
   ocr:'Sửa văn bản (OCR) — dùng cho PDF scan/ảnh, trỏ chuột vào dòng chữ để thấy khung cam báo có thể sửa, bấm vào để sửa ngay. Mẹo: dùng "Chọn vùng" trước để sửa nhanh cả đoạn nhiều dòng.',
   highlight:'Đánh dấu (kéo để chọn vùng)',
   draw:'Vẽ tự do',
-  whiteout:'Che nội dung (kéo để chọn vùng)'
+  whiteout:'Che nội dung (kéo để chọn vùng) — chọn màu che tùy ý ở ô "Màu che" cạnh Font chữ'
 };
 document.querySelectorAll('.tbtn[data-tool]').forEach(btn=>{
   btn.onclick = ()=>{
@@ -1515,6 +1519,17 @@ document.querySelectorAll('.tbtn[data-tool]').forEach(btn=>{
 });
 document.getElementById('toolSelect').classList.add('active');
 document.getElementById('colorSwatch').oninput = (e)=> currentColor = e.target.value;
+document.getElementById('whiteoutColorSwatch').oninput = (e)=>{
+  currentWhiteoutColor = e.target.value;
+  // Nếu đang chọn (select) một khối "che" có sẵn trên trang, đổi màu ngay lập tức theo màu vừa chọn
+  const idx = selectedEditIndex;
+  if(idx>=0 && cur() && cur().edits[idx] && cur().edits[idx].type==='whiteout'){
+    pushUndo(currentIndex);
+    cur().edits[idx].bgColor = currentWhiteoutColor;
+    cur().edits[idx].color = currentWhiteoutColor;
+    redrawOverlay();
+  }
+};
 
 // ---------- Font chữ & cỡ chữ ----------
 function isTextEdit(ed){ return ed && (ed.type==='text' || ed.type==='ocrfix' || ed.type==='textfix'); }
@@ -1539,6 +1554,13 @@ document.getElementById('fontSizeSelect').onchange = (e)=>{
 function syncFontControlsToSelection(){
   if(!pages.length || selectedEditIndex<0) return;
   const ed = cur().edits[selectedEditIndex];
+  if(ed && ed.type==='whiteout'){
+    const wSwatch = document.getElementById('whiteoutColorSwatch');
+    const col = ed.bgColor || ed.color || '#ffffff';
+    wSwatch.value = col;
+    currentWhiteoutColor = col;
+    return;
+  }
   if(!isTextEdit(ed)) return;
   const famSel = document.getElementById('fontFamilySelect');
   const sizeSel = document.getElementById('fontSizeSelect');
@@ -2291,7 +2313,13 @@ overlayCanvas.addEventListener('mousemove', (e)=>{
     redrawOverlay();
     const x = Math.min(dragStart.x, px), y = Math.min(dragStart.y, py);
     const w = Math.abs(px-dragStart.x), h = Math.abs(py-dragStart.y);
-    octx.strokeStyle = activeTool==='whiteout' ? '#333' : currentColor;
+    if(activeTool==='whiteout'){
+      octx.fillStyle = currentWhiteoutColor;
+      octx.fillRect(x,y,w,h);
+      octx.strokeStyle = '#333';
+    } else {
+      octx.strokeStyle = currentColor;
+    }
     octx.setLineDash([4,3]); octx.strokeRect(x,y,w,h); octx.setLineDash([]);
   } else if(draggingRegionSel && regionDragStart){
     redrawOverlay();
@@ -2362,7 +2390,11 @@ window.addEventListener('mouseup', (e)=>{
     if(w>4 && h>4 && (activeTool==='highlight' || activeTool==='whiteout')){
       const p1 = toPdfSpace(x,y), p2 = toPdfSpace(x+w, y+h);
       pushUndo(currentIndex);
-      cur().edits.push({ type: activeTool==='highlight' ? 'highlight' : 'whiteout', x:p1.x, y:p1.y, w:p2.x-p1.x, h:p2.y-p1.y, color: currentColor });
+      if(activeTool==='whiteout'){
+        cur().edits.push({ type:'whiteout', x:p1.x, y:p1.y, w:p2.x-p1.x, h:p2.y-p1.y, color: currentWhiteoutColor, bgColor: currentWhiteoutColor });
+      } else {
+        cur().edits.push({ type:'highlight', x:p1.x, y:p1.y, w:p2.x-p1.x, h:p2.y-p1.y, color: currentColor });
+      }
     }
     draggingRect = false; dragStart = null; redrawOverlay();
   }
