@@ -921,6 +921,10 @@ let currentIndex = 0;      // vị trí (0-based) trong mảng pages
 // nếu đã có một lần gọi renderPage() khác mới hơn bắt đầu thì lần gọi cũ bỏ dở ngay, không đụng
 // vào canvas/pageWrap nữa (xem các chỗ kiểm tra `if(myToken !== renderToken) return;` bên dưới).
 let renderToken = 0;
+// Tác vụ render() (RenderTask) của pdf.js đang chạy dở TRÊN pdfCanvas (khung chỉnh sửa "sống"
+// dùng chung), nếu có — dùng để chủ động HỦY trước khi bắt đầu render trang khác (xem renderPage()),
+// tránh lỗi "Cannot use the same canvas during multiple render() operations" khi 2 lượt vẽ chồng lấn.
+let activeRenderTask = null;
 let scale = 1.2;
 const BASE_SCALE = 1;
 let activeTool = 'select';
@@ -1141,6 +1145,21 @@ async function renderPage(idx, opts){
   document.getElementById('pageNumInput').value = idx+1;
   const p = cur();
   if(!p) return; // phòng trường hợp idx không còn hợp lệ (trang vừa bị xoá bởi thao tác khác)
+  // SỬA LỖI GỐC "mất thanh công cụ/thanh trạng thái khi bấm nút lúc đang mở file nhiều trang":
+  // trước đây chỉ kiểm tra renderToken SAU khi một lượt render() của pdf.js đã chạy/chạy xong, chứ
+  // KHÔNG hủy lượt render TRƯỚC đó nếu nó vẫn còn đang dang dở. Với file NHIỀU TRANG, việc cuộn
+  // chuột tự động gọi renderPage() qua IntersectionObserver (xem setupPageObserver) rất dễ chồng
+  // lấn với renderPage() do người dùng chủ động bấm nút gần như cùng lúc: nếu lượt render CŨ chưa
+  // kịp xong mà lượt MỚI đã bắt đầu render tiếp trên CÙNG MỘT canvas dùng chung (pdfCanvas), pdf.js
+  // sẽ ném lỗi "Cannot use the same canvas during multiple render() operations", khiến khung chỉnh
+  // sửa (pdfCanvas/overlayCanvas) bị kẹt/lệch giữa 2 trang — nhìn như "toolbar/thanh trạng thái đã
+  // biến mất" dù DOM vẫn còn nguyên, chỉ là nội dung/khung hiển thị bị vỡ. Cách sửa đúng gốc: chủ
+  // động HỦY (cancel()) tác vụ render CŨ đang chạy dở trên pdfCanvas trước khi bắt đầu render trang
+  // mới, thay vì chỉ "để mặc" nó tự chạy xong rồi mới kiểm tra token.
+  if(activeRenderTask){
+    try{ activeRenderTask.cancel(); }catch(err){ /* bỏ qua: hủy tác vụ đã xong/đang hủy dở không phải lỗi thật */ }
+    activeRenderTask = null;
+  }
   let w,h;
   if(p.type==='pdf'){
     const page = await p.doc.getPage(p.srcPage);
@@ -1150,7 +1169,18 @@ async function renderPage(idx, opts){
     pdfCanvas.width = overlayCanvas.width = w;
     pdfCanvas.height = overlayCanvas.height = h;
     const ctx = pdfCanvas.getContext('2d');
-    await page.render({canvasContext: ctx, viewport}).promise;
+    const renderTask = page.render({canvasContext: ctx, viewport});
+    activeRenderTask = renderTask;
+    try{
+      await renderTask.promise;
+    }catch(err){
+      // "RenderingCancelledException" xảy ra khi CHÍNH tác vụ này bị một lần renderPage() mới hơn
+      // chủ động hủy (xem đoạn activeRenderTask.cancel() ở trên) -> không phải lỗi thật, bỏ qua êm.
+      if(err && (err.name === 'RenderingCancelledException' || myToken !== renderToken)) return;
+      throw err;
+    }finally{
+      if(activeRenderTask === renderTask) activeRenderTask = null;
+    }
     if(myToken !== renderToken) return; // kiểm tra lại lần nữa sau khi render xong (render cũng mất thời gian)
   } else {
     w = p.width*scale; h = p.height*scale;
@@ -1216,13 +1246,29 @@ async function renderStaticPreview(idx){
   const p = pages[idx];
   if(!slot || !p) return;
   const c = slot.canvas;
+  // Cùng lý do như activeRenderTask ở renderPage(): nếu renderStaticPreview() của CHÍNH ô này bị
+  // gọi lại (VD: đổi trang qua lại rất nhanh) trong khi lượt render trước trên canvas riêng của ô
+  // đó chưa xong, phải hủy lượt cũ trước, tránh cùng lỗi "Cannot use the same canvas...".
+  if(slot.renderTask){
+    try{ slot.renderTask.cancel(); }catch(err){}
+    slot.renderTask = null;
+  }
   let w,h;
   if(p.type==='pdf'){
     const page = await p.doc.getPage(p.srcPage);
     const viewport = page.getViewport({scale});
     w = viewport.width; h = viewport.height;
     c.width = w; c.height = h;
-    await page.render({canvasContext: c.getContext('2d'), viewport}).promise;
+    const task = page.render({canvasContext: c.getContext('2d'), viewport});
+    slot.renderTask = task;
+    try{
+      await task.promise;
+    }catch(err){
+      if(err && err.name === 'RenderingCancelledException') return;
+      throw err;
+    }finally{
+      if(slot.renderTask === task) slot.renderTask = null;
+    }
   } else {
     w = p.width*scale; h = p.height*scale;
     c.width = w; c.height = h;
