@@ -109,17 +109,38 @@
   #sidebar .empty-hint{color:var(--text-dim);font-size:11.5px;text-align:center;margin-top:30px;line-height:1.5;}
 
   #canvasArea{
-    flex:1;background:var(--bg-canvas-area);overflow:auto;
-    display:flex;align-items:flex-start;justify-content:center;padding:30px;position:relative;
+    flex:1;background:var(--bg-canvas-area);overflow:hidden;position:relative;
   }
-  #pageWrap{position:relative;box-shadow:0 4px 24px rgba(0,0,0,.5);background:#fff;}
+  /* ===== Thanh cuộn xem nhiều trang =====
+     Trước đây #canvasArea chỉ hiển thị đúng MỘT #pageWrap (trang đang chỉnh sửa), muốn xem trang
+     khác phải bấm vào thumbnail ở sidebar hoặc gõ số trang. Giờ toàn bộ các trang được xếp dọc bên
+     trong #pagesScroll (có thanh cuộn dọc/ngang riêng), mỗi trang là một .pageSlot — người dùng có
+     thể cuộn chuột để lướt qua tất cả các trang của file như một trình xem PDF thông thường. Trang
+     đang "sống" (có thể chỉnh sửa) sẽ mang theo #pageWrap thật (pdfCanvas/overlayCanvas/textLayer)
+     đặt đè lên đúng vị trí của nó trong danh sách; các trang khác chỉ hiển thị bản xem trước tĩnh
+     (đã vẽ sẵn mọi chỉnh sửa) trong canvas.pageStatic của riêng chúng. Cuộn tới trang nào (hoặc bấm
+     vào trang đó) sẽ tự động chuyển trang đó thành trang đang chỉnh sửa. */
+  #pagesScroll{
+    position:absolute;inset:0;overflow:auto;padding:30px 0 60px;
+    display:flex;flex-direction:column;align-items:center;gap:26px;
+  }
+  .pageSlot{
+    position:relative;box-shadow:0 4px 24px rgba(0,0,0,.5);background:#fff;flex-shrink:0;
+  }
+  .pageSlot.active-slot{outline:2px solid var(--accent);outline-offset:3px;}
+  .pageSlot .pageLabel{
+    position:absolute;top:-20px;left:0;font-size:11px;color:var(--text-dim);user-select:none;
+  }
+  .pageSlot canvas.pageStatic{display:block;cursor:pointer;}
+  #pageWrap{position:absolute;top:0;left:0;background:#fff;}
   #pdfCanvas{display:block;}
   #overlayCanvas{position:absolute;top:0;left:0;cursor:default;}
   #overlayCanvas.tool-select{cursor:pointer;}
   #overlayCanvas.tool-draw,#overlayCanvas.tool-highlight,#overlayCanvas.tool-whiteout,#overlayCanvas.tool-region{cursor:crosshair;}
   #overlayCanvas.tool-addtext,#overlayCanvas.tool-ocr,#overlayCanvas.tool-edittext{cursor:text;}
   #dropHint{
-    color:var(--text-dim);text-align:center;margin:auto;font-size:14px;line-height:1.8;
+    position:absolute;inset:0;color:var(--text-dim);text-align:center;font-size:14px;line-height:1.8;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
   }
   #dropHint .big{font-size:44px;display:block;margin-bottom:10px;}
 
@@ -409,8 +430,7 @@
   <button class="tbtn" id="zoomIn"><span class="ic">+</span></button>
   <div class="sep"></div>
 
-  <button class="tbtn" id="btnSaveAs" style="margin-left:auto" title="Lưu chỉnh sửa hiện tại thành MỘT FILE PDF KHÁC với tên do bạn đặt — không ghi đè/ảnh hưởng tới file gốc hay các bản đã lưu trước đó"><span class="ic">📑</span>Lưu thành bản khác…</button>
-  <button class="tbtn primary" id="btnSave"><span class="ic">💾</span>Lưu PDF</button>
+  <button class="tbtn primary" id="btnSave" style="margin-left:auto"><span class="ic">💾</span>Lưu PDF</button>
 </div>
 
 <div id="body">
@@ -425,11 +445,13 @@
       Nhấn <b>"Mở PDF"</b> ở thanh công cụ để bắt đầu chỉnh sửa.<br>
       <span style="font-size:12px">Hỗ trợ: thêm văn bản, đánh dấu, vẽ, che nội dung và sửa văn bản trên PDF scan bằng OCR.</span>
     </div>
-    <div id="pageWrap" style="display:none">
-      <canvas id="pdfCanvas"></canvas>
-      <canvas id="overlayCanvas"></canvas>
-      <div id="textLayer"></div>
-      <button id="floatingHighlightBtn">🖍️ Đánh dấu</button>
+    <div id="pagesScroll">
+      <div id="pageWrap" style="display:none">
+        <canvas id="pdfCanvas"></canvas>
+        <canvas id="overlayCanvas"></canvas>
+        <div id="textLayer"></div>
+        <button id="floatingHighlightBtn">🖍️ Đánh dấu</button>
+      </div>
     </div>
   </div>
 
@@ -757,6 +779,72 @@ function safeDrawText(page, text, opts, fallbackFont){
     }
   }
 }
+// LỖI ĐÃ SỬA (khoảng cách giữa các từ trong file PDF xuất ra khác với bản xem trước trong trình
+// soạn thảo): bản xem trước (canvas) dùng ctx.wordSpacing để canh khoảng cách khớp với dòng
+// gốc (xem applyOriginalSpacing ở phần vẽ canvas phía trên), nhưng pdf-lib.drawText() KHÔNG có
+// khái niệm "wordSpacing" — gọi drawText() cho cả một dòng chữ sẽ luôn dùng đúng khoảng cách tự
+// nhiên của font nhúng (Noto Sans), bỏ qua hoàn toàn phần canh chỉnh đó, nên file xuất ra bị giãn
+// cách khác hẳn so với những gì thấy trên màn hình. Hàm này tính lại cùng một kiểu "extra" như
+// applyOriginalSpacing() nhưng đo bằng chính font pdf-lib sẽ dùng để nhúng vào PDF, với 2 mức ưu
+// tiên để chọn ĐỘ RỘNG MỤC TIÊU cần khớp theo:
+//   1) Nếu chỉnh sửa này bắt nguồn từ một dòng chữ có sẵn trong tài liệu gốc (PDF thật/OCR, tức
+//      có ed.origLineW) -> khớp đúng độ rộng THẬT của dòng gốc đó (chính xác nhất).
+//   2) Nếu là chữ HOÀN TOÀN MỚI do người dùng tự gõ thêm (không có dòng gốc nào để so, ví dụ dùng
+//      công cụ "Thêm văn bản" gõ vào chỗ trống) -> KHÔNG có origLineW để dựa vào. Trường hợp này
+//      trước đây bị bỏ sót hoàn toàn (không hề canh chỉnh gì), khiến PDF xuất ra bị giãn theo đúng
+//      "khẩu vị" mặc định của font Noto Sans nhúng sẵn — thường RỘNG hơn nhiều so với các font hệ
+//      thống người dùng nhìn thấy khi đang gõ (Arial, Times New Roman...). Nay lấy chính độ rộng mà
+//      TRÌNH DUYỆT đã đo/hiển thị lúc gõ (dùng đúng font hệ thống ed.fontFamily, qua measureTextWidth
+//      đã có sẵn) làm mục tiêu, để PDF xuất ra trông giống HỆT những gì đã thấy trên màn hình.
+function computeWordSpacingExtraForPdf(font, ed){
+  const text = ed.text, fontSize = ed.fontSize || 12;
+  if(!text) return 0;
+  const firstLine = String(text).split('\n')[0];
+  const gaps = (firstLine.match(/ /g) || []).length;
+  if(!gaps) return 0;
+  let pdfNaturalW;
+  try{ pdfNaturalW = font.widthOfTextAtSize(firstLine, fontSize); }catch(e){ return 0; }
+  if(!isFinite(pdfNaturalW) || pdfNaturalW<=0) return 0;
+
+  let targetW;
+  if(ed.origLineW){
+    targetW = ed.origLineW;
+  } else {
+    try{
+      targetW = measureTextWidth(firstLine, `${fontSize}px ${ed.fontFamily || 'Arial'}`);
+    }catch(e){ return 0; }
+  }
+  if(!isFinite(targetW) || targetW<=0) return 0;
+  // GIỚI HẠN AN TOÀN CHẶT HƠN (sửa lỗi khoảng cách bị kéo giãn CÒN RỘNG HƠN sau khi "sửa"): trước
+  // đây cho phép sai lệch tới 80% (0.5x–1.8x) và bù tối đa tới 1.2×cỡ chữ MỖI khoảng trắng — nếu độ
+  // rộng "mục tiêu" (origLineW đo từ OCR/PDF, vốn có thể không chính xác tuyệt đối do bbox rộng hơn
+  // thực tế) bị đo hơi rộng hơn thực tế, phần bù này có thể kéo giãn thêm tới ~50% độ rộng chữ —
+  // khiến khoảng cách sau khi "sửa" còn RỘNG HƠN cả trước khi sửa, đúng như hiện tượng gặp phải. Thu
+  // hẹp lại: chỉ chấp nhận sai lệch trong khoảng 25% (0.75x–1.35x) và bù tối đa 0.3×cỡ chữ mỗi
+  // khoảng trắng — đủ để bù chênh lệch font (thường chỉ ~5-10%) mà không thể gây méo lớn nếu số đo
+  // gốc không hoàn toàn chính xác.
+  if(pdfNaturalW < targetW*0.75 || pdfNaturalW > targetW*1.35) return 0;
+
+  let extra = (targetW - pdfNaturalW) / gaps;
+  const maxAbs = fontSize * 0.3;
+  extra = Math.max(-maxAbs, Math.min(maxAbs, extra));
+  return extra;
+}
+// Vẽ một dòng chữ theo TỪNG TỪ, tự cộng dồn toạ độ X giữa các từ (word width + khoảng trắng +
+// "extra" bù thêm) để đạt đúng hiệu ứng canh khoảng cách như ctx.wordSpacing bên canvas — vì
+// pdf-lib không có thuộc tính tương đương để giao cho nó tự làm.
+function drawLineWithWordSpacing(page, line, startX, y, fontSize, font, color, fallbackFont, extra){
+  const words = String(line).split(' ');
+  let x = startX;
+  for(let i=0;i<words.length;i++){
+    const w = words[i];
+    if(w) safeDrawText(page, w, { x, y, size: fontSize, font, color }, fallbackFont);
+    let ww, sw;
+    try{ ww = font.widthOfTextAtSize(w, fontSize); }catch(e){ ww = w.length*fontSize*0.55; }
+    try{ sw = font.widthOfTextAtSize(' ', fontSize); }catch(e){ sw = fontSize*0.28; }
+    x += ww + sw + extra;
+  }
+}
 // Vẽ 1 chỉnh sửa lên trang PDF thật (pdf-lib), giữ nguyên nội dung vector gốc của trang
 // (khác với cách cũ là chụp toàn trang thành ảnh PNG rồi nhúng lại — cách đó biến cả trang
 // thành ảnh, làm mất chữ gốc dạng văn bản thật và khiến việc "sửa văn bản gốc" không có tác dụng thật sự).
@@ -777,9 +865,14 @@ function drawEditOnPdfPage(page, ed, H, font, fallbackFont){
     const [r,g,b] = hexToRgbFloats(ed.color || '#000000');
     const fontSize = ed.fontSize || 12;
     const lines = wrapTextForPdfFont(font, String(ed.text), fontSize, Math.max(ed.w-4, fontSize));
+    const wordExtra = computeWordSpacingExtraForPdf(font, ed);
     let baseY = H - ed.y - fontSize*0.85;
     for(const line of lines){
-      safeDrawText(page, line, { x: ed.x+2, y: baseY, size: fontSize, font, color: rgb(r,g,b) }, fallbackFont);
+      if(wordExtra){
+        drawLineWithWordSpacing(page, line, ed.x+2, baseY, fontSize, font, rgb(r,g,b), fallbackFont, wordExtra);
+      } else {
+        safeDrawText(page, line, { x: ed.x+2, y: baseY, size: fontSize, font, color: rgb(r,g,b) }, fallbackFont);
+      }
       baseY -= fontSize*1.15;
     }
   } else if(ed.type === 'draw'){
@@ -884,6 +977,15 @@ const octx = overlayCanvas.getContext('2d');
 const textLayer = document.getElementById('textLayer');
 const floatingHighlightBtn = document.getElementById('floatingHighlightBtn');
 
+// ===== Thanh cuộn xem nhiều trang =====
+// pagesScroll chứa danh sách .pageSlot (một cho mỗi trang, xếp dọc, có thể cuộn). pageSlots[i] giữ
+// tham chiếu tới slot + canvas xem trước tĩnh (pageStatic) của trang i. liveSlotIdx cho biết trang
+// nào hiện đang "mang" bộ khung chỉnh sửa thật (#pageWrap) — chỉ một trang tại một thời điểm.
+const pagesScroll = document.getElementById('pagesScroll');
+let pageSlots = [];
+let liveSlotIdx = -1;
+let pageIO = null; // IntersectionObserver theo dõi trang nào đang hiện trong khung nhìn khi cuộn
+
 function cur(){ return pages[currentIndex]; }
 
 // ---------- Lấy màu nền thật tại một vùng trên trang (để "che" hòa lẫn vào nền thay vì hiện khối trắng) ----------
@@ -939,6 +1041,7 @@ document.getElementById('fileInput').onchange = async (e) => {
   currentIndex = 0;
   dropHint.style.display = 'none';
   pageWrap.style.display = 'block';
+  await rebuildPageSlots();
   await renderPage(0);
   buildThumbnails();
 };
@@ -960,6 +1063,7 @@ document.getElementById('insertFileInput').onchange = async (e) => {
   const at = currentIndex+1;
   pages.splice(at, 0, ...inserted);
   currentIndex = at;
+  await rebuildPageSlots();
   await renderPage(currentIndex);
   buildThumbnails();
   e.target.value = '';
@@ -973,6 +1077,7 @@ document.getElementById('btnInsertBlank').onclick = async () => {
   const at = currentIndex+1;
   pages.splice(at, 0, blank);
   currentIndex = at;
+  await rebuildPageSlots();
   await renderPage(currentIndex);
   buildThumbnails();
 };
@@ -984,13 +1089,16 @@ document.getElementById('btnDeletePage').onclick = async () => {
   if(!confirm(`Xóa hẳn trang ${currentIndex+1} khỏi tài liệu? Hành động này không thể hoàn tác bằng Undo.`)) return;
   pages.splice(currentIndex,1);
   currentIndex = Math.min(currentIndex, pages.length-1);
+  await rebuildPageSlots();
   await renderPage(currentIndex);
   buildThumbnails();
 };
 
 // ---------- Vẽ trang lên canvas ----------
-async function renderPage(idx){
+async function renderPage(idx, opts){
+  const { scrollIntoView = true } = opts || {};
   flushPendingEdit(); // chốt chỉnh sửa dang dở trước khi chuyển sang trang khác
+  const prevLiveIdx = liveSlotIdx;
   currentIndex = idx;
   selectedEditIndex = -1;
   hoverLine = null;
@@ -1015,6 +1123,9 @@ async function renderPage(idx){
   }
   pageWrap.style.width = w+'px';
   pageWrap.style.height = h+'px';
+  // Gắn khung chỉnh sửa thật (#pageWrap: pdfCanvas/overlayCanvas/textLayer) vào đúng ô của trang
+  // idx trong danh sách cuộn nhiều trang; trả trang "sống" trước đó (nếu khác) về xem trước tĩnh.
+  activateSlot(idx, prevLiveIdx, w, h);
   document.getElementById('pageCount').textContent = pages.length;
   document.getElementById('pageNumInput').max = pages.length;
   redrawOverlay();
@@ -1033,6 +1144,115 @@ async function renderPage(idx){
   } else {
     textLayer.innerHTML = '';
   }
+  if(scrollIntoView) scrollSlotIntoView(idx);
+}
+
+// Dời #pageWrap (khung chỉnh sửa thật, duy nhất) vào ô (slot) của trang idx trong #pagesScroll,
+// ẩn canvas xem trước tĩnh của ô đó đi (vì pageWrap đã đè lên đúng chỗ). Ô của trang "sống" trước
+// đó (prevIdx) được vẽ lại thành xem trước tĩnh (đã bao gồm mọi chỉnh sửa vừa thực hiện) và hiện
+// canvas tĩnh trở lại, để người dùng vẫn thấy đúng nội dung khi cuộn qua trang đó.
+function activateSlot(idx, prevIdx, w, h){
+  const slot = pageSlots[idx];
+  if(!slot) return;
+  slot.el.style.width = w+'px';
+  slot.el.style.height = h+'px';
+  slot.canvas.style.display = 'none';
+  slot.el.appendChild(pageWrap);
+  pageWrap.style.display = 'block';
+  slot.el.classList.add('active-slot');
+  liveSlotIdx = idx;
+  if(prevIdx !== -1 && prevIdx !== idx && pageSlots[prevIdx]){
+    pageSlots[prevIdx].el.classList.remove('active-slot');
+    pageSlots[prevIdx].canvas.style.display = 'block';
+    renderStaticPreview(prevIdx).catch(err=>console.warn('Không vẽ lại được xem trước trang', prevIdx+1, err));
+  }
+}
+
+// Vẽ nội dung PDF/trang trắng + mọi chỉnh sửa (edits) của trang idx lên canvas xem trước TĨNH
+// (không tương tác) trong ô của nó — dùng cho các trang đang không phải trang "sống" đang chỉnh
+// sửa, để khi cuộn tới, người dùng vẫn thấy đúng nội dung mới nhất của trang đó.
+async function renderStaticPreview(idx){
+  const slot = pageSlots[idx];
+  const p = pages[idx];
+  if(!slot || !p) return;
+  const c = slot.canvas;
+  let w,h;
+  if(p.type==='pdf'){
+    const page = await p.doc.getPage(p.srcPage);
+    const viewport = page.getViewport({scale});
+    w = viewport.width; h = viewport.height;
+    c.width = w; c.height = h;
+    await page.render({canvasContext: c.getContext('2d'), viewport}).promise;
+  } else {
+    w = p.width*scale; h = p.height*scale;
+    c.width = w; c.height = h;
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0,0,w,h);
+  }
+  slot.el.style.width = w+'px';
+  slot.el.style.height = h+'px';
+  const ctx = c.getContext('2d');
+  for(const e of p.edits) drawEdit(ctx, e, scale);
+}
+
+// Dựng lại toàn bộ danh sách ô (.pageSlot) cho đúng số trang hiện có — gọi mỗi khi mở file, chèn
+// PDF/trang trắng, xóa trang, hoặc đổi mức zoom (vì kích thước từng trang đổi theo scale).
+async function rebuildPageSlots(){
+  if(pageIO){ pageIO.disconnect(); pageIO = null; }
+  if(pageWrap.parentNode) pageWrap.parentNode.removeChild(pageWrap);
+  pagesScroll.querySelectorAll('.pageSlot').forEach(el=>el.remove());
+  pageSlots = [];
+  liveSlotIdx = -1;
+  for(let i=0;i<pages.length;i++){
+    const el = document.createElement('div');
+    el.className = 'pageSlot';
+    el.dataset.idx = i;
+    const label = document.createElement('div');
+    label.className = 'pageLabel';
+    label.textContent = 'Trang ' + (i+1);
+    const c = document.createElement('canvas');
+    c.className = 'pageStatic';
+    c.onclick = ()=>{
+      const clickedIdx = Number(el.dataset.idx);
+      if(clickedIdx !== currentIndex) renderPage(clickedIdx);
+    };
+    el.appendChild(label);
+    el.appendChild(c);
+    pagesScroll.appendChild(el);
+    pageSlots.push({ el, canvas: c });
+  }
+  pagesScroll.appendChild(pageWrap); // renderPage() sẽ dời vào đúng ô ngay sau đó
+  for(let i=0;i<pages.length;i++){
+    if(i !== currentIndex) await renderStaticPreview(i);
+  }
+  setupPageObserver();
+}
+
+// Theo dõi việc cuộn trong #pagesScroll: hễ trang nào lướt vào khung nhìn (>=50%) mà chưa phải
+// trang đang chỉnh sửa, tự động chuyển trang đó thành trang "sống" — cho phép chỉnh sửa ngay tại
+// bất kỳ trang nào chỉ bằng cách cuộn tới, giống một trình xem PDF cuộn liên tục thông thường.
+function setupPageObserver(){
+  if(pageIO) pageIO.disconnect();
+  pageIO = new IntersectionObserver((entries)=>{
+    // Không tự chuyển trang khi người dùng đang gõ chữ dở trong ô sửa nổi, tránh làm mất nội dung
+    // đang gõ giữa chừng chỉ vì cuộn nhẹ chuột.
+    if(document.getElementById('editInput')) return;
+    let best = null;
+    for(const entry of entries){
+      if(entry.isIntersecting && (!best || entry.intersectionRatio > best.intersectionRatio)) best = entry;
+    }
+    if(best){
+      const idx = Number(best.target.dataset.idx);
+      if(idx !== currentIndex) renderPage(idx, { scrollIntoView:false });
+    }
+  }, { root: pagesScroll, threshold: [0.5] });
+  pageSlots.forEach(s=>pageIO.observe(s.el));
+}
+
+function scrollSlotIntoView(idx){
+  const slot = pageSlots[idx];
+  if(slot) slot.el.scrollIntoView({ block:'nearest' });
 }
 
 function toPdfSpace(px, py){ return { x: px/scale, y: py/scale }; }
@@ -1129,13 +1349,42 @@ function drawEdit(ctx, e, s){
     ctx.fillStyle = e.color || '#000000';
     ctx.font = `${e.fontSize*s}px ${e.fontFamily || 'Arial'}`;
     ctx.textBaseline = 'top';
+    applyOriginalSpacing(ctx, e, s);
     wrapText(ctx, e.text, e.x*s+2, e.y*s+1, e.w*s-4, e.fontSize*s*1.15);
+    ctx.wordSpacing = '0px';
   } else if(e.type === 'draw'){
     ctx.strokeStyle = e.color; ctx.lineWidth = e.width*s; ctx.lineCap='round'; ctx.lineJoin='round';
     ctx.beginPath();
     e.points.forEach((pt,i)=>{ const sx=pt.x*s, sy=pt.y*s; if(i===0) ctx.moveTo(sx,sy); else ctx.lineTo(sx,sy); });
     ctx.stroke();
   }
+}
+
+// LỖI ĐÃ SỬA (khoảng cách giữa các từ trong chữ vừa sửa khác với file gốc): khi vẽ lại một dòng
+// chữ đã có sẵn trong tài liệu gốc (chữ PDF thật hoặc chữ nhận diện OCR) bằng font thay thế
+// (Arial/Times New Roman...), độ rộng ký tự - đặc biệt là ký tự khoảng trắng - của font thay thế
+// gần như luôn KHÁC với font thật sự dùng trong tài liệu gốc, khiến khoảng cách giữa các từ bị
+// giãn ra hoặc co lại một cách rõ rệt so với bản gốc dù nội dung chữ giống hệt nhau. Hàm này tính
+// lại khoảng cách giữa các từ (ctx.wordSpacing) sao cho TỔNG độ rộng của dòng chữ mới khớp với độ
+// rộng thật của dòng chữ gốc (origLineW, đo được từ chữ PDF/OCR gốc lúc bắt đầu sửa) — nhờ vậy chữ
+// sau khi sửa "khít" đúng vào đúng khoảng đã có, giữ được mật độ/khoảng cách như bản gốc.
+function applyOriginalSpacing(ctx, e, s){
+  ctx.wordSpacing = '0px';
+  if(!e.origLineW || !e.text) return;
+  const firstLine = String(e.text).split('\n')[0];
+  const gaps = (firstLine.match(/ /g) || []).length;
+  if(!gaps) return;
+  const naturalW = ctx.measureText(firstLine).width;
+  const targetW = e.origLineW * s;
+  if(!isFinite(naturalW) || !isFinite(targetW) || naturalW <= 0 || targetW <= 0) return;
+  // Chỉ áp dụng khi độ dài chữ mới không lệch quá xa so với dòng gốc (người dùng chỉ chỉnh sửa nhẹ,
+  // không phải thay hẳn bằng một đoạn văn bản dài/ngắn khác hoàn toàn) — tránh làm chữ bị dồn ép
+  // hoặc kéo giãn bất thường khi nội dung đã đổi khác nhiều so với dòng gốc.
+  if(naturalW < targetW*0.75 || naturalW > targetW*1.35) return;
+  let extra = (targetW - naturalW) / gaps;
+  const maxAbs = (e.fontSize*s) * 0.3;
+  extra = Math.max(-maxAbs, Math.min(maxAbs, extra));
+  ctx.wordSpacing = extra.toFixed(2)+'px';
 }
 
 function wrapText(ctx, text, x, y, maxWidth, lineHeight){
@@ -1201,9 +1450,14 @@ document.getElementById('pageNumInput').onchange = (e)=>{
 // ---------- Zoom ----------
 document.getElementById('zoomIn').onclick = ()=>{ scale = Math.min(3, scale+0.15); updateZoom(); };
 document.getElementById('zoomOut').onclick = ()=>{ scale = Math.max(0.4, scale-0.15); updateZoom(); };
-function updateZoom(){
+async function updateZoom(){
   document.getElementById('zoomLabel').textContent = Math.round((scale/1.2)*100)+'%';
-  if(pages.length) renderPage(currentIndex);
+  if(pages.length){
+    // Đổi zoom làm thay đổi kích thước MỌI trang trong danh sách cuộn, không chỉ trang đang sửa,
+    // nên phải dựng lại toàn bộ các ô xem trước theo scale mới.
+    await rebuildPageSlots();
+    await renderPage(currentIndex);
+  }
 }
 
 // ---------- Chọn công cụ ----------
@@ -1334,6 +1588,8 @@ function collectRegionLines(items, region){
     const text = group.map(i=>i.text).join(' ').replace(/\s+/g,' ').trim();
     return {
       text,
+      x0: Math.min(...group.map(i=>i.x0)),
+      x1: Math.max(...group.map(i=>i.x1)),
       y0: Math.min(...group.map(i=>i.y0)),
       y1: Math.max(...group.map(i=>i.y1)),
       fontSize: group.reduce((s,i)=> s+(i.fontSize||10), 0) / group.length
@@ -1525,7 +1781,11 @@ function buildRegionEdits(mode, region, originalLines, editedText, fallbackFontS
     } else {
       editsToAdd.push({
         type: editType, x:region.x, y:cy0, w:region.w, h:ch,
-        text: newTextJoined, fontSize, fontFamily: currentFontFamily, color:'#000000', bg:true, bgColor
+        text: newTextJoined, fontSize, fontFamily: currentFontFamily, color:'#000000', bg:true, bgColor,
+        // Chỉ đặt origLineW khi hunk này khớp với ĐÚNG MỘT dòng gốc (trường hợp phổ biến nhất khi
+        // sửa nhanh theo vùng) — để applyOriginalSpacing() có thể canh khoảng cách chữ mới cho khớp
+        // với độ rộng thật của dòng gốc, giống hệt cách xử lý ở editLineAt().
+        origLineW: (oldLineObjs.length===1 ? (oldLineObjs[0].x1 - oldLineObjs[0].x0) : undefined)
       });
     }
   }
@@ -1564,7 +1824,7 @@ async function bulkEditRegion(mode){
     const sw = region.w*scale, sh = region.h*scale;
     const fontSize = Math.max(8, avgFontSize || 12);
     openEditInput(s.x, s.y, sw, sh, originalText, (val)=>{
-      const newVal = String(val).replace(/\r\n/g,'\n');
+      const newVal = normalizeEditText(String(val).replace(/\r\n/g,'\n'));
       if(newVal === originalText) return; // không có gì thay đổi -> không tạo edit, giữ nguyên bản gốc
       pushUndo(currentIndex);
       if(!originalLines.length){
@@ -1669,6 +1929,14 @@ function computeAutoBoxSize(text, fontFamily, fontSize, x){
   return { w, h };
 }
 
+// LỚP BẢO VỆ BỔ SUNG (phòng khoảng cách chữ bị giãn bất thường do chính NỘI DUNG chữ có sẵn nhiều
+// dấu cách liên tiếp — ví dụ dán vào từ nguồn có canh chữ dãn cách/letter-spacing, hoặc dữ liệu
+// OCR/PDF trích ra vô tình dính khoảng trắng thừa): gộp mọi chuỗi TỪ 2 dấu cách/tab/khoảng trắng
+// không ngắt (nbsp) liên tiếp trở lên thành ĐÚNG MỘT dấu cách trong từng dòng, trước khi lưu lại
+// thành nội dung chỉnh sửa. Không đụng tới dấu xuống dòng (\n) hay khoảng trắng đầu/cuối dòng.
+function normalizeEditText(val){
+  return String(val).split('\n').map(line => line.replace(/[ \t\u00A0]{2,}/g, ' ')).join('\n');
+}
 function openEditInput(screenX, screenY, screenW, screenH, initialText, onCommit){
   // Nếu đang có một ô nhập khác còn mở (chưa chốt), chốt nó lại trước để không bao giờ mất
   // chỉnh sửa trước đó, kể cả trong các trường hợp trình duyệt không tự bắn "blur" đúng lúc.
@@ -1753,6 +2021,7 @@ overlayCanvas.addEventListener('mousedown', (e)=>{
   if(activeTool === 'addtext'){
     setActiveEditFont(currentFontFamily, currentFontSize);
     openEditInput(px, py, 160, 26, '', (val)=>{
+      val = normalizeEditText(val);
       if(val && val.trim()){
         pushUndo(currentIndex);
         const newIdx = cur().edits.length;
@@ -1830,6 +2099,7 @@ function editLineAt(px, py, editType, customLines){
       selectedEditIndex = hitIdx;
       setActiveEditFont(ed.fontFamily, ed.fontSize);
       openEditInput(ed.x*scale, ed.y*scale, ed.w*scale, ed.h*scale, ed.text, (val)=>{
+        val = normalizeEditText(val);
         pushUndo(currentIndex);
         if(val && val.trim()){
           ed.text = val;
@@ -1854,6 +2124,7 @@ function editLineAt(px, py, editType, customLines){
     setActiveEditFont(currentFontFamily, currentFontSize || 14);
     const defaultFS = currentFontSize || 14;
     openEditInput(px, py, 150, defaultFS*1.4, '', (val)=>{
+      val = normalizeEditText(val);
       if(val && val.trim()){
         pushUndo(currentIndex);
         const newIdx = p.edits.length;
@@ -1890,6 +2161,7 @@ function editLineAt(px, py, editType, customLines){
   );
 
   openEditInput(sx, sy, sw, sh, initialText, (val)=>{
+    val = normalizeEditText(val);
     if(val === initialText && currentFontFamily === (existing ? existing.edit.fontFamily : 'Arial')
        && currentFontSize === Math.round(existing ? existing.edit.fontSize : (line.fontSize||12))){
       return; // không đổi gì cả (kể cả font/cỡ) -> giữ nguyên, không tạo chỉnh sửa mới
@@ -1906,6 +2178,11 @@ function editLineAt(px, py, editType, customLines){
         if(!existing.edit.bg){
           existing.edit.bg = true;
           existing.edit.bgColor = existing.edit.bgColor || sampleBackgroundColor(existing.edit.x, existing.edit.y, existing.edit.w, existing.edit.h);
+        }
+        // Nếu chỉnh sửa này được tạo từ trước khi có origLineW (bản cũ hơn), bổ sung ngay bây giờ
+        // từ dòng chữ gốc vừa khớp được, để lần vẽ lại này cũng được canh khoảng cách đúng như gốc.
+        if(existing.edit.origLineW == null && line){
+          existing.edit.origLineW = line.x1 - line.x0;
         }
         // QUAN TRỌNG (sửa lỗi chữ mới không hiện ra khi xuất PDF): nới khung vừa đủ chứa hết nội
         // dung MỚI (có thể dài hơn khung của dòng chữ gốc rất nhiều) — chỉ nới rộng ra, không thu
@@ -1940,7 +2217,11 @@ function editLineAt(px, py, editType, customLines){
         // Lưu lại vị trí/kích thước GỐC của dòng chữ (trước khi khung được nới rộng ra cho nội
         // dung mới) — dùng để so khớp ở findOverlappingTextEdit, không đổi kể cả khi ed.x/y/w/h
         // đã phình to hơn nhiều so với dòng gốc lúc ban đầu.
-        srcX0: line.x0, srcY0: line.y0, srcX1: line.x1, srcY1: line.y1
+        srcX0: line.x0, srcY0: line.y0, srcX1: line.x1, srcY1: line.y1,
+        // Độ rộng THẬT của dòng chữ gốc (PDF thật/OCR) — dùng để giữ đúng khoảng cách giữa các từ
+        // khi vẽ lại bằng font thay thế (xem applyOriginalSpacing), không đổi kể cả khi khung ed.w
+        // sau này được nới rộng ra cho nội dung dài hơn.
+        origLineW: line.x1 - line.x0
       });
       selectedEditIndex = newIdx;
     } else {
@@ -1966,6 +2247,7 @@ overlayCanvas.addEventListener('dblclick', (e)=>{
   if(ed.type==='text' || ed.type==='ocrfix' || ed.type==='textfix'){
     selectedEditIndex = idx;
     openEditInput(ed.x*scale, ed.y*scale, ed.w*scale, ed.h*scale, ed.text, (val)=>{
+      val = normalizeEditText(val);
       pushUndo(currentIndex);
       if(val && val.trim()){
         ed.text = val;
@@ -2379,8 +2661,7 @@ document.getElementById('btnDownloadTxt').onclick = ()=>{
 // ---------- Lưu / Xuất PDF ----------
 // Toàn bộ thao tác ghép/xuất PDF chỉ làm việc TRÊN BỘ NHỚ (mảng `pages`/`edits` trong trình duyệt)
 // và tạo ra một file PDF MỚI để tải xuống — file PDF gốc mà người dùng mở lên (trên máy họ) không
-// hề bị đụng tới hay ghi đè trong suốt quá trình này. Hàm dùng chung cho cả nút "Lưu PDF" (tên mặc
-// định) lẫn "Lưu thành bản khác…" (tên do người dùng tự đặt), để 2 lần lưu tạo ra 2 file tách biệt.
+// hề bị đụng tới hay ghi đè trong suốt quá trình này.
 async function exportPdfAs(filename){
   if(!pages.length){ alert('Hãy mở một file PDF trước.'); return; }
   // QUAN TRỌNG: chốt lại ô nhập sửa chữ đang mở (nếu có) TRƯỚC khi đọc dữ liệu "edits" để xuất
@@ -2467,20 +2748,6 @@ async function exportPdfAs(filename){
 }
 
 document.getElementById('btnSave').onclick = ()=> exportPdfAs(originalFileName);
-
-// "Lưu thành bản khác" (Save As): hỏi tên file mới rồi xuất RIÊNG một bản PDF với tên đó, hoàn
-// toàn tách biệt khỏi bản đã lưu bằng nút "Lưu PDF" và tách biệt khỏi file gốc — không ảnh hưởng
-// lẫn nhau. Người dùng có thể bấm nút này nhiều lần để lưu ra nhiều phiên bản khác nhau.
-document.getElementById('btnSaveAs').onclick = async ()=>{
-  if(!pages.length){ alert('Hãy mở một file PDF trước.'); return; }
-  const suggested = originalFileName.replace(/\.pdf$/i,'') + '-ban-khac.pdf';
-  let name = prompt('Nhập tên cho file PDF mới (sẽ không ảnh hưởng tới file gốc hay các bản đã lưu trước đó):', suggested);
-  if(name === null) return; // người dùng bấm Hủy
-  name = name.trim();
-  if(!name) return;
-  if(!/\.pdf$/i.test(name)) name += '.pdf';
-  await exportPdfAs(name);
-};
 
 // ---------- Xuất sang Word (.doc) ----------
 function escapeHtml(str){
