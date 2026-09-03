@@ -204,13 +204,27 @@
   #rightPanel .actions{padding:8px;border-top:1px solid var(--border);display:flex;gap:6px;}
   #rightPanel .actions button{flex:1;}
 
-  /* status bar */
+  /* ===== Status bar =====
+     TRƯỚC ĐÂY: #toolLabel hiển thị nguyên văn mô tả rất dài của từng công cụ (VD "Chọn vùng — kéo
+     để chọn một vùng trên trang, sau đó bấm..."). Vì #statusbar là flex nhưng không chặn wrap, chữ
+     dài sẽ tự xuống dòng, khiến CẢ THANH TRẠNG THÁI cao lên theo mỗi lần đổi công cụ -> #body (chứa
+     #canvasArea xem PDF) bị co lại theo, làm giảm vùng hiển thị PDF. Giờ ép toàn bộ thanh trạng thái
+     LUÔN 1 DÒNG DUY NHẤT, cố định chiều cao thấp (28px) bất kể nội dung dài ngắn: #toolLabel bị cắt
+     bớt bằng "..." (text-overflow:ellipsis) và có title=... để xem đầy đủ khi rê chuột vào. Nhờ vậy
+     #canvasArea phía trên luôn được nhường tối đa không gian, không còn bị "ăn" mất khi đổi công cụ. */
   #statusbar{
     background:var(--bg-toolbar-2);border-top:1px solid var(--border);
-    padding:5px 12px;display:flex;align-items:center;gap:14px;font-size:11.5px;color:var(--text-dim);flex-shrink:0;
+    padding:0 12px;height:26px;min-height:26px;max-height:26px;
+    display:flex;align-items:center;gap:12px;font-size:11px;color:var(--text-dim);
+    flex-shrink:0;flex-wrap:nowrap;white-space:nowrap;overflow:hidden;
   }
-  #statusbar input{width:40px;background:#1c1e22;border:1px solid var(--border);color:var(--text-light);text-align:center;border-radius:3px;}
-  #statusbar .fill{flex:1;}
+  #statusbar input{width:38px;background:#1c1e22;border:1px solid var(--border);color:var(--text-light);text-align:center;border-radius:3px;flex-shrink:0;}
+  #statusbar>span:first-child{flex-shrink:0;}
+  #toolLabel{
+    flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:default;
+  }
+  #statusbar .fill{flex:0 0 0;}
+  #spinner{flex-shrink:0;}
   #spinner{display:none;align-items:center;gap:6px;color:#ffd7c9;}
   #spinner.show{display:flex;}
   .dot{width:6px;height:6px;border-radius:50%;background:var(--accent);animation:pulse 1s infinite ease-in-out;}
@@ -478,7 +492,7 @@
 
 <div id="statusbar">
   <span>Trang <input type="number" id="pageNumInput" value="1" min="1"> / <span id="pageCount">0</span></span>
-  <span id="toolLabel">Công cụ: Chọn</span>
+  <span id="toolLabel" title="Công cụ: Chọn (nhấn để chọn, kéo để di chuyển, đúp chuột để sửa chữ, phím Delete để xóa)">Công cụ: Chọn (nhấn để chọn, kéo để di chuyển, đúp chuột để sửa chữ, phím Delete để xóa)</span>
   <span class="fill"></span>
   <span id="spinner"><span class="dot"></span> Đang xử lý OCR…</span>
 </div>
@@ -1509,7 +1523,12 @@ document.querySelectorAll('.tbtn[data-tool]').forEach(btn=>{
       activeTool = tool;
       document.querySelectorAll('.tbtn[data-tool]').forEach(b=>b.classList.remove('active'));
       btn.classList.add('active');
-      document.getElementById('toolLabel').textContent = 'Công cụ: ' + toolLabels[activeTool];
+      {
+        const fullLabel = 'Công cụ: ' + toolLabels[activeTool];
+        const toolLabelEl = document.getElementById('toolLabel');
+        toolLabelEl.textContent = fullLabel;
+        toolLabelEl.title = fullLabel; // xem đầy đủ khi rê chuột, vì thanh trạng thái chỉ còn 1 dòng
+      }
       selectedEditIndex = -1;
       hoverLine = null;
       overlayCanvas.className = 'tool-' + activeTool;
