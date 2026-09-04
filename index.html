@@ -547,6 +547,8 @@
   <button class="tbtn" data-tool="select" id="toolSelect"><span class="ic">🖱️</span>Select</button>
   <button class="tbtn" data-tool="textselect" id="toolTextSelect" title="Bôi đen văn bản trong PDF để copy (Ctrl+C). Có thể là chữ PDF thật hoặc chữ OCR từ ảnh/scan. Sau khi bôi đen, bấm nút 'Đánh dấu' nổi lên để tô sáng đúng đoạn đã chọn."><span class="ic">🔤</span>Select text to copy</button>
   <button class="tbtn" data-tool="addtext" id="toolAddText"><span class="ic">🅰️</span>Add text</button>
+  <button class="tbtn" id="btnInsertImage" title="Chèn ảnh (PNG/JPG) vào trang đang xem — sau khi chèn có thể kéo để di chuyển, kéo 4 góc để đổi kích thước"><span class="ic">🖼️</span>Insert Image</button>
+  <input type="file" id="insertImageInput" accept="image/png,image/jpeg,image/jpg,image/webp,image/gif,image/bmp" style="display:none">
   <button class="tbtn" data-tool="edittext" id="toolEditText" title="Bấm để hiện toàn bộ chữ có thể sửa trên trang — trỏ chuột vào bất kỳ đoạn nào và bấm để sửa ngay, không cần chọn vùng"><span class="ic">✎</span>Edit Text</button>
   <div class="sep"></div>
   <button class="tbtn" data-tool="region" id="toolRegion" title="Kéo chọn một vùng trên trang, sau đó bấm 'Edit Text' hoặc 'Sửa văn bản (OCR)' để sửa nhanh cả vùng"><span class="ic">🔲</span>Selection area</button>
@@ -1544,8 +1546,29 @@ function drawLineWithWordSpacing(page, line, startX, y, fontSize, font, color, f
 // Vẽ 1 chỉnh sửa lên trang PDF thật (pdf-lib), giữ nguyên nội dung vector gốc của trang
 // (khác với cách cũ là chụp toàn trang thành ảnh PNG rồi nhúng lại — cách đó biến cả trang
 // thành ảnh, làm mất chữ gốc dạng văn bản thật và khiến việc "sửa văn bản gốc" không có tác dụng thật sự).
-function drawEditOnPdfPage(page, ed, H, font, fallbackFont){
-  if(ed.type === 'highlight'){
+// Chuyển 1 data URL (data:image/png;base64,....) thành Uint8Array byte thô, để nhúng vào PDF
+// qua pdf-lib (embedPng). Dùng fetch() vì trình duyệt hỗ trợ fetch trực tiếp trên data: URL,
+// đơn giản và đáng tin cậy hơn tự viết code giải mã base64 tay.
+async function dataUrlToBytes_(dataUrl){
+  const res = await fetch(dataUrl);
+  return new Uint8Array(await res.arrayBuffer());
+}
+
+// Nhúng ảnh (đã convert sẵn về PNG lúc chèn — xem insertImageFile) vào outDoc và cache lại theo
+// đúng edit object, để nếu cùng 1 ảnh được vẽ nhiều lần (hiếm khi xảy ra) cũng không nhúng lặp lại.
+async function embedImageForEdit_(outDoc, ed, embedCache){
+  if(embedCache.has(ed)) return embedCache.get(ed);
+  const bytes = await dataUrlToBytes_(ed.imageDataUrl);
+  const embedded = await outDoc.embedPng(bytes);
+  embedCache.set(ed, embedded);
+  return embedded;
+}
+
+async function drawEditOnPdfPage(page, ed, H, font, fallbackFont, outDoc, embedCache){
+  if(ed.type === 'image'){
+    const embedded = await embedImageForEdit_(outDoc, ed, embedCache);
+    page.drawImage(embedded, { x: ed.x, y: H-(ed.y+ed.h), width: ed.w, height: ed.h });
+  } else if(ed.type === 'highlight'){
     const [r,g,b] = hexToRgbFloats(ed.color);
     page.drawRectangle({ x: ed.x, y: H-(ed.y+ed.h), width: ed.w, height: ed.h, color: rgb(r,g,b), opacity: 0.35 });
   } else if(ed.type === 'whiteout'){
@@ -1661,6 +1684,14 @@ let dragStart = null;
 let selectedEditIndex = -1;
 let draggingSelected = false;
 let dragOffset = null;
+// Trạng thái đang thay đổi kích thước (resize) một ảnh đã chèn — kéo tại 1 trong 4 góc,
+// giữ nguyên tỉ lệ khung hình gốc của ảnh, neo cố định tại góc đối diện với góc đang kéo.
+const IMAGE_HANDLE_SIZE = 10; // kích thước ô vuông tay cầm resize, tính bằng pixel màn hình (không nhân scale)
+let resizingImage = false;
+let resizeHandleName = null; // 'nw' | 'ne' | 'sw' | 'se'
+let resizeAnchor = null;     // góc đối diện (pdf-space), giữ cố định trong lúc resize
+let resizeAspect = 1;        // tỉ lệ w/h gốc của ảnh, giữ nguyên khi resize
+let resizeTargetEdit = null;
 // Hàm "chốt" (commit) ô nhập sửa chữ đang mở, nếu có — dùng để tránh mất chỉnh sửa cuối cùng
 // khi người dùng gõ xong rồi bấm thẳng vào một nút trên toolbar (Lưu PDF, Xuất Word...) mà
 // KHÔNG click ra chỗ khác trước. Trên Safari/Firefox (macOS), việc bấm vào <button> không luôn
@@ -1819,6 +1850,70 @@ document.getElementById('insertFileInput').onchange = async (e) => {
   buildThumbnails();
   e.target.value = '';
 };
+
+// ---------- Chèn ảnh (Insert Image) ----------
+document.getElementById('btnInsertImage').onclick = () => {
+  if(!pages.length){ alert('Hãy mở một file PDF trước.'); return; }
+  document.getElementById('insertImageInput').click();
+};
+
+document.getElementById('insertImageInput').onchange = async (e) => {
+  const file = e.target.files[0];
+  e.target.value = ''; // cho phép chọn lại đúng file đó lần sau vẫn kích hoạt sự kiện change
+  if(!file) return;
+  try{
+    await insertImageFile(file);
+  }catch(err){
+    console.error('Lỗi khi chèn ảnh:', err);
+    alert('Không chèn được ảnh: ' + err.message);
+  }
+};
+
+// Đọc 1 file ảnh (PNG/JPG/WEBP/GIF/BMP...) người dùng chọn, CHUẨN HOÁ về PNG bằng cách vẽ lại
+// qua <canvas> rồi canvas.toDataURL('image/png') — đảm bảo LUÔN nhúng được vào PDF lúc xuất file
+// (pdf-lib chỉ hỗ trợ nhúng thẳng PNG hoặc JPEG, không hỗ trợ WEBP/GIF/BMP...), đồng thời giữ được
+// kênh alpha (nền trong suốt) nếu ảnh gốc có. Sau khi chèn, ảnh được TỰ ĐỘNG CHỌN sẵn và chuyển
+// sang công cụ "Select" để người dùng có thể kéo di chuyển hoặc kéo 4 góc để đổi kích thước ngay.
+async function insertImageFile(file){
+  const dataUrl = await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error('Không đọc được file ảnh.'));
+    reader.readAsDataURL(file);
+  });
+  const img = await new Promise((resolve, reject) => {
+    const im = new Image();
+    im.onload = () => resolve(im);
+    im.onerror = () => reject(new Error('File không phải ảnh hợp lệ hoặc bị hỏng.'));
+    im.src = dataUrl;
+  });
+  const off = document.createElement('canvas');
+  off.width = img.naturalWidth; off.height = img.naturalHeight;
+  off.getContext('2d').drawImage(img, 0, 0);
+  const pngDataUrl = off.toDataURL('image/png');
+
+  // Kích thước chèn ban đầu: giữ nguyên tỉ lệ khung hình gốc, co lại nếu quá lớn so với trang
+  // (tối đa 50% chiều rộng/chiều cao trang), phóng lên nếu ảnh quá nhỏ (tối thiểu 60pt ở cạnh dài
+  // nhất) để không bị chèn vào một chấm bé xíu khó thấy. Chèn vào giữa trang đang xem.
+  const pageW = pdfCanvas.width/scale || 595;
+  const pageH = pdfCanvas.height/scale || 842;
+  const maxW = pageW * 0.5, maxH = pageH * 0.5;
+  let w = img.naturalWidth, h = img.naturalHeight;
+  const shrink = Math.min(maxW/w, maxH/h, 1);
+  w *= shrink; h *= shrink;
+  const MIN_DIM = 60;
+  if(Math.max(w,h) < MIN_DIM){
+    const grow = MIN_DIM / Math.max(w,h);
+    w *= grow; h *= grow;
+  }
+  const x = (pageW - w)/2, y = (pageH - h)/2;
+
+  pushUndo(currentIndex);
+  cur().edits.push({ type:'image', x, y, w, h, imageDataUrl: pngDataUrl });
+  document.getElementById('toolSelect').click(); // chuyển sang công cụ Select (cũng vẽ lại overlay)
+  selectedEditIndex = cur().edits.length - 1;     // rồi tự chọn luôn ảnh vừa chèn
+  redrawOverlay();
+}
 
 // ---------- Chèn trang trắng ----------
 document.getElementById('btnInsertBlank').onclick = async () => {
@@ -2256,6 +2351,40 @@ function drawSelectionBox(e){
   octx.strokeStyle = '#2196f3'; octx.lineWidth = 1.5; octx.setLineDash([5,4]);
   octx.strokeRect(b.x*scale-3, b.y*scale-3, b.w*scale+6, b.h*scale+6);
   octx.restore();
+  // Ảnh đã chèn: vẽ thêm 4 tay cầm ở góc để người dùng kéo chỉnh kích thước (giữ tỉ lệ gốc).
+  if(e.type === 'image'){
+    octx.save();
+    octx.setLineDash([]);
+    octx.fillStyle = '#2196f3';
+    octx.strokeStyle = '#ffffff';
+    octx.lineWidth = 1.5;
+    for(const h of getImageHandlePositions(b)){
+      octx.fillRect(h.px - IMAGE_HANDLE_SIZE/2, h.py - IMAGE_HANDLE_SIZE/2, IMAGE_HANDLE_SIZE, IMAGE_HANDLE_SIZE);
+      octx.strokeRect(h.px - IMAGE_HANDLE_SIZE/2, h.py - IMAGE_HANDLE_SIZE/2, IMAGE_HANDLE_SIZE, IMAGE_HANDLE_SIZE);
+    }
+    octx.restore();
+  }
+}
+
+// Trả về toạ độ (px màn hình, đã nhân scale) của 4 tay cầm góc cho khung ảnh có bounds b (pdf-space).
+function getImageHandlePositions(b){
+  return [
+    { name:'nw', px: b.x*scale,       py: b.y*scale       },
+    { name:'ne', px: (b.x+b.w)*scale, py: b.y*scale       },
+    { name:'sw', px: b.x*scale,       py: (b.y+b.h)*scale },
+    { name:'se', px: (b.x+b.w)*scale, py: (b.y+b.h)*scale }
+  ];
+}
+
+// Nếu (px,py) (toạ độ màn hình) nằm trong 1 tay cầm resize của ảnh đang chọn ed, trả về tên góc đó.
+function getImageHandleAt(ed, px, py){
+  if(!ed || ed.type !== 'image') return null;
+  const b = getEditBounds(ed);
+  const tol = IMAGE_HANDLE_SIZE/2 + 2;
+  for(const h of getImageHandlePositions(b)){
+    if(Math.abs(px-h.px) <= tol && Math.abs(py-h.py) <= tol) return h.name;
+  }
+  return null;
 }
 
 function hitTestEdits(px, py){
@@ -2288,6 +2417,42 @@ function drawEdit(ctx, e, s){
     ctx.beginPath();
     e.points.forEach((pt,i)=>{ const sx=pt.x*s, sy=pt.y*s; if(i===0) ctx.moveTo(sx,sy); else ctx.lineTo(sx,sy); });
     ctx.stroke();
+  } else if(e.type === 'image'){
+    drawImageEdit(ctx, e, s);
+  }
+}
+
+// Cache HTMLImageElement đã giải mã, khoá theo CHUỖI imageDataUrl (không lưu trực tiếp lên đối
+// tượng edit) — vì Undo/Redo hoạt động bằng cách JSON.stringify() rồi JSON.parse() lại toàn bộ
+// mảng edits (xem pushUndo/undo), nên bất kỳ property nào không phải dữ liệu thuần (như 1
+// HTMLImageElement) đặt trực tiếp lên edit sẽ bị "làm phẳng" mất hết sau khi undo, khiến ảnh
+// không bao giờ vẽ được nữa. Cache độc lập bên ngoài edit object này tránh hẳn vấn đề đó, đồng
+// thời tự nhiên dùng lại đúng 1 bản đã giải mã nếu cùng một ảnh xuất hiện ở nhiều edit khác nhau.
+const imageEditDecodeCache = new Map();
+function getOrLoadImageEl_(dataUrl){
+  let img = imageEditDecodeCache.get(dataUrl);
+  if(!img){
+    img = new Image();
+    img.onload = () => { redrawOverlay(); };
+    img.src = dataUrl;
+    imageEditDecodeCache.set(dataUrl, img);
+  }
+  return img;
+}
+
+// Vẽ ảnh đã chèn lên canvas overlay. Trong lúc ảnh còn đang giải mã (chỉ mất 1 khung hình đầu),
+// tạm vẽ khung viền chấm gạch + nhãn "Đang tải ảnh…" để không bị trống trơn.
+function drawImageEdit(ctx, e, s){
+  const img = getOrLoadImageEl_(e.imageDataUrl);
+  if(img.complete && img.naturalWidth > 0){
+    ctx.drawImage(img, e.x*s, e.y*s, e.w*s, e.h*s);
+  } else {
+    ctx.save();
+    ctx.strokeStyle = '#9aa0a8'; ctx.setLineDash([4,3]);
+    ctx.strokeRect(e.x*s, e.y*s, e.w*s, e.h*s);
+    ctx.fillStyle = '#9aa0a8'; ctx.font = `${12*s}px Arial`; ctx.textBaseline='top';
+    ctx.fillText('Đang tải ảnh…', e.x*s+4, e.y*s+4);
+    ctx.restore();
   }
 }
 
@@ -3103,6 +3268,24 @@ overlayCanvas.addEventListener('mousedown', (e)=>{
       editLineAt(px,py,'textfix', editTextLinesFor(cur()));
     }
   } else if(activeTool === 'select'){
+    // Nếu đang có 1 ảnh được chọn sẵn, ưu tiên kiểm tra xem có bấm trúng tay cầm resize ở góc
+    // không, trước khi xử lý như một cú bấm chọn/kéo-di-chuyển bình thường.
+    const selectedEd = selectedEditIndex>=0 ? cur().edits[selectedEditIndex] : null;
+    const handle = getImageHandleAt(selectedEd, px, py);
+    if(handle){
+      pushUndo(currentIndex);
+      const b = getEditBounds(selectedEd);
+      resizingImage = true;
+      resizeHandleName = handle;
+      resizeTargetEdit = selectedEd;
+      resizeAspect = (b.h > 0) ? (b.w / b.h) : 1;
+      // Góc neo là góc ĐỐI DIỆN với tay cầm đang kéo — góc này giữ nguyên vị trí khi resize.
+      resizeAnchor = {
+        x: handle.includes('e') ? b.x : b.x + b.w,
+        y: handle.includes('s') ? b.y : b.y + b.h
+      };
+      return;
+    }
     const idx = hitTestEdits(px, py);
     selectedEditIndex = idx;
     if(idx>=0){
@@ -3363,6 +3546,9 @@ overlayCanvas.addEventListener('mousemove', (e)=>{
   if(!pages.length) return;
   const rect = overlayCanvas.getBoundingClientRect();
   const px = e.clientX-rect.left, py = e.clientY-rect.top;
+  // Mặc định về con trỏ chuột bình thường; nhánh xử lý bên dưới (nếu đang rê trên tay cầm resize
+  // ảnh) sẽ tự ghi đè lại thành mũi tên resize khi cần, nên phải reset TRƯỚC mỗi lần di chuột.
+  if(!resizingImage && !draggingSelected) overlayCanvas.style.cursor = '';
 
   if(drawingFreehand){
     const pdfP = toPdfSpace(px,py);
@@ -3390,6 +3576,23 @@ overlayCanvas.addEventListener('mousemove', (e)=>{
     const w = Math.abs(px-regionDragStart.x), h = Math.abs(py-regionDragStart.y);
     octx.strokeStyle = '#2196f3'; octx.lineWidth = 1.5;
     octx.setLineDash([6,4]); octx.strokeRect(x,y,w,h); octx.setLineDash([]);
+  } else if(resizingImage && resizeTargetEdit){
+    // Kéo tay cầm góc: tính lại w/h mới sao cho góc đối diện (resizeAnchor) đứng yên, và luôn
+    // giữ nguyên tỉ lệ khung hình gốc của ảnh (resizeAspect) để ảnh không bị méo.
+    const pdfP = toPdfSpace(px,py);
+    const MIN_SIZE = 12; // pt, kích thước tối thiểu để tránh ảnh co về 0 hoặc bị lật ngược
+    let rawW = Math.abs(pdfP.x - resizeAnchor.x);
+    let rawH = Math.abs(pdfP.y - resizeAnchor.y);
+    // Ưu tiên chiều có thay đổi lớn hơn để quyết định kích thước mới, chiều còn lại suy ra theo tỉ lệ —
+    // giúp thao tác kéo theo đường chéo tự nhiên, mượt tay hơn là chỉ khớp cứng theo 1 chiều.
+    let newW, newH;
+    if(rawW / resizeAspect >= rawH){ newW = Math.max(MIN_SIZE, rawW); newH = newW / resizeAspect; }
+    else { newH = Math.max(MIN_SIZE, rawH); newW = newH * resizeAspect; }
+    const ed = resizeTargetEdit;
+    ed.w = newW; ed.h = newH;
+    ed.x = resizeHandleName.includes('e') ? resizeAnchor.x : resizeAnchor.x - newW;
+    ed.y = resizeHandleName.includes('s') ? resizeAnchor.y : resizeAnchor.y - newH;
+    redrawOverlay();
   } else if(draggingSelected && dragOffset){
     const pdfP = toPdfSpace(px,py);
     const ed = dragOffset.edit;
@@ -3400,6 +3603,11 @@ overlayCanvas.addEventListener('mousemove', (e)=>{
       ed.points = ed.points.map(pt=>({x:pt.x+ddx, y:pt.y+ddy}));
     } else { ed.x = newX; ed.y = newY; }
     redrawOverlay();
+  } else if(activeTool==='select' && selectedEditIndex>=0 && cur().edits[selectedEditIndex] && cur().edits[selectedEditIndex].type==='image'){
+    // Không đang kéo gì cả nhưng có ảnh đang được chọn: đổi con trỏ chuột khi rê qua tay cầm góc,
+    // để người dùng biết có thể kéo để đổi kích thước.
+    const handle = getImageHandleAt(cur().edits[selectedEditIndex], px, py);
+    overlayCanvas.style.cursor = handle ? (handle==='nw'||handle==='se' ? 'nwse-resize' : 'nesw-resize') : '';
   } else if((activeTool==='ocr' || activeTool==='edittext') && !document.getElementById('editInput')){
     // Trỏ chuột tới đâu thì khoanh vùng highlight đúng dòng chữ ở đó, báo hiệu "bấm vào đây để sửa"
     // — giống trải nghiệm sửa văn bản của các phần mềm PDF chuyên dụng.
@@ -3435,6 +3643,11 @@ overlayCanvas.addEventListener('mouseleave', ()=>{
 });
 
 window.addEventListener('mouseup', (e)=>{
+  if(resizingImage){
+    resizingImage = false; resizeHandleName = null; resizeAnchor = null; resizeTargetEdit = null;
+    overlayCanvas.style.cursor = '';
+    redrawOverlay();
+  }
   if(draggingSelected){ draggingSelected = false; dragOffset = null; redrawOverlay(); }
   if(drawingFreehand){
     drawingFreehand = false;
@@ -3774,6 +3987,7 @@ async function exportPdfAs(filename){
   spinner.classList.add('show');
   try{
     const outDoc = await PDFDocument.create();
+    const imageEmbedCache = new Map(); // cache ảnh đã nhúng (theo từng edit) trong lượt xuất file này
     // Font dự phòng CHẮC CHẮN dùng được (chuẩn PDF, không cần tải/nhúng gì thêm) — dùng khi font
     // Việt hoá nhúng sẵn vì lý do gì đó không vẽ được (xem safeDrawText), để chữ luôn hiện ra được
     // trong file PDF lưu ra, thay vì chỉ còn lại mảng nền che mà không có chữ nào cả.
@@ -3862,7 +4076,7 @@ async function exportPdfAs(filename){
       }
       for(const ed of p.edits){
         if(ed._nativeApplied) continue; // đã sửa thật trực tiếp trên content stream, không vẽ đè nữa
-        drawEditOnPdfPage(pageObj, ed, H, editFont, fallbackFont);
+        await drawEditOnPdfPage(pageObj, ed, H, editFont, fallbackFont, outDoc, imageEmbedCache);
       }
     }
 
