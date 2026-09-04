@@ -4015,10 +4015,117 @@ async function getPageVisualLinesForWord(idx){
   return { lines, W: W||612, H: H||792 };
 }
 
-// Dựng HTML cho MỘT trang: một khối kích thước đúng bằng trang gốc (point), mỗi dòng chữ được
-// định vị TUYỆT ĐỐI (position:absolute) đúng toạ độ đã trích được — Word (qua bộ lọc mso) hiểu
-// và giữ được vị trí này, nên bảng biểu/canh lề trông giống hệt bản gốc thay vì bị dồn thành
-// văn bản xuôi dòng như cách xuất trước đây.
+// LƯU Ý QUAN TRỌNG: Microsoft Word (bộ lọc "mso" dùng khi mở file .doc dạng HTML) KHÔNG áp dụng
+// đáng tin cậy thuộc tính CSS "position:absolute" trên các thẻ <div>/<p> thường — Word chỉ xếp
+// chúng thành các khối văn bản XUÔI DÒNG theo đúng thứ tự xuất hiện trong HTML, bỏ qua toạ độ
+// left/top. Đó là lý do trước đây các <div> viền mảnh (vẽ đường kẻ bảng) và toạ độ đặt chữ đều
+// bị Word bỏ qua khi mở file .doc: mọi thứ bị dồn lại thành một danh sách xuôi dòng, KHÔNG còn
+// bảng biểu (mất hết cột/hàng). Ngược lại, Word LUÔN vẽ đúng viền của thẻ <table><td style=
+// "border:...">, bất kể vị trí tuyệt đối có được tôn trọng hay không. Vì vậy hàm dưới đây dựng
+// LẠI một bảng HTML thật (<table>) từ các đường kẻ ngang/dọc dò được, thay vì vẽ rời từng đường
+// kẻ bằng div — đảm bảo file Word xuất ra luôn hiển thị được cột và hàng.
+
+// Gộp các toạ độ đường kẻ gần nhau (dung sai TOL điểm) thành các mốc hàng/cột duy nhất.
+function clusterLineCoords_(vals, tol){
+  const sorted = vals.slice().sort((a,b)=>a-b);
+  const out = [];
+  for(const v of sorted){
+    if(out.length && v - out[out.length-1] < tol) continue;
+    out.push(v);
+  }
+  return out;
+}
+
+// Từ danh sách đường kẻ ngang/dọc (toạ độ PDF gốc thu ở extractTableLinesForWord) + danh sách
+// dòng chữ (toạ độ trên-trái, giống Edit Text), dựng một bảng HTML thật (<table>) với viền rõ
+// ràng. Trả về null nếu không đủ đường kẻ để tạo thành một lưới bảng thật (khi đó nơi gọi sẽ
+// tự chuyển sang cách vẽ dự phòng bằng div, dùng cho các trang không có bảng).
+function buildTableFromSegments_(tableLines, lines, H){
+  const TOL = 2.2; // pt
+
+  // BƯỚC 1 — lọc bỏ các đường kẻ NGẮN không thuộc khung bảng (ví dụ gạch chân dưới dòng
+  // "Độc lập - Tự do - Hạnh phúc", gạch chân tiêu đề, gạch dưới ô ký tên...). Đường kẻ hàng/cột
+  // THẬT của bảng luôn chạy gần hết bề rộng/bề cao của cả bảng, nên chỉ giữ lại các đường có độ
+  // dài >= 55% đường dài nhất cùng hướng. Nếu không lọc bước này, các đường kẻ ngắn/không liên
+  // quan sẽ làm khung bảng bị "nới rộng" sai phạm vi thật, kéo theo chữ không thuộc bảng (tiêu
+  // đề, đoạn giới thiệu...) bị gộp nhầm vào trong các ô.
+  const hSegs = tableLines.segments.filter(s => s.orient === 'h');
+  const vSegs = tableLines.segments.filter(s => s.orient === 'v');
+  if(!hSegs.length || !vSegs.length) return null;
+  const maxHSpan = Math.max(...hSegs.map(s => s.x1 - s.x0));
+  const maxVSpan = Math.max(...vSegs.map(s => s.y1 - s.y0));
+  const hCore = hSegs.filter(s => (s.x1 - s.x0) >= maxHSpan * 0.55);
+  const vCore = vSegs.filter(s => (s.y1 - s.y0) >= maxVSpan * 0.55);
+  if(hCore.length < 3 || vCore.length < 2) return null;
+
+  const hYs = hCore.map(s => H - s.y);
+  const vXs = vCore.map(s => s.x);
+  const rowYs = clusterLineCoords_(hYs, TOL);
+  const colXs = clusterLineCoords_(vXs, TOL);
+  // Cần tối thiểu 2 hàng (3 đường ngang) và 1 cột (2 đường dọc) mới coi là một bảng thật.
+  if(rowYs.length < 3 || colXs.length < 2) return null;
+
+  const top = rowYs[0], bottom = rowYs[rowYs.length-1];
+  const left = colXs[0], right = colXs[colXs.length-1];
+  const nRows = rowYs.length - 1, nCols = colXs.length - 1;
+  const cells = Array.from({length:nRows}, () => Array.from({length:nCols}, () => []));
+  const outside = [];
+
+  for(const l of lines){
+    if(l.y0 < top - TOL || l.y0 > bottom + TOL || l.x0 < left - TOL || l.x0 > right + TOL){
+      outside.push(l); continue;
+    }
+    const r = rowYs.findIndex((y,i)=> i<nRows && l.y0 >= y - TOL && l.y0 < rowYs[i+1] + TOL);
+    const c = colXs.findIndex((x,i)=> i<nCols && l.x0 >= x - TOL && l.x0 < colXs[i+1] + TOL);
+    // BƯỚC 2 — nếu một dòng chữ nằm trong khung bao chung của bảng nhưng KHÔNG khớp đúng vào
+    // hàng/cột nào (ví dụ do sai số nhỏ khi dò đường kẻ), coi như KHÔNG thuộc bảng thay vì ép
+    // nhét vào ô cuối cùng (góc dưới-phải) như cách cũ — cách cũ chính là nguyên nhân khiến chữ
+    // không thuộc bảng lại bị đẩy lẫn vào trong các ô khi xuất ra Word.
+    if(r < 0 || c < 0){ outside.push(l); continue; }
+    cells[r][c].push(l);
+  }
+
+  let html = `<table cellspacing="0" cellpadding="4" style="position:absolute;left:${left.toFixed(2)}pt;top:${top.toFixed(2)}pt;`+
+    `width:${(right-left).toFixed(2)}pt;border-collapse:collapse;table-layout:fixed;font-family:'Times New Roman',serif;">\n`;
+  for(let r=0;r<nRows;r++){
+    html += '<tr>';
+    for(let c=0;c<nCols;c++){
+      const w = (colXs[c+1]-colXs[c]).toFixed(2);
+      const cellLines = cells[r][c].sort((a,b)=> a.y0-b.y0 || a.x0-b.x0);
+      const fs = cellLines.length ? Math.max(6, cellLines[0].fontSize).toFixed(2) : '10';
+      const text = cellLines.map(l=> escapeHtml(l.text)).join('<br>');
+      html += `<td style="width:${w}pt;border:0.75pt solid #000000;font-size:${fs}pt;vertical-align:top;">${text || '&nbsp;'}</td>`;
+    }
+    html += '</tr>\n';
+  }
+  html += '</table>\n';
+  return { html, outside, top, bottom, left, right };
+}
+
+// Dựng đoạn HTML cho một nhóm "dòng chữ xuôi dòng" (nằm ngoài bảng, ví dụ tiêu đề, địa chỉ,
+// dòng tổng cộng...), vẫn giữ toạ độ tuyệt đối để trình duyệt/PDF xem trước hiển thị đúng vị
+// trí — với các trang này Word có thể không giữ đúng vị trí tuyệt đối, nhưng do KHÔNG có viền
+// cần vẽ nên không ảnh hưởng tới yêu cầu "phải có cột/hàng" của bảng.
+function renderTextParagraphs_(arr){
+  let out = '';
+  for(const l of arr){
+    const subLines = String(l.text).split('\n');
+    const lh = Math.max(6, l.fontSize) * 1.22;
+    subLines.forEach((sub, subIdx)=>{
+      if(!sub.trim()) return;
+      const top = (l.y0 + subIdx*lh).toFixed(2);
+      const fs = Math.max(6, l.fontSize).toFixed(2);
+      out += `<p style="position:absolute;left:${l.x0.toFixed(2)}pt;top:${top}pt;margin:0;padding:0;`+
+                `font-size:${fs}pt;line-height:1.15;white-space:pre;color:${l.color};">${escapeHtml(sub)}</p>\n`;
+    });
+  }
+  return out;
+}
+
+// Dựng HTML cho MỘT trang: một khối kích thước đúng bằng trang gốc (point). Nếu dò được lưới
+// bảng thật từ các đường kẻ trong PDF, dựng lại bằng thẻ <table> thật (Word luôn vẽ đúng viền
+// bảng loại này). Chữ nằm ngoài khung bảng (tiêu đề, dòng tổng cộng...) vẫn được đặt bằng
+// position:absolute như cách cũ.
 async function buildWordPageHtml(idx){
   const { lines, W, H } = await getPageVisualLinesForWord(idx);
   let tableLines = { segments: [], lineWidth: 1 };
@@ -4026,37 +4133,35 @@ async function buildWordPageHtml(idx){
   catch(err){ console.warn('Không dò được đường kẻ bảng trang '+(idx+1)+':', err); }
 
   let inner = '';
-  // Vẽ khung bảng (đường kẻ ngang/dọc dò được từ PDF gốc) TRƯỚC, để lớp chữ luôn nổi lên trên.
-  // Mỗi đường kẻ được vẽ bằng 1 <div> mảnh có nền đen (background), định vị tuyệt đối đúng toạ
-  // độ — cách này giữ được đường kẻ ổn định hơn khi Word (qua bộ lọc mso) đọc file HTML, so với
-  // dùng border trên khối có height:0 (dễ bị lọc/mất khi Word nhập file).
-  const lw = Math.max(0.5, Math.min(3, tableLines.lineWidth || 1)).toFixed(2);
-  for(const seg of tableLines.segments){
-    if(seg.orient === 'h'){
-      const top = (H - seg.y).toFixed(2), left = seg.x0.toFixed(2), width = Math.max(0,(seg.x1-seg.x0)).toFixed(2);
-      inner += `<div style="position:absolute;left:${left}pt;top:${top}pt;width:${width}pt;height:${lw}pt;`+
-                `background:#000000;line-height:0;font-size:0;">&nbsp;</div>\n`;
-    } else {
-      const top = (H - seg.y1).toFixed(2), left = seg.x.toFixed(2), height = Math.max(0,(seg.y1-seg.y0)).toFixed(2);
-      inner += `<div style="position:absolute;left:${left}pt;top:${top}pt;width:${lw}pt;height:${height}pt;`+
-                `background:#000000;line-height:0;font-size:0;">&nbsp;</div>\n`;
+  const grid = buildTableFromSegments_(tableLines, lines, H);
+
+  if(grid){
+    // Có bảng thật: in phần chữ phía TRÊN bảng, rồi bảng, rồi phần chữ phía DƯỚI bảng —
+    // đúng thứ tự xuất hiện trên trang gốc.
+    const before = grid.outside.filter(l => l.y0 < grid.top);
+    const after = grid.outside.filter(l => l.y0 >= grid.top);
+    inner += renderTextParagraphs_(before) + grid.html + renderTextParagraphs_(after);
+  } else {
+    // Không đủ đường kẻ để ghép thành bảng thật (trang không có bảng, hoặc bảng vẽ theo kiểu
+    // đặc biệt không dò được) -> vẽ dự phòng bằng div mảnh như cách cũ, kèm toàn bộ chữ.
+    const lw = Math.max(0.5, Math.min(3, tableLines.lineWidth || 1)).toFixed(2);
+    for(const seg of tableLines.segments){
+      if(seg.orient === 'h'){
+        const top = (H - seg.y).toFixed(2), left = seg.x0.toFixed(2), width = Math.max(0,(seg.x1-seg.x0)).toFixed(2);
+        inner += `<div style="position:absolute;left:${left}pt;top:${top}pt;width:${width}pt;height:${lw}pt;`+
+                  `background:#000000;line-height:0;font-size:0;">&nbsp;</div>\n`;
+      } else {
+        const top = (H - seg.y1).toFixed(2), left = seg.x.toFixed(2), height = Math.max(0,(seg.y1-seg.y0)).toFixed(2);
+        inner += `<div style="position:absolute;left:${left}pt;top:${top}pt;width:${lw}pt;height:${height}pt;`+
+                  `background:#000000;line-height:0;font-size:0;">&nbsp;</div>\n`;
+      }
     }
+    inner += renderTextParagraphs_(lines);
   }
 
   if(!lines.length && !tableLines.segments.length){
     return `<div style="position:relative;width:${W.toFixed(2)}pt;height:${H.toFixed(2)}pt;margin:0 auto;background:#fff;">`+
            `<p style="position:absolute;left:0;top:0;color:#9aa0a8;font-style:italic;">[Trang không có văn bản]</p></div>`;
-  }
-  for(const l of lines){
-    const subLines = String(l.text).split('\n');
-    const lh = Math.max(6, l.fontSize) * 1.22;
-    subLines.forEach((sub, subIdx)=>{
-      if(!sub.trim()) return;
-      const top = (l.y0 + subIdx*lh).toFixed(2);
-      const fs = Math.max(6, l.fontSize).toFixed(2);
-      inner += `<p style="position:absolute;left:${l.x0.toFixed(2)}pt;top:${top}pt;margin:0;padding:0;`+
-                `font-size:${fs}pt;line-height:1.15;white-space:pre;color:${l.color};">${escapeHtml(sub)}</p>\n`;
-    });
   }
   return `<div style="position:relative;width:${W.toFixed(2)}pt;height:${H.toFixed(2)}pt;margin:0 auto;background:#fff;overflow:hidden;">${inner}</div>`;
 }
