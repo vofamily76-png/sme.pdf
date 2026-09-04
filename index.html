@@ -4004,12 +4004,14 @@ async function getPageVisualLinesForWord(idx){
   for(const l of baseLines){
     if(!l.text || !l.text.trim()) continue;
     if(isCovered(l.x0,l.y0,l.x1,l.y1)) continue;
-    lines.push({ x0:l.x0, y0:l.y0, fontSize: l.fontSize||12, text:l.text, color:'#000000' });
+    const x1 = (l.x1 != null) ? l.x1 : (l.x0 + l.text.length*(l.fontSize||12)*0.5);
+    lines.push({ x0:l.x0, x1, y0:l.y0, fontSize: l.fontSize||12, text:l.text, color:'#000000' });
   }
   // Thêm nội dung của mọi chỉnh sửa dạng chữ (gõ mới / sửa lại dòng có sẵn), đúng vị trí+font+màu
   for(const ed of (p.edits||[])){
     if(!isTextEdit(ed) || !ed.text || !ed.text.trim()) continue;
-    lines.push({ x0:ed.x, y0:ed.y, fontSize: ed.fontSize||12, text: ed.text, color: ed.color||'#000000' });
+    const x1 = ed.x + (ed.w || (ed.text.length*(ed.fontSize||12)*0.5));
+    lines.push({ x0:ed.x, x1, y0:ed.y, fontSize: ed.fontSize||12, text: ed.text, color: ed.color||'#000000' });
   }
   lines.sort((a,b)=> a.y0-b.y0 || a.x0-b.x0);
   return { lines, W: W||612, H: H||792 };
@@ -4085,7 +4087,12 @@ function buildTableFromSegments_(tableLines, lines, H){
     cells[r][c].push(l);
   }
 
-  let html = `<table cellspacing="0" cellpadding="4" style="position:absolute;left:${left.toFixed(2)}pt;top:${top.toFixed(2)}pt;`+
+  // QUAN TRỌNG: Word (bộ lọc mso khi mở .doc dạng HTML) KHÔNG áp dụng position:absolute —
+  // mọi thẻ có left/top đều bị Word đẩy về vị trí mặc định trong luồng văn bản, sai hẳn so với
+  // trang gốc. Do đó bảng được dựng bằng margin (thuộc tính hộp bình thường mà Word tôn trọng):
+  // margin-left giữ đúng khoảng thụt lề trái, margin-top (điền vào chỗ __TOPMARGIN__ bởi hàm gọi
+  // buildWordPageHtml, dựa trên khoảng cách tới nội dung ngay phía trên) giữ đúng khoảng cách dọc.
+  let html = `<table cellspacing="0" cellpadding="4" style="margin:__TOPMARGIN__pt 0 0 ${left.toFixed(2)}pt;`+
     `width:${(right-left).toFixed(2)}pt;border-collapse:collapse;table-layout:fixed;font-family:'Times New Roman',serif;">\n`;
   for(let r=0;r<nRows;r++){
     html += '<tr>';
@@ -4102,24 +4109,120 @@ function buildTableFromSegments_(tableLines, lines, H){
   return { html, outside, top, bottom, left, right };
 }
 
-// Dựng đoạn HTML cho một nhóm "dòng chữ xuôi dòng" (nằm ngoài bảng, ví dụ tiêu đề, địa chỉ,
-// dòng tổng cộng...), vẫn giữ toạ độ tuyệt đối để trình duyệt/PDF xem trước hiển thị đúng vị
-// trí — với các trang này Word có thể không giữ đúng vị trí tuyệt đối, nhưng do KHÔNG có viền
-// cần vẽ nên không ảnh hưởng tới yêu cầu "phải có cột/hàng" của bảng.
-function renderTextParagraphs_(arr){
-  let out = '';
-  for(const l of arr){
-    const subLines = String(l.text).split('\n');
-    const lh = Math.max(6, l.fontSize) * 1.22;
-    subLines.forEach((sub, subIdx)=>{
-      if(!sub.trim()) return;
-      const top = (l.y0 + subIdx*lh).toFixed(2);
-      const fs = Math.max(6, l.fontSize).toFixed(2);
-      out += `<p style="position:absolute;left:${l.x0.toFixed(2)}pt;top:${top}pt;margin:0;padding:0;`+
-                `font-size:${fs}pt;line-height:1.15;white-space:pre;color:${l.color};">${escapeHtml(sub)}</p>\n`;
-    });
+// ---------- Dựng lại phần chữ nằm NGOÀI bảng theo LUỒNG BÌNH THƯỜNG (không dùng position) ----------
+// QUAN TRỌNG: Word (bộ lọc "mso" khi mở file .doc dạng HTML) KHÔNG áp dụng đáng tin cậy thuộc
+// tính CSS "position:absolute" — mọi <div>/<p> có left/top đều bị Word bỏ qua toạ độ, chỉ xếp
+// xuôi dòng theo đúng thứ tự trong HTML, dồn hết về lề trái, không còn khoảng cách/canh lề như
+// bản gốc (đây chính là lý do file Word xuất ra "chưa giống định dạng gốc"). Cách khắc phục:
+// KHÔNG dùng position nữa, mà quy đổi toạ độ tuyệt đối của PDF sang các thuộc tính hộp bình
+// thường mà Word LUÔN tôn trọng — margin-top (khoảng cách dọc), margin-left/text-align (khoảng
+// thụt lề trái, canh giữa, canh phải). Nhiều dòng chữ nằm trên CÙNG một hàng ngang (ví dụ
+// "Số: .../QĐ-..." bên trái và "Hà Nội, ngày... tháng... năm..." bên phải) được gộp lại thành
+// MỘT bảng không viền có nhiều ô trên 1 hàng, để Word vẫn xếp chúng cạnh nhau thay vì rớt xuống
+// thành 2 dòng riêng biệt.
+
+// Gộp danh sách dòng chữ thành các HÀNG (nhóm các dòng có toạ độ Y gần nhau — tức là nằm ngang
+// hàng với nhau trên trang gốc), mỗi hàng là 1 mảng các dòng đã sắp xếp trái->phải theo X.
+function groupLinesIntoRows_(arr){
+  const sorted = arr.slice().sort((a,b)=> a.y0-b.y0 || a.x0-b.x0);
+  const rows = [];
+  let cur = [], refY = null, refFs = 10;
+  for(const l of sorted){
+    const tol = Math.max(3, refFs*0.55, (l.fontSize||10)*0.55);
+    if(refY !== null && Math.abs(l.y0-refY) > tol){
+      rows.push(cur); cur = []; refY = null;
+    }
+    cur.push(l);
+    if(refY === null){ refY = l.y0; refFs = l.fontSize||10; }
   }
-  return out;
+  if(cur.length) rows.push(cur);
+  rows.forEach(r => r.sort((a,b)=> a.x0-b.x0));
+  return rows;
+}
+
+// Dựng HTML cho MỘT hàng chỉ có 1 dòng chữ (trường hợp phổ biến nhất) — canh trái/giữa/phải
+// tự nhận diện dựa trên vị trí so với chiều rộng trang W, giữ khoảng cách dọc qua marginTop.
+function renderSingleLineRow_(l, W, marginTop){
+  const mt = Math.max(0, marginTop).toFixed(2);
+  const fs = Math.max(6, l.fontSize).toFixed(2);
+  const lh = Math.max(6, l.fontSize) * 1.22;
+  const x1 = (l.x1 != null && l.x1 > l.x0) ? l.x1 : (l.x0 + String(l.text).length*(l.fontSize||12)*0.5);
+  const textW = Math.max(1, x1 - l.x0);
+  const centerX = l.x0 + textW/2;
+  const rightGap = W - x1;
+  let alignStyle;
+  if(Math.abs(centerX - W/2) < W*0.08 && l.x0 > W*0.12 && rightGap > W*0.12){
+    alignStyle = 'text-align:center;';
+  } else if(rightGap < l.x0*0.55 && l.x0 > W*0.35 && rightGap >= 0){
+    alignStyle = `text-align:right;margin-right:${Math.max(0,rightGap).toFixed(2)}pt;`;
+  } else {
+    alignStyle = `text-align:left;margin-left:${Math.max(0,l.x0).toFixed(2)}pt;`;
+  }
+  const subLines = String(l.text).split('\n');
+  let html = '';
+  let bottom = l.y0;
+  subLines.forEach((sub, subIdx)=>{
+    if(!sub.trim() && subLines.length > 1) return;
+    const topMargin = subIdx===0 ? mt : lh.toFixed(2);
+    html += `<p style="margin:${topMargin}pt 0 0 0;padding:0;font-size:${fs}pt;line-height:1.15;`+
+              `white-space:pre-wrap;color:${l.color};${alignStyle}">${escapeHtml(sub) || '&nbsp;'}</p>\n`;
+    bottom = l.y0 + (subIdx+1)*lh;
+  });
+  return { html, bottom };
+}
+
+// Dựng HTML cho MỘT hàng có từ 2 dòng chữ trở lên nằm cạnh nhau (ví dụ số hiệu văn bản bên
+// trái + ngày tháng bên phải) — dùng bảng KHÔNG viền để các cột vẫn nằm cùng 1 hàng trong Word.
+function renderMultiColumnRow_(row, W, marginTop){
+  const mt = Math.max(0, marginTop).toFixed(2);
+  const bounds = [0];
+  for(let i=0;i<row.length-1;i++){
+    const curX1 = (row[i].x1 != null && row[i].x1 > row[i].x0) ? row[i].x1 : row[i].x0;
+    const nextX0 = row[i+1].x0;
+    const mid = (curX1 + nextX0) / 2;
+    bounds.push(Math.max(bounds[bounds.length-1] + 1, Math.min(mid, W - 1)));
+  }
+  bounds.push(W);
+  let html = `<table cellspacing="0" cellpadding="0" style="width:100%;border-collapse:collapse;`+
+    `table-layout:fixed;margin:${mt}pt 0 0 0;"><tr>`;
+  let bottom = 0;
+  for(let i=0;i<row.length;i++){
+    const l = row[i];
+    const colLeft = bounds[i], colRight = bounds[i+1];
+    const widthPct = Math.max(1, (colRight-colLeft)/W*100).toFixed(2);
+    const x1 = (l.x1 != null && l.x1 > l.x0) ? l.x1 : (l.x0 + String(l.text).length*(l.fontSize||12)*0.5);
+    const leftGap = Math.max(0, l.x0-colLeft), rightGap = Math.max(0, colRight-x1);
+    let align = 'left';
+    if(rightGap < leftGap*0.6) align = 'right';
+    else if(leftGap>8 && rightGap>8 && Math.abs(leftGap-rightGap) < Math.max(leftGap,rightGap)*0.35) align = 'center';
+    const fs = Math.max(6, l.fontSize).toFixed(2);
+    const text = String(l.text).split('\n').map(s=>escapeHtml(s)).join('<br>');
+    html += `<td style="width:${widthPct}%;text-align:${align};vertical-align:top;border:none;`+
+              `padding:0;font-size:${fs}pt;color:${l.color};white-space:pre-wrap;">${text || '&nbsp;'}</td>`;
+    bottom = Math.max(bottom, l.y0 + Math.max(6,l.fontSize)*1.22*(String(l.text).split('\n').length));
+  }
+  html += '</tr></table>\n';
+  return { html, bottom };
+}
+
+// Hàm chính: nhận một danh sách dòng chữ (đã có toạ độ tuyệt đối x0/x1/y0 lấy từ PDF gốc) +
+// chiều rộng trang W (pt) + vị trí Y bắt đầu tính khoảng cách (startBottom, thường là điểm dưới
+// cùng của khối nội dung ngay phía trên, hoặc 0 nếu là khối đầu tiên của trang) — trả về HTML
+// đã dựng theo luồng bình thường (không dùng position) cùng toạ độ Y thấp nhất đã dùng tới, để
+// nơi gọi tiếp tục nối thêm nội dung phía sau (ví dụ bảng, hoặc đoạn chữ tiếp theo) đúng khoảng
+// cách dọc như bản gốc.
+function renderFlowRows_(arr, W, startBottom){
+  const rows = groupLinesIntoRows_(arr.filter(l=>l.text && l.text.trim()));
+  let html = '';
+  let bottom = startBottom || 0;
+  for(const row of rows){
+    const top = Math.min(...row.map(l=>l.y0));
+    const marginTop = top - bottom;
+    const result = row.length > 1 ? renderMultiColumnRow_(row, W, marginTop) : renderSingleLineRow_(row[0], W, marginTop);
+    html += result.html;
+    bottom = result.bottom;
+  }
+  return { html, bottom };
 }
 
 // Dựng HTML cho MỘT trang: một khối kích thước đúng bằng trang gốc (point). Nếu dò được lưới
@@ -4136,34 +4239,29 @@ async function buildWordPageHtml(idx){
   const grid = buildTableFromSegments_(tableLines, lines, H);
 
   if(grid){
-    // Có bảng thật: in phần chữ phía TRÊN bảng, rồi bảng, rồi phần chữ phía DƯỚI bảng —
-    // đúng thứ tự xuất hiện trên trang gốc.
+    // Có bảng thật: in phần chữ phía TRÊN bảng, rồi bảng, rồi phần chữ phía DƯỚI bảng — đúng
+    // thứ tự xuất hiện trên trang gốc. Khoảng cách dọc (bottom) được nối liền qua cả 3 phần để
+    // tổng thể vẫn giữ đúng nhịp cách dòng/cách đoạn như bản gốc dù không dùng position nữa.
     const before = grid.outside.filter(l => l.y0 < grid.top);
     const after = grid.outside.filter(l => l.y0 >= grid.top);
-    inner += renderTextParagraphs_(before) + grid.html + renderTextParagraphs_(after);
-  } else {
+    const beforeR = renderFlowRows_(before, W, 0);
+    const tableMarginTop = Math.max(0, grid.top - beforeR.bottom);
+    const tableHtml = grid.html.replace('__TOPMARGIN__', tableMarginTop.toFixed(2));
+    const afterR = renderFlowRows_(after, W, grid.bottom);
+    inner += beforeR.html + tableHtml + afterR.html;
+  } else if(lines.length){
     // Không đủ đường kẻ để ghép thành bảng thật (trang không có bảng, hoặc bảng vẽ theo kiểu
-    // đặc biệt không dò được) -> vẽ dự phòng bằng div mảnh như cách cũ, kèm toàn bộ chữ.
-    const lw = Math.max(0.5, Math.min(3, tableLines.lineWidth || 1)).toFixed(2);
-    for(const seg of tableLines.segments){
-      if(seg.orient === 'h'){
-        const top = (H - seg.y).toFixed(2), left = seg.x0.toFixed(2), width = Math.max(0,(seg.x1-seg.x0)).toFixed(2);
-        inner += `<div style="position:absolute;left:${left}pt;top:${top}pt;width:${width}pt;height:${lw}pt;`+
-                  `background:#000000;line-height:0;font-size:0;">&nbsp;</div>\n`;
-      } else {
-        const top = (H - seg.y1).toFixed(2), left = seg.x.toFixed(2), height = Math.max(0,(seg.y1-seg.y0)).toFixed(2);
-        inner += `<div style="position:absolute;left:${left}pt;top:${top}pt;width:${lw}pt;height:${height}pt;`+
-                  `background:#000000;line-height:0;font-size:0;">&nbsp;</div>\n`;
-      }
-    }
-    inner += renderTextParagraphs_(lines);
+    // đặc biệt không dò được) -> chỉ dựng lại phần chữ theo luồng bình thường. (Các đường kẻ dò
+    // được trong trường hợp này KHÔNG được vẽ nữa vì trước đây dùng <div position:absolute>,
+    // vốn bị Word bỏ qua hoàn toàn nên chưa từng hiển thị được trong file Word xuất ra.)
+    inner += renderFlowRows_(lines, W, 0).html;
   }
 
   if(!lines.length && !tableLines.segments.length){
-    return `<div style="position:relative;width:${W.toFixed(2)}pt;height:${H.toFixed(2)}pt;margin:0 auto;background:#fff;">`+
-           `<p style="position:absolute;left:0;top:0;color:#9aa0a8;font-style:italic;">[Trang không có văn bản]</p></div>`;
+    return `<div style="width:${W.toFixed(2)}pt;margin:0 auto;background:#fff;">`+
+           `<p style="margin:0;color:#9aa0a8;font-style:italic;">[Trang không có văn bản]</p></div>`;
   }
-  return `<div style="position:relative;width:${W.toFixed(2)}pt;height:${H.toFixed(2)}pt;margin:0 auto;background:#fff;overflow:hidden;">${inner}</div>`;
+  return `<div style="width:${W.toFixed(2)}pt;margin:0 auto;background:#fff;">${inner}</div>`;
 }
 
 // Xuất Word cho ĐÚNG danh sách chỉ số trang được chọn (theo thứ tự tăng dần trong tài liệu).
