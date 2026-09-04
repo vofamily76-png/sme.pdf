@@ -347,14 +347,14 @@
   font-family:'Segoe UI',Roboto,Arial,sans-serif;color:#eceff1;">
   <div style="
     background:#25282e;border:1px solid #454a52;border-radius:10px;
-    padding:22px 24px;width:460px;max-width:92vw;max-height:86vh;overflow:auto;
+    padding:22px 24px;width:540px;max-width:92vw;max-height:86vh;overflow:auto;
     box-shadow:0 10px 40px rgba(0,0,0,.5);">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
       <div style="font-weight:600;font-size:15px;">👥 Quản lý người dùng</div>
       <button type="button" id="umCloseBtn" style="
         background:transparent;border:none;color:#9aa0a8;font-size:18px;cursor:pointer;line-height:1;">✕</button>
     </div>
-    <div style="font-size:12px;color:#9aa0a8;margin-bottom:14px;">Tạo tài khoản mới để cấp quyền đăng nhập phần mềm cho người khác.</div>
+    <div style="font-size:12px;color:#9aa0a8;margin-bottom:14px;">Tạo tài khoản mới, khoá/mở khoá hoặc đặt lại mật khẩu cho người dùng đã có.</div>
 
     <form id="addUserForm" style="border:1px solid #454a52;border-radius:8px;padding:14px;margin-bottom:16px;background:#1c1e22;">
       <div style="font-size:12.5px;font-weight:600;margin-bottom:10px;">Thêm tài khoản mới</div>
@@ -798,6 +798,7 @@ async function refreshUserList(){
   const container = document.getElementById('userListContainer');
   const listErr = document.getElementById('umListError');
   listErr.textContent = '';
+  listErr.style.color = '#ff8a80';
   container.innerHTML = '<div style="font-size:12px;color:#9aa0a8;">Đang tải…</div>';
   try{
     const token = sessionStorage.getItem(SESSION_STORAGE_KEY);
@@ -812,14 +813,26 @@ async function refreshUserList(){
       const row = document.createElement('div');
       row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:8px 10px;background:#1c1e22;border:1px solid #454a52;border-radius:6px;';
       const isSelf = currentUsername && u.username.toLowerCase() === currentUsername.toLowerCase();
+      const isAdminLocked = !!u.adminLocked;
+      row.style.cssText += isAdminLocked ? 'opacity:.75;' : '';
       row.innerHTML =
         '<div style="flex:1;min-width:0;">'+
           '<div style="font-size:12.5px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+escapeHtml(u.username)+(isSelf?' <span style="opacity:.6;font-weight:400;">(bạn)</span>':'')+'</div>'+
-          '<div style="font-size:11px;color:#9aa0a8;">'+(u.role==='admin'?'Admin':'User')+(u.locked?' · <span style="color:#ff8a80;">đang khoá tạm</span>':'')+'</div>'+
+          '<div style="font-size:11px;color:#9aa0a8;">'+(u.role==='admin'?'Admin':'User')+
+            (u.locked?' · <span style="color:#ff8a80;">đang khoá tạm</span>':'')+
+            (isAdminLocked?' · <span style="color:#ff8a80;font-weight:600;">🔒 đã khoá bởi admin</span>':'')+
+          '</div>'+
         '</div>'+
+        '<div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;">'+
+        '<button type="button" data-username="'+escapeHtml(u.username)+'" class="umResetPwBtn" style="'+
+          'background:transparent;border:1px solid #454a52;color:#eceff1;border-radius:5px;padding:5px 9px;font-size:11.5px;cursor:pointer;white-space:nowrap;">Reset MK</button>'+
+        '<button type="button" data-username="'+escapeHtml(u.username)+'" data-locked="'+(isAdminLocked?'1':'0')+'" class="umLockBtn" style="'+
+          'background:transparent;border:1px solid '+(isAdminLocked?'#3a6b3f':'#6b5a35')+';color:'+(isAdminLocked?'#8bd17c':'#ffcf6b')+';border-radius:5px;padding:5px 9px;font-size:11.5px;cursor:pointer;white-space:nowrap;'+
+          (isSelf ? 'opacity:.35;cursor:not-allowed;' : '')+'"'+(isSelf?' disabled':'')+'>'+(isAdminLocked?'Mở khoá':'Khoá')+'</button>'+
         '<button type="button" data-username="'+escapeHtml(u.username)+'" class="umDeleteBtn" style="'+
-          'background:transparent;border:1px solid #6b3a35;color:#ff8a80;border-radius:5px;padding:5px 9px;font-size:11.5px;cursor:pointer;'+
-          (isSelf ? 'opacity:.35;cursor:not-allowed;' : '')+'"'+(isSelf?' disabled':'')+'>Xoá</button>';
+          'background:transparent;border:1px solid #6b3a35;color:#ff8a80;border-radius:5px;padding:5px 9px;font-size:11.5px;cursor:pointer;white-space:nowrap;'+
+          (isSelf ? 'opacity:.35;cursor:not-allowed;' : '')+'"'+(isSelf?' disabled':'')+'>Xoá</button>'+
+        '</div>';
       container.appendChild(row);
     });
     container.querySelectorAll('.umDeleteBtn:not([disabled])').forEach(function(btn){
@@ -833,6 +846,47 @@ async function refreshUserList(){
           if(result && result.success){ refreshUserList(); }
           else { listErr.textContent = (result && result.message) || 'Xoá thất bại.'; btn.disabled = false; btn.textContent = 'Xoá'; }
         }catch(err){ listErr.textContent = err.message; btn.disabled = false; btn.textContent = 'Xoá'; }
+      });
+    });
+    container.querySelectorAll('.umLockBtn:not([disabled])').forEach(function(btn){
+      btn.addEventListener('click', async function(){
+        const username = btn.getAttribute('data-username');
+        const currentlyLocked = btn.getAttribute('data-locked') === '1';
+        const nextLocked = !currentlyLocked;
+        const confirmMsg = nextLocked
+          ? 'Khoá tài khoản "'+username+'"? Người này sẽ không thể đăng nhập và bị đăng xuất ngay lập tức cho tới khi bạn mở khoá lại.'
+          : 'Mở khoá tài khoản "'+username+'"?';
+        if(!confirm(confirmMsg)) return;
+        const originalText = btn.textContent;
+        btn.disabled = true; btn.textContent = nextLocked ? 'Đang khoá…' : 'Đang mở…';
+        try{
+          const token = sessionStorage.getItem(SESSION_STORAGE_KEY);
+          const result = await callAuthApi({ action: 'setUserLocked', token: token, targetUsername: username, locked: nextLocked });
+          if(result && result.success){ refreshUserList(); }
+          else { listErr.textContent = (result && result.message) || 'Thao tác thất bại.'; btn.disabled = false; btn.textContent = originalText; }
+        }catch(err){ listErr.textContent = err.message; btn.disabled = false; btn.textContent = originalText; }
+      });
+    });
+    container.querySelectorAll('.umResetPwBtn').forEach(function(btn){
+      btn.addEventListener('click', async function(){
+        const username = btn.getAttribute('data-username');
+        const custom = prompt('Nhập mật khẩu mới cho "'+username+'" (tối thiểu 8 ký tự).\nĐể trống và bấm OK để hệ thống tự sinh mật khẩu ngẫu nhiên.', '');
+        if(custom === null) return; // bấm Huỷ
+        if(custom && custom.length < 8){ listErr.textContent = 'Mật khẩu mới phải có ít nhất 8 ký tự.'; return; }
+        const originalText = btn.textContent;
+        btn.disabled = true; btn.textContent = 'Đang đặt lại…';
+        try{
+          const token = sessionStorage.getItem(SESSION_STORAGE_KEY);
+          const result = await callAuthApi({ action: 'resetUserPassword', token: token, targetUsername: username, newPassword: custom || undefined });
+          if(result && result.success){
+            listErr.style.color = '#8bd17c';
+            listErr.textContent = 'Đã đặt lại mật khẩu cho "'+username+'": '+result.newPassword+' (hãy gửi lại cho người dùng, mật khẩu này chỉ hiển thị một lần).';
+          } else {
+            listErr.style.color = '#ff8a80';
+            listErr.textContent = (result && result.message) || 'Đặt lại mật khẩu thất bại.';
+          }
+        }catch(err){ listErr.style.color = '#ff8a80'; listErr.textContent = err.message; }
+        finally{ btn.disabled = false; btn.textContent = originalText; }
       });
     });
   }catch(err){
