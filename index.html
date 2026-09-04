@@ -631,6 +631,60 @@
   </div>
 </div>
 
+<!-- ===================== MODAL: COMPRESS PDF (chọn mức nén: tiêu chuẩn / siêu nén) ===================== -->
+<div id="compressModal" style="
+  position:fixed;inset:0;z-index:1100;display:none;
+  background:rgba(0,0,0,.55);
+  align-items:center;justify-content:center;
+  font-family:'Segoe UI',Roboto,Arial,sans-serif;color:#eceff1;">
+  <div style="
+    background:#25282e;border:1px solid #454a52;border-radius:10px;
+    padding:22px 24px;width:460px;max-width:92vw;max-height:86vh;overflow:auto;
+    box-shadow:0 10px 40px rgba(0,0,0,.5);">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+      <div style="font-weight:600;font-size:15px;">🗜️ Compress PDF</div>
+      <button type="button" id="cprCloseBtn" style="
+        background:transparent;border:none;color:#9aa0a8;font-size:18px;cursor:pointer;line-height:1;">✕</button>
+    </div>
+    <div style="font-size:12px;color:#9aa0a8;margin-bottom:14px;">
+      Giảm dung lượng file PDF (giữ nguyên mọi chỉnh sửa hiện tại). Mỗi trang sẽ được dựng lại thành
+      ảnh nén — do đó chữ trong file <b>đã nén</b> sẽ không còn bôi đen/copy được như file gốc.
+      Nếu cần giữ chữ chọn được, hãy dùng "Save PDF" thay vì nén.
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px;">
+      <label style="display:flex;align-items:flex-start;gap:9px;font-size:13px;cursor:pointer;
+        border:1px solid #454a52;border-radius:7px;padding:10px 12px;">
+        <input type="radio" name="cprLevel" id="cprLevelStandard" value="standard" checked style="margin-top:2px;">
+        <span>
+          <b>📦 Nén tiêu chuẩn</b><br>
+          <span style="font-size:11.5px;color:#9aa0a8;">Giảm dung lượng vừa phải, vẫn giữ chất lượng hiển thị tốt — phù hợp cho hầu hết trường hợp.</span>
+        </span>
+      </label>
+      <label style="display:flex;align-items:flex-start;gap:9px;font-size:13px;cursor:pointer;
+        border:1px solid #454a52;border-radius:7px;padding:10px 12px;">
+        <input type="radio" name="cprLevel" id="cprLevelExtreme" value="extreme" style="margin-top:2px;">
+        <span>
+          <b>🗜️ Siêu nén</b><br>
+          <span style="font-size:11.5px;color:#9aa0a8;">Giảm dung lượng tối đa, chất lượng ảnh/độ nét giảm rõ rệt hơn — phù hợp khi cần file nhỏ nhất có thể (ví dụ để gửi email).</span>
+        </span>
+      </label>
+    </div>
+
+    <div id="cprResult" style="min-height:18px;color:#8bc98b;font-size:12px;margin-bottom:4px;"></div>
+    <div id="cprError" style="min-height:18px;color:#ff8a80;font-size:12px;margin-bottom:4px;"></div>
+
+    <div style="display:flex;gap:8px;margin-top:6px;">
+      <button type="button" id="cprCancelBtn" style="
+        flex:1;padding:10px;border:1px solid #454a52;border-radius:6px;background:transparent;color:#eceff1;
+        font-weight:600;font-size:13px;cursor:pointer;">Huỷ</button>
+      <button type="button" id="cprConfirmBtn" style="
+        flex:1;padding:10px;border:none;border-radius:6px;background:#e2402c;color:#fff;
+        font-weight:600;font-size:13px;cursor:pointer;">🗜️ Nén &amp; Tải xuống</button>
+    </div>
+  </div>
+</div>
+
 <div id="appContainer" style="display:none;">
 <div id="titlebar">
   <div class="logo"><img src="data:image/png;base64,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" alt="Seahorse" style="width:100%;height:100%;object-fit:contain;display:block;"></div>
@@ -701,6 +755,9 @@
   <span style="display:inline-flex;align-items:center;gap:4px;font-size:11.5px;color:var(--text-dim);margin-left:2px;">
     <input type="color" id="fontColorSwatch" value="#000000" title="Chọn màu chữ (font) khi thêm/sửa văn bản">Color text
   </span>
+  <button class="tbtn" id="btnBold" title="In đậm (áp dụng cho chữ đang chọn hoặc chữ sắp gõ tiếp theo)" style="font-weight:800;padding-left:10px;padding-right:10px;">B</button>
+  <button class="tbtn" id="btnItalic" title="In nghiêng (áp dụng cho chữ đang chọn hoặc chữ sắp gõ tiếp theo)" style="font-style:italic;padding-left:10px;padding-right:10px;">I</button>
+  <button class="tbtn" id="btnUnderline" title="Gạch chân (áp dụng cho chữ đang chọn hoặc chữ sắp gõ tiếp theo)" style="text-decoration:underline;padding-left:10px;padding-right:10px;">U</button>
   <div class="sep"></div>
 
   <button class="tbtn" id="btnUndo" title="Hoàn tác"><span class="ic">↩️</span>Undo</button>
@@ -713,6 +770,7 @@
   <button class="tbtn" id="btnDeletePage" title="Chọn một hoặc nhiều trang để xóa khỏi tài liệu"><span class="ic">🗑️</span>Delete page</button>
   <button class="tbtn" id="btnExtractPages" title="Chọn một hoặc nhiều trang để tách ra thành 1 file PDF mới (không ảnh hưởng tài liệu đang mở)"><span class="ic">✂️</span>Extract Pages</button>
   <button class="tbtn" id="btnCombineFiles" title="Gộp nhiều file PDF lại thành một file duy nhất, có thể sắp xếp lại thứ tự các file trước khi gộp"><span class="ic">🧩</span>Combine Files</button>
+  <button class="tbtn" id="btnCompress" title="Giảm dung lượng file PDF (chọn mức nén tiêu chuẩn hoặc siêu nén) — file nén ra sẽ dựng lại các trang thành ảnh, chữ trong file nén sẽ không còn bôi đen/copy được như file gốc"><span class="ic">🗜️</span>Compress PDF</button>
   <div class="sep"></div>
 
   <button class="tbtn" id="btnOcrFull"><span class="ic">📄</span>OCR text extract</button>
@@ -1055,7 +1113,7 @@ tryRestoreSession();
    ===================================================================== */
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
-const { PDFDocument, rgb, StandardFonts } = PDFLib;
+const { PDFDocument, rgb, StandardFonts, degrees } = PDFLib;
 
 /* =====================================================================
  *  NativeTextEngine — SỬA THẬT trên content stream gốc của PDF (không
@@ -1601,6 +1659,20 @@ function safeDrawText(page, text, opts, fallbackFont){
     }
   }
 }
+// Vẽ chữ có áp dụng "In đậm" giả lập (faux bold): font Việt hoá nhúng sẵn (Noto Sans) chỉ có ĐÚNG
+// 1 độ đậm (regular) — không có file font Bold riêng để nhúng thêm (sẽ tốn thêm dung lượng tải về
+// đáng kể và cần tải file font qua mạng, không khả thi để nhúng sẵn trong file HTML này). Thay vào
+// đó, mô phỏng hiệu ứng đậm bằng cách vẽ CHỒNG thêm 1 lần, lệch sang phải một khoảng rất nhỏ (tương
+// tự cách trình duyệt mô phỏng "faux bold" khi thiếu font Bold thật) — cho nét chữ dày lên rõ rệt mà
+// không cần font riêng. "In nghiêng" thì dùng thẳng xSkew có sẵn của pdf-lib (đặt trong opts.xSkew
+// từ nơi gọi), không cần giả lập gì thêm.
+function drawStyledText(page, text, opts, fallbackFont, bold){
+  safeDrawText(page, text, opts, fallbackFont);
+  if(bold){
+    const offset = Math.max(0.35, (opts.size||12) * 0.03);
+    safeDrawText(page, text, { ...opts, x: (opts.x||0) + offset }, fallbackFont);
+  }
+}
 // LỖI ĐÃ SỬA (khoảng cách giữa các từ trong file PDF xuất ra khác với bản xem trước trong trình
 // soạn thảo): bản xem trước (canvas) dùng ctx.wordSpacing để canh khoảng cách khớp với dòng
 // gốc (xem applyOriginalSpacing ở phần vẽ canvas phía trên), nhưng pdf-lib.drawText() KHÔNG có
@@ -1644,17 +1716,22 @@ function computeWordSpacingExtraForPdf(font, ed){
 // Vẽ một dòng chữ theo TỪNG TỪ, tự cộng dồn toạ độ X giữa các từ (word width + khoảng trắng +
 // "extra" bù thêm) để đạt đúng hiệu ứng canh khoảng cách như ctx.wordSpacing bên canvas — vì
 // pdf-lib không có thuộc tính tương đương để giao cho nó tự làm.
-function drawLineWithWordSpacing(page, line, startX, y, fontSize, font, color, fallbackFont, extra){
+// Trả về tổng độ rộng đã vẽ (startX -> điểm kết thúc từ cuối cùng, KHÔNG tính khoảng trắng thừa sau
+// từ cuối) — dùng để vẽ đúng độ dài đường gạch chân (Underline) khi cần.
+function drawLineWithWordSpacing(page, line, startX, y, fontSize, font, color, fallbackFont, extra, bold, xSkew){
   const words = String(line).split(' ');
   let x = startX;
+  let lastWordEndX = startX;
   for(let i=0;i<words.length;i++){
     const w = words[i];
-    if(w) safeDrawText(page, w, { x, y, size: fontSize, font, color }, fallbackFont);
+    if(w){ drawStyledText(page, w, { x, y, size: fontSize, font, color, xSkew }, fallbackFont, bold); }
     let ww, sw;
     try{ ww = font.widthOfTextAtSize(w, fontSize); }catch(e){ ww = w.length*fontSize*0.55; }
     try{ sw = font.widthOfTextAtSize(' ', fontSize); }catch(e){ sw = fontSize*0.28; }
     x += ww + sw + extra;
+    lastWordEndX = x - sw - extra;
   }
+  return lastWordEndX - startX;
 }
 // Vẽ 1 chỉnh sửa lên trang PDF thật (pdf-lib), giữ nguyên nội dung vector gốc của trang
 // (khác với cách cũ là chụp toàn trang thành ảnh PNG rồi nhúng lại — cách đó biến cả trang
@@ -1698,12 +1775,27 @@ async function drawEditOnPdfPage(page, ed, H, font, fallbackFont, outDoc, embedC
     const fontSize = ed.fontSize || 12;
     const lines = wrapTextForPdfFont(font, String(ed.text), fontSize, Math.max(ed.w-4, fontSize));
     const wordExtra = computeWordSpacingExtraForPdf(font, ed);
+    // In nghiêng: dùng thẳng tham số xSkew có sẵn của pdf-lib (nghiêng trục X của chữ ~12 độ, mô
+    // phỏng đúng kiểu "oblique" thường thấy) — không cần font Italic riêng. In đậm: xem drawStyledText.
+    const italicSkew = ed.italic ? degrees(12) : undefined;
     let baseY = H - ed.y - fontSize*0.85;
     for(const line of lines){
+      let lineWidth = 0;
       if(wordExtra){
-        drawLineWithWordSpacing(page, line, ed.x+2, baseY, fontSize, font, rgb(r,g,b), fallbackFont, wordExtra);
+        lineWidth = drawLineWithWordSpacing(page, line, ed.x+2, baseY, fontSize, font, rgb(r,g,b), fallbackFont, wordExtra, ed.bold, italicSkew);
       } else {
-        safeDrawText(page, line, { x: ed.x+2, y: baseY, size: fontSize, font, color: rgb(r,g,b) }, fallbackFont);
+        drawStyledText(page, line, { x: ed.x+2, y: baseY, size: fontSize, font, color: rgb(r,g,b), xSkew: italicSkew }, fallbackFont, ed.bold);
+        try{ lineWidth = font.widthOfTextAtSize(line, fontSize); }catch(e){ lineWidth = line.length*fontSize*0.55; }
+      }
+      // Gạch chân: vẽ 1 đường thẳng ngay dưới dòng chữ vừa vẽ, dài đúng bằng độ rộng dòng đó.
+      if(ed.underline && line.trim()){
+        const underlineY = baseY - fontSize*0.12;
+        page.drawLine({
+          start: { x: ed.x+2, y: underlineY },
+          end: { x: ed.x+2+lineWidth, y: underlineY },
+          thickness: Math.max(0.6, fontSize*0.055),
+          color: rgb(r,g,b)
+        });
       }
       baseY -= fontSize*1.15;
     }
@@ -1752,6 +1844,11 @@ let currentWhiteoutColor = '#ffffff';
 let currentFontColor = '#000000';
 let currentFontFamily = 'Arial';
 let currentFontSize = 14;
+// Trạng thái In đậm / In nghiêng / Gạch chân đang bật trên thanh công cụ — áp dụng cho chữ MỚI sắp
+// gõ, và được đồng bộ (syncFontControlsToSelection) theo đúng định dạng của khối chữ đang được chọn.
+let currentBold = false;
+let currentItalic = false;
+let currentUnderline = false;
 // Tham chiếu tới ô nhập liệu (textarea) nổi đang mở, nếu có — dùng để cập nhật font/cỡ chữ
 // NGAY LẬP TỨC khi người dùng đổi 2 ô "Font chữ"/"Cỡ chữ" trong lúc đang gõ sửa, thay vì
 // phải gõ xong rồi mới thấy đổi (hoặc tệ hơn là không đổi được gì cả).
@@ -1762,15 +1859,35 @@ function refreshActiveEditInputFont(){
   const fontPx = Math.max(11, currentFontSize*scale);
   activeEditInputEl.style.fontSize = fontPx+'px';
   activeEditInputEl.style.color = currentFontColor;
+  activeEditInputEl.style.fontWeight = currentBold ? 'bold' : 'normal';
+  activeEditInputEl.style.fontStyle = currentItalic ? 'italic' : 'normal';
+  activeEditInputEl.style.textDecoration = currentUnderline ? 'underline' : 'none';
   activeEditInputEl.dispatchEvent(new Event('input')); // để ô tự tính lại kích thước khung theo font mới
+}
+// Cập nhật giao diện (trạng thái "đang bật") của 3 nút B / I / U trên thanh công cụ theo đúng
+// currentBold/currentItalic/currentUnderline hiện tại.
+function refreshStyleToggleButtons(){
+  const map = [['btnBold', currentBold], ['btnItalic', currentItalic], ['btnUnderline', currentUnderline]];
+  for(const [id, on] of map){
+    const btn = document.getElementById(id);
+    if(btn) btn.classList.toggle('active', !!on);
+  }
 }
 // Đồng bộ 2 ô "Font chữ"/"Cỡ chữ" trên thanh công cụ theo font/cỡ ban đầu của đoạn chữ SẮP sửa
 // (không phải đoạn đang chọn bằng công cụ Select) — dùng ngay trước khi mở ô nhập liệu để sửa,
 // để: (1) người dùng biết đang sửa với font/cỡ nào, (2) nếu họ đổi trong lúc gõ thì áp dụng đúng.
-function setActiveEditFont(fontFamily, fontSize, fontColor){
+function setActiveEditFont(fontFamily, fontSize, fontColor, bold, italic, underline){
   currentFontFamily = fontFamily || 'Arial';
   currentFontSize = Math.round(fontSize) || 14;
   currentFontColor = fontColor || currentFontColor || '#000000';
+  // Chỉ ghi đè trạng thái Đậm/Nghiêng/Gạch chân khi được truyền RÕ RÀNG (đang mở lại một khối chữ
+  // có sẵn để sửa tiếp) — nếu gọi không kèm 3 tham số này (ví dụ khi bắt đầu gõ chữ MỚI hoàn toàn),
+  // GIỮ NGUYÊN trạng thái 3 nút B/I/U hiện tại trên thanh công cụ, để người dùng bật "Đậm" một lần
+  // rồi gõ chữ mới liên tiếp thì chữ nào cũng đậm, đúng như cách các trình soạn thảo văn bản khác hoạt động.
+  if(bold !== undefined) currentBold = !!bold;
+  if(italic !== undefined) currentItalic = !!italic;
+  if(underline !== undefined) currentUnderline = !!underline;
+  refreshStyleToggleButtons();
   const famSel = document.getElementById('fontFamilySelect');
   const sizeSel = document.getElementById('fontSizeSelect');
   const colorSel = document.getElementById('fontColorSwatch');
@@ -2813,10 +2930,10 @@ function drawEdit(ctx, e, s){
   } else if(e.type === 'text' || e.type === 'ocrfix' || e.type === 'textfix'){
     if(e.bg){ ctx.fillStyle = e.bgColor || '#ffffff'; ctx.fillRect(e.x*s, e.y*s, e.w*s, e.h*s); }
     ctx.fillStyle = e.color || '#000000';
-    ctx.font = `${e.fontSize*s}px ${e.fontFamily || 'Arial'}`;
+    ctx.font = `${e.italic?'italic ':''}${e.bold?'bold ':''}${e.fontSize*s}px ${e.fontFamily || 'Arial'}`;
     ctx.textBaseline = 'top';
     applyOriginalSpacing(ctx, e, s);
-    wrapText(ctx, e.text, e.x*s+2, e.y*s+1, e.w*s-4, e.fontSize*s*1.15);
+    wrapText(ctx, e.text, e.x*s+2, e.y*s+1, e.w*s-4, e.fontSize*s*1.15, e.underline);
     ctx.wordSpacing = '0px';
   } else if(e.type === 'draw'){
     ctx.strokeStyle = e.color; ctx.lineWidth = e.width*s; ctx.lineCap='round'; ctx.lineJoin='round';
@@ -2874,19 +2991,34 @@ function applyOriginalSpacing(ctx, e, s){
   ctx.wordSpacing = '0px';
 }
 
-function wrapText(ctx, text, x, y, maxWidth, lineHeight){
+function wrapText(ctx, text, x, y, maxWidth, lineHeight, underline){
   const lines = String(text).split('\n');
   let cy = y;
+  // Vẽ 1 dòng đã "chốt" (không còn bẻ tiếp) + gạch chân ngay bên dưới nếu bật Underline — dùng
+  // đúng chiều rộng thật của dòng đó (đo bằng ctx.measureText, đã áp cỡ/kiểu chữ hiện tại của ctx.font)
+  // để gạch chân khớp đúng độ dài chữ, không bị ngắn/dài hơn thực tế.
+  function drawLine(line){
+    ctx.fillText(line, x, cy);
+    if(underline && line.trim()){
+      const w = ctx.measureText(line).width;
+      const uy = cy + lineHeight*0.83;
+      ctx.save();
+      ctx.strokeStyle = ctx.fillStyle;
+      ctx.lineWidth = Math.max(1, lineHeight*0.055);
+      ctx.beginPath(); ctx.moveTo(x, uy); ctx.lineTo(x+w, uy); ctx.stroke();
+      ctx.restore();
+    }
+  }
   for(const line of lines){
     const words = line.split(' ');
     let curLine = '';
     for(const w of words){
       const test = curLine ? curLine+' '+w : w;
       if(ctx.measureText(test).width > maxWidth && curLine){
-        ctx.fillText(curLine, x, cy); curLine = w; cy += lineHeight;
+        drawLine(curLine); curLine = w; cy += lineHeight;
       } else curLine = test;
     }
-    ctx.fillText(curLine, x, cy); cy += lineHeight;
+    drawLine(curLine); cy += lineHeight;
   }
 }
 
@@ -3085,6 +3217,27 @@ document.getElementById('fontColorSwatch').oninput = (e)=>{
   }
   refreshActiveEditInputFont();
 };
+// 3 nút In đậm / In nghiêng / Gạch chân: bấm để BẬT/TẮT — nếu đang có 1 khối chữ được chọn (công cụ
+// Select) thì áp dụng ngay lên khối đó; dù có chọn hay không, trạng thái mới cũng được lưu lại làm
+// mặc định cho chữ sắp gõ tiếp theo (giống Word/Google Docs: bật Đậm rồi gõ tiếp thì chữ mới cũng đậm).
+function toggleTextStyle(prop){
+  if(prop==='bold') currentBold = !currentBold;
+  else if(prop==='italic') currentItalic = !currentItalic;
+  else if(prop==='underline') currentUnderline = !currentUnderline;
+  refreshStyleToggleButtons();
+  if(pages.length && selectedEditIndex>=0){
+    const ed = cur().edits[selectedEditIndex];
+    if(isTextEdit(ed)){
+      pushUndo(currentIndex);
+      ed.bold = currentBold; ed.italic = currentItalic; ed.underline = currentUnderline;
+      redrawOverlay();
+    }
+  }
+  refreshActiveEditInputFont();
+}
+document.getElementById('btnBold').onclick = ()=> toggleTextStyle('bold');
+document.getElementById('btnItalic').onclick = ()=> toggleTextStyle('italic');
+document.getElementById('btnUnderline').onclick = ()=> toggleTextStyle('underline');
 // Khi chọn (select) một khối văn bản trên trang, đồng bộ 2 ô Font chữ / Cỡ chữ theo khối đó
 // để người dùng biết đang chỉnh sửa với thông số nào.
 function syncFontControlsToSelection(){
@@ -3114,6 +3267,10 @@ function syncFontControlsToSelection(){
     colorSel.value = ed.color;
     currentFontColor = ed.color;
   }
+  currentBold = !!ed.bold;
+  currentItalic = !!ed.italic;
+  currentUnderline = !!ed.underline;
+  refreshStyleToggleButtons();
 }
 
 document.getElementById('btnClearRegion').onclick = ()=>{
@@ -3401,7 +3558,8 @@ function buildRegionEdits(mode, region, originalLines, editedText, fallbackFontS
     } else {
       editsToAdd.push({
         type: editType, x:region.x, y:cy0, w:region.w, h:ch,
-        text: newTextJoined, fontSize, fontFamily: currentFontFamily, color: currentFontColor, bg:true, bgColor,
+        text: newTextJoined, fontSize, fontFamily: currentFontFamily, color: currentFontColor,
+        bold: currentBold, italic: currentItalic, underline: currentUnderline, bg:true, bgColor,
         // Chỉ đặt origLineW khi hunk này khớp với ĐÚNG MỘT dòng gốc (trường hợp phổ biến nhất khi
         // sửa nhanh theo vùng) — để applyOriginalSpacing() có thể canh khoảng cách chữ mới cho khớp
         // với độ rộng thật của dòng gốc, giống hệt cách xử lý ở editLineAt().
@@ -3452,7 +3610,7 @@ async function bulkEditRegion(mode){
         if(newVal.trim()){
           const bgColor = sampleBackgroundColor(region.x, region.y, region.w, region.h);
           removeOverlappingTextEdits(cur(), region.x, region.y, region.x+region.w, region.y+region.h);
-          cur().edits.push({ type: mode==='ocr' ? 'ocrfix' : 'textfix', x:region.x, y:region.y, w:region.w, h:region.h, text:newVal, fontSize, fontFamily: currentFontFamily, color: currentFontColor, bg:true, bgColor });
+          cur().edits.push({ type: mode==='ocr' ? 'ocrfix' : 'textfix', x:region.x, y:region.y, w:region.w, h:region.h, text:newVal, fontSize, fontFamily: currentFontFamily, color: currentFontColor, bold: currentBold, italic: currentItalic, underline: currentUnderline, bg:true, bgColor });
         }
       } else {
         const newEdits = buildRegionEdits(mode, region, originalLines, newVal, fontSize);
@@ -3582,6 +3740,9 @@ function openEditInput(screenX, screenY, screenW, screenH, initialText, onCommit
   const fontPx = Math.max(11, currentFontSize*scale);
   inp.style.fontFamily = currentFontFamily;
   inp.style.fontSize = fontPx+'px';
+  inp.style.fontWeight = currentBold ? 'bold' : 'normal';
+  inp.style.fontStyle = currentItalic ? 'italic' : 'normal';
+  inp.style.textDecoration = currentUnderline ? 'underline' : 'none';
   const font = fontPx+'px '+currentFontFamily;
   const pageMaxW = Math.max(200, (pageWrap.clientWidth || 800) - screenX - 6);
   const pageMaxH = Math.max(160, (pageWrap.clientHeight || 1000) - screenY - 6);
@@ -3590,7 +3751,7 @@ function openEditInput(screenX, screenY, screenW, screenH, initialText, onCommit
   // cũng có thể tự kéo giãn góc dưới-phải (resize:both trong CSS) nếu muốn.
   function sizeToContent(){
     const text = inp.value || initialText || '';
-    const measureFont = Math.max(11, currentFontSize*scale)+'px '+currentFontFamily;
+    const measureFont = `${currentItalic?'italic ':''}${currentBold?'bold ':''}${Math.max(11, currentFontSize*scale)}px ${currentFontFamily}`;
     const neededW = Math.min(pageMaxW, Math.max(screenW, measureTextWidth(text, measureFont) + 10));
     inp.style.width = neededW+'px';
     inp.style.height = 'auto';
@@ -3652,7 +3813,7 @@ overlayCanvas.addEventListener('mousedown', (e)=>{
         pushUndo(currentIndex);
         const newIdx = cur().edits.length;
         const auto = computeAutoBoxSize(val, currentFontFamily, currentFontSize, pdfP.x);
-        cur().edits.push({type:'text', x:pdfP.x, y:pdfP.y, w:auto.w, h:auto.h, text:val, fontSize:currentFontSize, fontFamily: currentFontFamily, color: currentFontColor, bg:false});
+        cur().edits.push({type:'text', x:pdfP.x, y:pdfP.y, w:auto.w, h:auto.h, text:val, fontSize:currentFontSize, fontFamily: currentFontFamily, color: currentFontColor, bold: currentBold, italic: currentItalic, underline: currentUnderline, bg:false});
         selectedEditIndex = newIdx;
         redrawOverlay();
       }
@@ -3741,7 +3902,7 @@ function editLineAt(px, py, editType, customLines){
     if(hitIdx >= 0 && isTextEdit(p.edits[hitIdx])){
       const ed = p.edits[hitIdx];
       selectedEditIndex = hitIdx;
-      setActiveEditFont(ed.fontFamily, ed.fontSize, ed.color);
+      setActiveEditFont(ed.fontFamily, ed.fontSize, ed.color, ed.bold, ed.italic, ed.underline);
       openEditInput(ed.x*scale, ed.y*scale, ed.w*scale, ed.h*scale, ed.text, (val)=>{
         val = normalizeEditText(val);
         pushUndo(currentIndex);
@@ -3750,6 +3911,9 @@ function editLineAt(px, py, editType, customLines){
           ed.fontFamily = currentFontFamily;
           ed.fontSize = currentFontSize;
           ed.color = currentFontColor;
+          ed.bold = currentBold;
+          ed.italic = currentItalic;
+          ed.underline = currentUnderline;
           // Nới khung vừa đủ chứa hết nội dung mới (không bao giờ để hẹp hơn nội dung thực tế);
           // nếu đã có nền che (bg) thì không thu hẹp lại, chỉ nới rộng thêm khi cần, để không lộ
           // lại chữ cũ ở phần đã che trước đó.
@@ -3779,7 +3943,8 @@ function editLineAt(px, py, editType, customLines){
         const newIdx = p.edits.length;
         p.edits.push({
           type:'text', x:pdfP.x, y:pdfP.y, w:auto.w, h:auto.h,
-          text:val, fontSize: currentFontSize, fontFamily: currentFontFamily, color: currentFontColor, bg:false
+          text:val, fontSize: currentFontSize, fontFamily: currentFontFamily, color: currentFontColor,
+          bold: currentBold, italic: currentItalic, underline: currentUnderline, bg:false
         });
         selectedEditIndex = newIdx;
         redrawOverlay();
@@ -3806,15 +3971,21 @@ function editLineAt(px, py, editType, customLines){
   setActiveEditFont(
     existing ? (existing.edit.fontFamily || 'Arial') : 'Arial',
     existing ? (existing.edit.fontSize || line.fontSize || 12) : (line.fontSize || 12),
-    existing ? (existing.edit.color || currentFontColor) : currentFontColor
+    existing ? (existing.edit.color || currentFontColor) : currentFontColor,
+    existing ? !!existing.edit.bold : false,
+    existing ? !!existing.edit.italic : false,
+    existing ? !!existing.edit.underline : false
   );
 
   openEditInput(sx, sy, sw, sh, initialText, (val)=>{
     val = normalizeEditText(val);
     if(val === initialText && currentFontFamily === (existing ? existing.edit.fontFamily : 'Arial')
        && currentFontSize === Math.round(existing ? existing.edit.fontSize : (line.fontSize||12))
-       && currentFontColor === (existing ? (existing.edit.color || '#000000') : currentFontColor)){
-      return; // không đổi gì cả (kể cả font/cỡ/màu) -> giữ nguyên, không tạo chỉnh sửa mới
+       && currentFontColor === (existing ? (existing.edit.color || '#000000') : currentFontColor)
+       && currentBold === !!(existing && existing.edit.bold)
+       && currentItalic === !!(existing && existing.edit.italic)
+       && currentUnderline === !!(existing && existing.edit.underline)){
+      return; // không đổi gì cả (kể cả font/cỡ/màu/đậm/nghiêng/gạch chân) -> giữ nguyên, không tạo chỉnh sửa mới
     }
     pushUndo(currentIndex);
     if(existing){
@@ -3823,6 +3994,9 @@ function editLineAt(px, py, editType, customLines){
         existing.edit.fontFamily = currentFontFamily;
         existing.edit.fontSize = currentFontSize;
         existing.edit.color = currentFontColor;
+        existing.edit.bold = currentBold;
+        existing.edit.italic = currentItalic;
+        existing.edit.underline = currentUnderline;
         // Chỉ số các lệnh vẽ chữ GỐC (Tj/TJ) trong content stream mà dòng này khớp tới — dùng bởi
         // NativeTextEngine lúc xuất file để thử SỬA THẬT trực tiếp trên văn bản gốc thay vì chỉ che
         // + vẽ đè. `line.itemIdxs` chỉ tồn tại với chữ PDF thật (không có với dòng OCR).
@@ -3879,7 +4053,8 @@ function editLineAt(px, py, editType, customLines){
       const newIdx = p.edits.length;
       p.edits.push({
         type: editType, x: cx0, y: cy0, w: finalW, h: finalH,
-        text: val, fontSize, fontFamily: currentFontFamily, color: currentFontColor, bg:true, bgColor,
+        text: val, fontSize, fontFamily: currentFontFamily, color: currentFontColor,
+        bold: currentBold, italic: currentItalic, underline: currentUnderline, bg:true, bgColor,
         // Lưu lại vị trí/kích thước GỐC của dòng chữ (trước khi khung được nới rộng ra cho nội
         // dung mới) — dùng để so khớp ở findOverlappingTextEdit, không đổi kể cả khi ed.x/y/w/h
         // đã phình to hơn nhiều so với dòng gốc lúc ban đầu.
@@ -4380,6 +4555,113 @@ document.getElementById('btnDownloadTxt').onclick = ()=>{
 // Toàn bộ thao tác ghép/xuất PDF chỉ làm việc TRÊN BỘ NHỚ (mảng `pages`/`edits` trong trình duyệt)
 // và tạo ra một file PDF MỚI để tải xuống — file PDF gốc mà người dùng mở lên (trên máy họ) không
 // hề bị đụng tới hay ghi đè trong suốt quá trình này.
+// Dựng một PDFDocument (pdf-lib) MỚI chứa đúng các trang theo `indexes` (theo thứ tự truyền vào),
+// đã áp dụng đầy đủ mọi chỉnh sửa (`edits`) hiện có trong bộ nhớ — CHƯA lưu (save)/tải xuống, chỉ
+// trả về đối tượng outDoc để nơi gọi tự quyết định làm gì tiếp theo (lưu PDF bình thường, hoặc
+// dùng làm ĐẦU VÀO cho bước nén PDF ở dưới). Tách hàm này ra từ exportPdfAs để dùng chung, tránh
+// lặp lại (và có nguy cơ lệch nhau) toàn bộ logic ghép trang/áp dụng chỉnh sửa ở 2 nơi khác nhau.
+async function buildEditedOutDoc(indexes, spinnerLabel){
+  const outDoc = await PDFDocument.create();
+  const imageEmbedCache = new Map(); // cache ảnh đã nhúng (theo từng edit) trong lượt xuất file này
+  // Font dự phòng CHẮC CHẮN dùng được (chuẩn PDF, không cần tải/nhúng gì thêm) — dùng khi font
+  // Việt hoá nhúng sẵn vì lý do gì đó không vẽ được (xem safeDrawText), để chữ luôn hiện ra được
+  // trong file PDF lưu ra, thay vì chỉ còn lại mảng nền che mà không có chữ nào cả.
+  const fallbackFont = await outDoc.embedFont(StandardFonts.Helvetica);
+  let editFont;
+  try{
+    if(typeof fontkit === 'undefined'){
+      throw new Error('Thư viện fontkit chưa tải được (kiểm tra kết nối mạng / tường lửa chặn cdn.jsdelivr.net).');
+    }
+    outDoc.registerFontkit(fontkit);
+    // QUAN TRỌNG (sửa lỗi GỐC RỄ khiến chữ vừa sửa hiện ra thiếu/vỡ nát sau khi xuất PDF, ví dụ
+    // "BẢN THANH TOÁN XE OTO" chỉ còn hiện "BẢN   N     N E"): trước đây nhúng font Việt hoá với
+    // { subset: true } — tức là pdf-lib/fontkit chỉ nhúng RÚT GỌN đúng những glyph cần dùng, và
+    // TỰ XÂY LẠI bảng glyph đó dần dần mỗi khi gọi drawText thêm một lần nữa. Đã kiểm chứng trực
+    // tiếp (dựng lại đúng Chrome thật + đúng các thư viện pdf.js/pdf-lib/fontkit của ứng dụng,
+    // nạp file PDF thật của người dùng, chạy đúng quy trình xuất file): với font tiếng Việt đang
+    // dùng, khi có TỪ 2 LƯỢT vẽ chữ (drawText) trở lên bằng CÙNG một font đã "subset", pdf-lib bị
+    // lỗi xây sai bảng glyph, khiến rất nhiều ký tự bị vẽ SAI/THIẾU hẳn glyph (biến mất) dù không
+    // hề báo lỗi (không throw) — hoàn toàn không liên quan tới khung chỉnh sửa hay logic tô đè.
+    // Nhúng font KHÔNG rút gọn ({ subset: false }, nhúng trọn bộ file font ~190KB) tránh được lỗi
+    // xây bảng glyph dần dần này — mọi glyph đã có sẵn đầy đủ ngay từ đầu — đổi lại là dung lượng
+    // file PDF xuất ra lớn hơn một chút, đánh đổi hoàn toàn xứng đáng để chữ luôn hiện ra đúng.
+    editFont = await outDoc.embedFont(getVietFontBytes(), { subset: false });
+  }catch(fontErr){
+    // Không để lỗi nhúng font Việt hoá làm hỏng CẢ QUÁ TRÌNH xuất file — vẫn xuất PDF bình thường,
+    // chỉ là chữ sửa sẽ dùng font dự phòng (có thể mất dấu tiếng Việt) thay vì dừng hẳn giữa chừng.
+    console.warn('Không nhúng được font Việt hoá, dùng font dự phòng cho toàn bộ chữ đã sửa:', fontErr);
+    editFont = fallbackFont;
+  }
+
+  // Cache PDFDocument (pdf-lib) của từng file nguồn để không phải nạp lại nhiều lần
+  const srcDocCache = new Map();
+  async function getSrcDoc(buf){
+    if(!srcDocCache.has(buf)){
+      srcDocCache.set(buf, await PDFDocument.load(buf, { ignoreEncryption: true }));
+    }
+    return srcDocCache.get(buf);
+  }
+
+  for(let k=0;k<indexes.length;k++){
+    const i = indexes[k];
+    if(spinnerLabel) spinnerLabel.textContent = ` Đang ghép trang ${k+1}/${indexes.length}…`;
+    const p = pages[i];
+    let pageObj, H;
+    if(p.type==='pdf'){
+      if(!p.srcBuf){
+        throw new Error('Thiếu dữ liệu gốc của trang '+(i+1)+'. Hãy mở lại file PDF rồi thử lại.');
+      }
+      const srcDoc = await getSrcDoc(p.srcBuf);
+      const [copiedPage] = await outDoc.copyPages(srcDoc, [p.srcPage-1]);
+      outDoc.addPage(copiedPage);
+      pageObj = copiedPage;
+      H = pageObj.getHeight();
+
+      // ---- NativeTextEngine: thử SỬA THẬT trực tiếp trên content stream gốc ----
+      // Chỉ những chỉnh sửa bắt nguồn từ chữ PDF thật (có nativeItemIdxs, xem editLineAt)
+      // mới đủ điều kiện thử. Nếu thành công cho dòng nào, dòng đó được đánh dấu
+      // "_nativeApplied" để KHÔNG vẽ đè lớp che+chữ mới (drawEditOnPdfPage) lên nữa —
+      // tránh vẽ chồng 2 lần. Nếu vì lý do gì đó thất bại/không chắc chắn (font đã bị
+      // cắt gọn thiếu glyph cần dùng, cấu trúc trang không khớp được...), chỉnh sửa đó
+      // tự động rơi về cách "che nền + vẽ chữ mới đè lên" như trước — KHÔNG BAO GIỜ làm
+      // hỏng file hay mất chữ, chỉ đơn giản là không "sửa thật" được cho riêng dòng đó.
+      // Bỏ đánh dấu "_nativeApplied" từ lần xuất TRƯỚC (nếu có) trước khi thử lại từ đầu —
+      // tránh trường hợp nội dung dòng đã đổi (không còn đủ điều kiện sửa thật ở lần xuất
+      // này) nhưng vẫn còn sót cờ cũ khiến lớp che+vẽ đè bị bỏ qua nhầm.
+      for(const ed of p.edits) ed._nativeApplied = false;
+      try{
+        // Chỉ thử "sửa thật" cho những dòng KHÔNG yêu cầu Đậm/Nghiêng/Gạch chân — engine này chỉ
+        // thay thế đúng glyph chữ trong content stream gốc bằng đúng font/độ đậm sẵn có của PDF gốc,
+        // không thể tự làm đậm/nghiêng/gạch chân. Những dòng có yêu cầu định dạng này sẽ tự động
+        // rơi về cách "che nền + vẽ chữ mới đè lên" (drawEditOnPdfPage) để áp dụng đúng định dạng.
+        const nativeEdits = p.edits.filter(ed => ed.type==='textfix' && ed.nativeItemIdxs && ed.nativeItemIdxs.length && !ed.bold && !ed.italic && !ed.underline);
+        if(nativeEdits.length){
+          const pdfjsPage = await p.doc.getPage(p.srcPage);
+          const nativeCtx = await NativeTextEngine.preparePage(outDoc, pageObj, pdfjsPage);
+          for(const ed of nativeEdits){
+            const res = NativeTextEngine.tryReplaceLine(nativeCtx, ed.nativeItemIdxs, ed.text);
+            if(res.success) ed._nativeApplied = true;
+          }
+          NativeTextEngine.finalizePage(outDoc, pageObj, nativeCtx);
+        }
+      }catch(nativeErr){
+        // Không để lỗi ở bước "sửa thật" làm hỏng cả quá trình xuất file — mọi chỉnh sửa
+        // của trang này chỉ đơn giản là chưa được đánh dấu _nativeApplied nên sẽ tự động
+        // dùng cách "che + vẽ đè" như bình thường ở vòng lặp bên dưới.
+        console.warn('NativeTextEngine: không sửa thật được trang '+(i+1)+' (tự dùng cách che+vẽ đè):', nativeErr);
+      }
+    } else {
+      pageObj = outDoc.addPage([p.width, p.height]);
+      H = p.height;
+    }
+    for(const ed of p.edits){
+      if(ed._nativeApplied) continue; // đã sửa thật trực tiếp trên content stream, không vẽ đè nữa
+      await drawEditOnPdfPage(pageObj, ed, H, editFont, fallbackFont, outDoc, imageEmbedCache);
+    }
+  }
+  return outDoc;
+}
+
 async function exportPdfAs(filename, pageIndexes){
   if(!pages.length){ alert('Hãy mở một file PDF trước.'); return; }
   // QUAN TRỌNG: chốt lại ô nhập sửa chữ đang mở (nếu có) TRƯỚC khi đọc dữ liệu "edits" để xuất
@@ -4395,101 +4677,7 @@ async function exportPdfAs(filename, pageIndexes){
     // Nếu có truyền pageIndexes (dùng khi "Tách trang" chỉ chọn 1 số trang), chỉ ghép đúng những
     // trang đó theo đúng thứ tự đã chọn; mặc định (Save PDF bình thường) ghép TOÀN BỘ tài liệu.
     const indexes = (pageIndexes && pageIndexes.length) ? pageIndexes : pages.map((_,i)=>i);
-    const outDoc = await PDFDocument.create();
-    const imageEmbedCache = new Map(); // cache ảnh đã nhúng (theo từng edit) trong lượt xuất file này
-    // Font dự phòng CHẮC CHẮN dùng được (chuẩn PDF, không cần tải/nhúng gì thêm) — dùng khi font
-    // Việt hoá nhúng sẵn vì lý do gì đó không vẽ được (xem safeDrawText), để chữ luôn hiện ra được
-    // trong file PDF lưu ra, thay vì chỉ còn lại mảng nền che mà không có chữ nào cả.
-    const fallbackFont = await outDoc.embedFont(StandardFonts.Helvetica);
-    let editFont;
-    try{
-      if(typeof fontkit === 'undefined'){
-        throw new Error('Thư viện fontkit chưa tải được (kiểm tra kết nối mạng / tường lửa chặn cdn.jsdelivr.net).');
-      }
-      outDoc.registerFontkit(fontkit);
-      // QUAN TRỌNG (sửa lỗi GỐC RỄ khiến chữ vừa sửa hiện ra thiếu/vỡ nát sau khi xuất PDF, ví dụ
-      // "BẢN THANH TOÁN XE OTO" chỉ còn hiện "BẢN   N     N E"): trước đây nhúng font Việt hoá với
-      // { subset: true } — tức là pdf-lib/fontkit chỉ nhúng RÚT GỌN đúng những glyph cần dùng, và
-      // TỰ XÂY LẠI bảng glyph đó dần dần mỗi khi gọi drawText thêm một lần nữa. Đã kiểm chứng trực
-      // tiếp (dựng lại đúng Chrome thật + đúng các thư viện pdf.js/pdf-lib/fontkit của ứng dụng,
-      // nạp file PDF thật của người dùng, chạy đúng quy trình xuất file): với font tiếng Việt đang
-      // dùng, khi có TỪ 2 LƯỢT vẽ chữ (drawText) trở lên bằng CÙNG một font đã "subset", pdf-lib bị
-      // lỗi xây sai bảng glyph, khiến rất nhiều ký tự bị vẽ SAI/THIẾU hẳn glyph (biến mất) dù không
-      // hề báo lỗi (không throw) — hoàn toàn không liên quan tới khung chỉnh sửa hay logic tô đè.
-      // Nhúng font KHÔNG rút gọn ({ subset: false }, nhúng trọn bộ file font ~190KB) tránh được lỗi
-      // xây bảng glyph dần dần này — mọi glyph đã có sẵn đầy đủ ngay từ đầu — đổi lại là dung lượng
-      // file PDF xuất ra lớn hơn một chút, đánh đổi hoàn toàn xứng đáng để chữ luôn hiện ra đúng.
-      editFont = await outDoc.embedFont(getVietFontBytes(), { subset: false });
-    }catch(fontErr){
-      // Không để lỗi nhúng font Việt hoá làm hỏng CẢ QUÁ TRÌNH xuất file — vẫn xuất PDF bình thường,
-      // chỉ là chữ sửa sẽ dùng font dự phòng (có thể mất dấu tiếng Việt) thay vì dừng hẳn giữa chừng.
-      console.warn('Không nhúng được font Việt hoá, dùng font dự phòng cho toàn bộ chữ đã sửa:', fontErr);
-      editFont = fallbackFont;
-    }
-
-    // Cache PDFDocument (pdf-lib) của từng file nguồn để không phải nạp lại nhiều lần
-    const srcDocCache = new Map();
-    async function getSrcDoc(buf){
-      if(!srcDocCache.has(buf)){
-        srcDocCache.set(buf, await PDFDocument.load(buf, { ignoreEncryption: true }));
-      }
-      return srcDocCache.get(buf);
-    }
-
-    for(let k=0;k<indexes.length;k++){
-      const i = indexes[k];
-      spinnerLabel.textContent = ` Đang ghép trang ${k+1}/${indexes.length}…`;
-      const p = pages[i];
-      let pageObj, H;
-      if(p.type==='pdf'){
-        if(!p.srcBuf){
-          throw new Error('Thiếu dữ liệu gốc của trang '+(i+1)+'. Hãy mở lại file PDF rồi thử lại.');
-        }
-        const srcDoc = await getSrcDoc(p.srcBuf);
-        const [copiedPage] = await outDoc.copyPages(srcDoc, [p.srcPage-1]);
-        outDoc.addPage(copiedPage);
-        pageObj = copiedPage;
-        H = pageObj.getHeight();
-
-        // ---- NativeTextEngine: thử SỬA THẬT trực tiếp trên content stream gốc ----
-        // Chỉ những chỉnh sửa bắt nguồn từ chữ PDF thật (có nativeItemIdxs, xem editLineAt)
-        // mới đủ điều kiện thử. Nếu thành công cho dòng nào, dòng đó được đánh dấu
-        // "_nativeApplied" để KHÔNG vẽ đè lớp che+chữ mới (drawEditOnPdfPage) lên nữa —
-        // tránh vẽ chồng 2 lần. Nếu vì lý do gì đó thất bại/không chắc chắn (font đã bị
-        // cắt gọn thiếu glyph cần dùng, cấu trúc trang không khớp được...), chỉnh sửa đó
-        // tự động rơi về cách "che nền + vẽ chữ mới đè lên" như trước — KHÔNG BAO GIỜ làm
-        // hỏng file hay mất chữ, chỉ đơn giản là không "sửa thật" được cho riêng dòng đó.
-        // Bỏ đánh dấu "_nativeApplied" từ lần xuất TRƯỚC (nếu có) trước khi thử lại từ đầu —
-        // tránh trường hợp nội dung dòng đã đổi (không còn đủ điều kiện sửa thật ở lần xuất
-        // này) nhưng vẫn còn sót cờ cũ khiến lớp che+vẽ đè bị bỏ qua nhầm.
-        for(const ed of p.edits) ed._nativeApplied = false;
-        try{
-          const nativeEdits = p.edits.filter(ed => ed.type==='textfix' && ed.nativeItemIdxs && ed.nativeItemIdxs.length);
-          if(nativeEdits.length){
-            const pdfjsPage = await p.doc.getPage(p.srcPage);
-            const nativeCtx = await NativeTextEngine.preparePage(outDoc, pageObj, pdfjsPage);
-            for(const ed of nativeEdits){
-              const res = NativeTextEngine.tryReplaceLine(nativeCtx, ed.nativeItemIdxs, ed.text);
-              if(res.success) ed._nativeApplied = true;
-            }
-            NativeTextEngine.finalizePage(outDoc, pageObj, nativeCtx);
-          }
-        }catch(nativeErr){
-          // Không để lỗi ở bước "sửa thật" làm hỏng cả quá trình xuất file — mọi chỉnh sửa
-          // của trang này chỉ đơn giản là chưa được đánh dấu _nativeApplied nên sẽ tự động
-          // dùng cách "che + vẽ đè" như bình thường ở vòng lặp bên dưới.
-          console.warn('NativeTextEngine: không sửa thật được trang '+(i+1)+' (tự dùng cách che+vẽ đè):', nativeErr);
-        }
-      } else {
-        pageObj = outDoc.addPage([p.width, p.height]);
-        H = p.height;
-      }
-      for(const ed of p.edits){
-        if(ed._nativeApplied) continue; // đã sửa thật trực tiếp trên content stream, không vẽ đè nữa
-        await drawEditOnPdfPage(pageObj, ed, H, editFont, fallbackFont, outDoc, imageEmbedCache);
-      }
-    }
-
+    const outDoc = await buildEditedOutDoc(indexes, spinnerLabel);
     const bytes = await outDoc.save();
     const blob = new Blob([bytes], {type:'application/pdf'});
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
@@ -4504,6 +4692,122 @@ async function exportPdfAs(filename, pageIndexes){
 }
 
 document.getElementById('btnSave').onclick = ()=> exportPdfAs(originalFileName);
+
+// ---------- Compress PDF (nén dung lượng file PDF) ----------
+// Cách nén: KHÔNG có máy chủ riêng để xử lý (mọi thứ chạy ngay trên trình duyệt người dùng), nên
+// cách duy nhất giảm được ĐÁNG KỂ dung lượng PDF ở đây là "dựng lại" (rasterize) từng trang thành
+// một ảnh JPEG ở độ phân giải thấp hơn/chất lượng nén cao hơn, rồi ghép các ảnh đó lại thành một
+// file PDF mới — cách này đặc biệt hiệu quả với PDF chứa nhiều ảnh/PDF quét (scan). Đánh đổi: chữ
+// trong file ĐÃ NÉN sẽ trở thành ảnh (không còn bôi đen/copy được như file gốc) — nếu cần giữ chữ
+// chọn được, người dùng nên dùng "Save PDF" thay vì nén.
+const COMPRESS_LEVELS = {
+  standard: { maxSide: 1600, quality: 0.72 }, // Nén tiêu chuẩn: vẫn nét, giảm dung lượng vừa phải
+  extreme:  { maxSide: 1000, quality: 0.38 }  // Siêu nén: ưu tiên dung lượng nhỏ nhất có thể
+};
+
+// Lưu ý: chuyển "data:image/jpeg;base64,...." thành Uint8Array để nhúng ảnh JPEG vào PDF (pdf-lib
+// embedJpg) dùng lại đúng hàm dataUrlToBytes_() đã có sẵn ở trên (dùng cho Insert Image) — không
+// định nghĩa lại để tránh 2 hàm cùng tên đè lẫn nhau.
+
+function formatBytes_(bytes){
+  if(bytes < 1024) return bytes + ' B';
+  if(bytes < 1024*1024) return (bytes/1024).toFixed(0) + ' KB';
+  return (bytes/(1024*1024)).toFixed(2) + ' MB';
+}
+
+async function compressPdfAndDownload(level){
+  if(!pages.length){ alert('Hãy mở một file PDF trước.'); return; }
+  flushPendingEdit();
+  const cfg = COMPRESS_LEVELS[level] || COMPRESS_LEVELS.standard;
+  const spinner = document.getElementById('spinner');
+  const spinnerLabel = spinner.lastChild;
+  spinner.classList.add('show');
+  cprError.textContent = '';
+  cprResult.textContent = '';
+  try{
+    // Bước 1: ghép toàn bộ trang + mọi chỉnh sửa hiện có thành MỘT file PDF hoàn chỉnh trong bộ
+    // nhớ (giống hệt "Save PDF") để làm đầu vào cho bước nén — đảm bảo file nén ra vẫn giữ đúng
+    // mọi chỉnh sửa người dùng đã thực hiện, không chỉ nén mỗi bản gốc chưa sửa.
+    spinnerLabel.textContent = ' Đang chuẩn bị tài liệu để nén…';
+    const editedOutDoc = await buildEditedOutDoc(pages.map((_,i)=>i), spinnerLabel);
+    const editedBytes = await editedOutDoc.save();
+
+    // Bước 2: vẽ lại từng trang ra canvas (dùng pdf.js) rồi nén thành JPEG theo mức đã chọn, sau
+    // đó nhúng ảnh đó vào một trang PDF mới có ĐÚNG kích thước (point) như trang gốc — giữ nguyên
+    // khổ giấy, chỉ đổi nội dung bên trong thành ảnh đã nén.
+    const editedDocJs = await pdfjsLib.getDocument({ data: editedBytes }).promise;
+    const compressedDoc = await PDFDocument.create();
+
+    for(let i=0;i<editedDocJs.numPages;i++){
+      spinnerLabel.textContent = ` Đang nén trang ${i+1}/${editedDocJs.numPages}…`;
+      const page = await editedDocJs.getPage(i+1);
+      const vp1 = page.getViewport({ scale: 1 }); // kích thước trang gốc theo point (1pt = 1/72 inch)
+      const maxSide1 = Math.max(vp1.width, vp1.height);
+      let renderScale = cfg.maxSide / maxSide1;
+      renderScale = Math.max(0.4, Math.min(renderScale, 3)); // không phóng to/thu nhỏ quá mức
+      const vp = page.getViewport({ scale: renderScale });
+
+      const tmpCanvas = document.createElement('canvas');
+      tmpCanvas.width = Math.max(1, Math.round(vp.width));
+      tmpCanvas.height = Math.max(1, Math.round(vp.height));
+      const ctx = tmpCanvas.getContext('2d');
+      ctx.fillStyle = '#fff'; // nền trắng (JPEG không hỗ trợ trong suốt)
+      ctx.fillRect(0, 0, tmpCanvas.width, tmpCanvas.height);
+      await page.render({ canvasContext: ctx, viewport: vp }).promise;
+
+      const jpegBytes = await dataUrlToBytes_(tmpCanvas.toDataURL('image/jpeg', cfg.quality));
+      const jpegImage = await compressedDoc.embedJpg(jpegBytes);
+      const newPage = compressedDoc.addPage([vp1.width, vp1.height]);
+      newPage.drawImage(jpegImage, { x: 0, y: 0, width: vp1.width, height: vp1.height });
+    }
+
+    const compressedBytes = await compressedDoc.save();
+    const originalSize = editedBytes.length;
+    const compressedSize = compressedBytes.length;
+    const percent = originalSize > 0 ? Math.round((1 - compressedSize / originalSize) * 100) : 0;
+
+    const blob = new Blob([compressedBytes], {type:'application/pdf'});
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+    const base = originalFileName.replace(/\.pdf$/i,'').replace(/-edited$/,'');
+    a.download = base + (level==='extreme' ? '-sieu-nen.pdf' : '-nen.pdf');
+    a.click();
+
+    cprResult.textContent = percent > 0
+      ? `Xong! Dung lượng gốc: ${formatBytes_(originalSize)} → sau khi nén: ${formatBytes_(compressedSize)} (giảm ${percent}%). Đã tải file xuống.`
+      : `Xong! Dung lượng gốc: ${formatBytes_(originalSize)} → sau khi nén: ${formatBytes_(compressedSize)}. Tài liệu này chủ yếu là chữ nên nén không giảm được nhiều (có thể còn lớn hơn bản gốc) — vẫn đã tải file đã nén xuống, bạn có thể dùng "Save PDF" nếu muốn giữ file gốc.`;
+  }catch(err){
+    console.error('Lỗi khi nén PDF:', err);
+    cprError.textContent = 'Lỗi khi nén PDF: ' + err.message;
+  }finally{
+    spinner.classList.remove('show');
+    spinnerLabel.textContent = ' Đang xử lý OCR…';
+  }
+}
+
+// ---------- Modal chọn mức nén PDF ----------
+const compressModal = document.getElementById('compressModal');
+const cprError = document.getElementById('cprError');
+const cprResult = document.getElementById('cprResult');
+
+function openCompressModal(){
+  if(!pages.length){ alert('Hãy mở một file PDF trước.'); return; }
+  cprError.textContent = '';
+  cprResult.textContent = '';
+  document.getElementById('cprLevelStandard').checked = true;
+  compressModal.style.display = 'flex';
+}
+function closeCompressModal(){ compressModal.style.display = 'none'; }
+
+document.getElementById('btnCompress').onclick = openCompressModal;
+document.getElementById('cprCloseBtn').addEventListener('click', closeCompressModal);
+document.getElementById('cprCancelBtn').addEventListener('click', closeCompressModal);
+compressModal.addEventListener('click', function(e){ if(e.target === compressModal) closeCompressModal(); });
+
+document.getElementById('cprConfirmBtn').addEventListener('click', async () => {
+  const checked = document.querySelector('input[name="cprLevel"]:checked');
+  const level = checked ? checked.value : 'standard';
+  await compressPdfAndDownload(level);
+});
 
 // ---------- Xuất sang Word (.doc) — giữ đúng vị trí/bố cục như bản gốc ----------
 function escapeHtml(str){
