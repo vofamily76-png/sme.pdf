@@ -4042,22 +4042,57 @@ function clusterLineCoords_(vals, tol){
 // dòng chữ (toạ độ trên-trái, giống Edit Text), dựng một bảng HTML thật (<table>) với viền rõ
 // ràng. Trả về null nếu không đủ đường kẻ để tạo thành một lưới bảng thật (khi đó nơi gọi sẽ
 // tự chuyển sang cách vẽ dự phòng bằng div, dùng cho các trang không có bảng).
+// Xác định dòng chữ có toạ độ `val` thuộc "băng" (hàng hoặc cột) nào trong danh sách mốc biên
+// `edges` (đã sort tăng dần, dài = số băng + 1). SỬA LỖI QUAN TRỌNG so với bản cũ:
+//  - Bản cũ cộng thêm TOL vào CẢ HAI đầu của mỗi băng khi so khớp
+//    (`v >= lo - TOL && v < hi + TOL`), khiến vùng biên giữa 2 băng liền kề bị "chồng lấn"
+//    (overlap) — một dòng chữ nằm sát/ngay trên đường kẻ phân cách vẫn bị `findIndex` khớp
+//    vào băng ĐỨNG TRƯỚC (vì tìm thấy trước), dù mắt thường thấy nó nằm ở hàng/cột kế tiếp.
+//    Đây chính là nguyên nhân khiến nội dung "chạy nhầm" sang hàng/cột khác khi xuất Word.
+//  - Bản mới CHỈ nới lỏng dung sai (TOL) ở 2 MÉP NGOÀI CÙNG của cả bảng (đầu băng đầu tiên,
+//    cuối băng cuối cùng) để bù sai số dò đường kẻ; các đường phân cách NỘI BỘ giữa các
+//    băng liền kề dùng ranh giới đúng (không cộng dồn TOL ở cả 2 phía), nên không còn vùng
+//    chồng lấn -> mỗi dòng chữ chỉ khớp đúng MỘT hàng/cột duy nhất.
+//  - Nếu vì lý do nào đó (làm tròn số thực) mà `val` vẫn không rơi gọn vào băng nào, thay vì
+//    loại bỏ (rơi ra "outside" rồi bị xổ nhầm ra ngoài bảng khi xuất Word — đúng triệu chứng
+//    "có ô có chữ mà xuất ra bị trống, chữ lại dạt sang chỗ khác"), hàm sẽ chọn băng có TÂM
+//    (midpoint) gần `val` nhất, đảm bảo dòng chữ luôn được xếp vào đúng ô gần nó nhất thay vì
+//    bị văng ra khỏi bảng.
+function bandIndex_(val, edges, TOL){
+  const n = edges.length - 1;
+  for(let i=0;i<n;i++){
+    const lo = edges[i]   - (i===0   ? TOL : 0);
+    const hi = edges[i+1] + (i===n-1 ? TOL : 0);
+    if(val >= lo && val < hi) return i;
+  }
+  let best = 0, bestDist = Infinity;
+  for(let i=0;i<n;i++){
+    const mid = (edges[i] + edges[i+1]) / 2;
+    const d = Math.abs(val - mid);
+    if(d < bestDist){ bestDist = d; best = i; }
+  }
+  return best;
+}
+
 function buildTableFromSegments_(tableLines, lines, H){
   const TOL = 2.2; // pt
 
   // BƯỚC 1 — lọc bỏ các đường kẻ NGẮN không thuộc khung bảng (ví dụ gạch chân dưới dòng
   // "Độc lập - Tự do - Hạnh phúc", gạch chân tiêu đề, gạch dưới ô ký tên...). Đường kẻ hàng/cột
-  // THẬT của bảng luôn chạy gần hết bề rộng/bề cao của cả bảng, nên chỉ giữ lại các đường có độ
-  // dài >= 55% đường dài nhất cùng hướng. Nếu không lọc bước này, các đường kẻ ngắn/không liên
-  // quan sẽ làm khung bảng bị "nới rộng" sai phạm vi thật, kéo theo chữ không thuộc bảng (tiêu
-  // đề, đoạn giới thiệu...) bị gộp nhầm vào trong các ô.
+  // THẬT của bảng luôn chạy gần hết bề rộng/bề cao của cả bảng — NHƯNG với các bảng có ô GỘP
+  // (merge nhiều hàng/cột, ví dụ hàng tiêu đề gộp ô), một số đường phân cách NỘI BỘ chỉ chạy
+  // qua một phần bảng (ngắn hơn hẳn khung ngoài) nên trước đây bị lọc bỏ oan uổng ở ngưỡng 55%,
+  // làm mất hẳn mốc hàng/cột đó -> chữ đúng ra thuộc hàng/cột bị mất mốc này bị đẩy nhầm sang
+  // hàng/cột bên cạnh (hoặc rớt ra ngoài bảng) khi xuất Word. Hạ ngưỡng xuống 30% (kèm sàn tối
+  // thiểu tuyệt đối) để giữ lại các đường phân cách nội bộ hợp lệ, đồng thời vẫn loại được các
+  // nét gạch chân/ký tên vốn luôn rất ngắn so với cả bảng.
   const hSegs = tableLines.segments.filter(s => s.orient === 'h');
   const vSegs = tableLines.segments.filter(s => s.orient === 'v');
   if(!hSegs.length || !vSegs.length) return null;
   const maxHSpan = Math.max(...hSegs.map(s => s.x1 - s.x0));
   const maxVSpan = Math.max(...vSegs.map(s => s.y1 - s.y0));
-  const hCore = hSegs.filter(s => (s.x1 - s.x0) >= maxHSpan * 0.55);
-  const vCore = vSegs.filter(s => (s.y1 - s.y0) >= maxVSpan * 0.55);
+  const hCore = hSegs.filter(s => (s.x1 - s.x0) >= Math.max(maxHSpan * 0.30, 18));
+  const vCore = vSegs.filter(s => (s.y1 - s.y0) >= Math.max(maxVSpan * 0.30, 12));
   if(hCore.length < 3 || vCore.length < 2) return null;
 
   const hYs = hCore.map(s => H - s.y);
@@ -4077,13 +4112,13 @@ function buildTableFromSegments_(tableLines, lines, H){
     if(l.y0 < top - TOL || l.y0 > bottom + TOL || l.x0 < left - TOL || l.x0 > right + TOL){
       outside.push(l); continue;
     }
-    const r = rowYs.findIndex((y,i)=> i<nRows && l.y0 >= y - TOL && l.y0 < rowYs[i+1] + TOL);
-    const c = colXs.findIndex((x,i)=> i<nCols && l.x0 >= x - TOL && l.x0 < colXs[i+1] + TOL);
-    // BƯỚC 2 — nếu một dòng chữ nằm trong khung bao chung của bảng nhưng KHÔNG khớp đúng vào
-    // hàng/cột nào (ví dụ do sai số nhỏ khi dò đường kẻ), coi như KHÔNG thuộc bảng thay vì ép
-    // nhét vào ô cuối cùng (góc dưới-phải) như cách cũ — cách cũ chính là nguyên nhân khiến chữ
-    // không thuộc bảng lại bị đẩy lẫn vào trong các ô khi xuất ra Word.
-    if(r < 0 || c < 0){ outside.push(l); continue; }
+    // BƯỚC 2 — dòng chữ này nằm trong khung bao chung của cả bảng (đã kiểm tra ở trên), nên
+    // CHẮC CHẮN thuộc về một hàng/cột nào đó -> dùng bandIndex_ để xếp đúng, không còn trường
+    // hợp bị văng ra "outside" chỉ vì sai số làm tròn ở đúng ranh giới 2 ô (đây là nguyên nhân
+    // khiến trước đây có ô rõ ràng có chữ nhưng xuất Word lại trống, còn chữ thì dạt ra ngoài
+    // bảng, trông như "nằm nhầm hàng/cột khác").
+    const r = bandIndex_(l.y0, rowYs, TOL);
+    const c = bandIndex_(l.x0, colXs, TOL);
     cells[r][c].push(l);
   }
 
