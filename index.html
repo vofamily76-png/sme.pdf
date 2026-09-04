@@ -434,6 +434,50 @@
   </div>
 </div>
 
+<!-- ===================== MODAL: EXPORT WORD DOCUMENT (chọn trang cần xuất) ===================== -->
+<div id="exportWordModal" style="
+  position:fixed;inset:0;z-index:1100;display:none;
+  background:rgba(0,0,0,.55);
+  align-items:center;justify-content:center;
+  font-family:'Segoe UI',Roboto,Arial,sans-serif;color:#eceff1;">
+  <div style="
+    background:#25282e;border:1px solid #454a52;border-radius:10px;
+    padding:22px 24px;width:560px;max-width:92vw;max-height:86vh;overflow:auto;
+    box-shadow:0 10px 40px rgba(0,0,0,.5);">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+      <div style="font-weight:600;font-size:15px;">📝 Export Word Document</div>
+      <button type="button" id="ewCloseBtn" style="
+        background:transparent;border:none;color:#9aa0a8;font-size:18px;cursor:pointer;line-height:1;">✕</button>
+    </div>
+    <div style="font-size:12px;color:#9aa0a8;margin-bottom:12px;">
+      Chọn các trang muốn xuất sang Word (mặc định: tất cả các trang). Nội dung xuất ra sẽ giữ đúng
+      vị trí/bố cục như trong bản gốc (kể cả bảng biểu), bao gồm cả những chỉnh sửa bạn đã thực hiện.
+    </div>
+
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+      <label style="display:flex;align-items:center;gap:8px;font-size:12.5px;cursor:pointer;">
+        <input type="checkbox" id="ewSelectAll"> Chọn tất cả (Xuất tất cả các trang)
+      </label>
+      <span id="ewSelectedCount" style="font-size:11.5px;color:#9aa0a8;"></span>
+    </div>
+
+    <div id="ewList" style="
+      display:grid;grid-template-columns:repeat(auto-fill,minmax(86px,1fr));gap:10px;
+      margin-bottom:14px;max-height:380px;overflow:auto;padding:2px;"></div>
+
+    <div id="ewError" style="min-height:18px;color:#ff8a80;font-size:12px;margin-bottom:4px;"></div>
+
+    <div style="display:flex;gap:8px;margin-top:6px;">
+      <button type="button" id="ewCancelBtn" style="
+        flex:1;padding:10px;border:1px solid #454a52;border-radius:6px;background:transparent;color:#eceff1;
+        font-weight:600;font-size:13px;cursor:pointer;">Huỷ</button>
+      <button type="button" id="ewConfirmBtn" style="
+        flex:1;padding:10px;border:none;border-radius:6px;background:#e2402c;color:#fff;
+        font-weight:600;font-size:13px;cursor:pointer;">📝 Xuất Word</button>
+    </div>
+  </div>
+</div>
+
 <!-- ===================== MODAL: INSERT PAGES (chèn trước/sau trang hiện tại) ===================== -->
 <div id="insertPagesModal" style="
   position:fixed;inset:0;z-index:1100;display:none;
@@ -556,7 +600,7 @@
   <div class="sep"></div>
 
   <button class="tbtn" id="btnOcrFull"><span class="ic">📄</span>Trích văn bản OCR</button>
-  <button class="tbtn" id="btnExportWord"><span class="ic">📝</span>Xuất Word</button>
+  <button class="tbtn" id="btnExportWord"><span class="ic">📝</span>Export Word Document</button>
   <div class="sep"></div>
 
   <button class="tbtn" id="zoomOut"><span class="ic">−</span></button>
@@ -843,6 +887,480 @@ tryRestoreSession();
 pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
 const { PDFDocument, rgb, StandardFonts } = PDFLib;
 
+/* =====================================================================
+ *  NativeTextEngine — SỬA THẬT trên content stream gốc của PDF (không
+ *  qua canvas overlay), tương tự cách Adobe Acrobat sửa văn bản.
+ * =====================================================================
+ *  Ý TƯỞNG: PDF vẽ chữ bằng các lệnh (operator) như Tj/TJ trong "content
+ *  stream" của từng trang. Module này: (1) đọc thẳng byte của content
+ *  stream, (2) phân tích thành danh sách lệnh, (3) khớp từng lệnh vẽ chữ
+ *  với đúng đoạn văn bản tương ứng mà pdf.js đã trích xuất (dùng để hiển
+ *  thị & để người dùng bấm chọn dòng cần sửa), (4) khi sửa một dòng: TÁI
+ *  SỬ DỤNG đúng các mã glyph (byte) mà chính font đó đã dùng cho những
+ *  ký tự đã xuất hiện ở đâu đó trên trang (không thể tự bịa mã glyph cho
+ *  ký tự hoàn toàn mới, vì font nhúng trong PDF thường đã bị "cắt gọn"
+ *  (subset) chỉ chứa đúng số glyph cần dùng ban đầu), rồi GHI ĐÈ THẲNG
+ *  lên đúng lệnh Tj/TJ đó trong content stream — chữ cũ bị XOÁ THẬT khỏi
+ *  file (không phải bị che bởi một hình chữ nhật), (5) ghi lại content
+ *  stream đã sửa vào đúng trang PDF khi xuất file.
+ *
+ *  GIỚI HẠN (đã cân nhắc kỹ, tự động rơi về cách "che + vẽ đè" cũ nếu
+ *  gặp các trường hợp này, KHÔNG BAO GIỜ làm hỏng file):
+ *   - Chỉ áp dụng được cho VĂN BẢN PDF THẬT (không áp dụng cho chữ nhận
+ *     diện qua OCR từ ảnh/scan — loại này vốn không có "lệnh vẽ chữ"
+ *     thật nào trong file để mà sửa, kể cả Adobe Acrobat cũng không sửa
+ *     "thật" được chữ trong ảnh scan).
+ *   - Dòng mới CHỈ được sửa thành công nếu MỌI ký tự trong nội dung mới
+ *     đã từng xuất hiện ở đâu đó trong CHÍNH font đó trên trang (vì
+ *     không thể tự vẽ glyph không có sẵn trong font đã bị cắt gọn).
+ *     Ví dụ: sửa lỗi chính tả, đổi số liệu (nếu chữ số đã dùng ở nơi
+ *     khác), sắp xếp lại câu... đều hoạt động tốt. Gõ hẳn một từ/ký tự
+ *     hoàn toàn chưa từng xuất hiện trên trang thì KHÔNG sửa "thật"
+ *     được — lúc đó phần mềm tự động dùng lại cách "che + vẽ đè" như
+ *     trước đây cho riêng dòng đó, đảm bảo người dùng vẫn luôn sửa được.
+ *   - Nếu cấu trúc content stream của trang quá đặc biệt (bất thường so
+ *     với cách pdf.js phân tích), module tự phát hiện (so khớp vị trí)
+ *     và tắt hẳn chế độ sửa thật cho TRANG đó, dùng lại cách cũ.
+ * ===================================================================== */
+const NativeTextEngine = (function(){
+  'use strict';
+
+  // ---- Bytes <-> "binary string" (1 ký tự JS = 1 byte, tránh lỗi UTF-8) ----
+  function bytesToBin(bytes){
+    let s = '';
+    const CHUNK = 0x8000;
+    for(let i=0;i<bytes.length;i+=CHUNK){
+      s += String.fromCharCode.apply(null, bytes.subarray ? bytes.subarray(i,i+CHUNK) : bytes.slice(i,i+CHUNK));
+    }
+    return s;
+  }
+  function binToBytes(str){
+    const out = new Uint8Array(str.length);
+    for(let i=0;i<str.length;i++) out[i] = str.charCodeAt(i) & 0xFF;
+    return out;
+  }
+
+  const WS = new Set([0,9,10,12,13,32]);
+  const DELIM = new Set([0x28,0x29,0x3C,0x3E,0x5B,0x5D,0x7B,0x7D,0x2F,0x25]);
+  function isHexDigit(c){ return (c>=0x30&&c<=0x39)||(c>=0x41&&c<=0x46)||(c>=0x61&&c<=0x66); }
+
+  // ---- Tokenizer: bytes của content stream -> danh sách token ----
+  function csTokenize(bytes){
+    const tokens = [];
+    let i = 0; const n = bytes.length;
+    const isWS = c => WS.has(c);
+    const isDelim = c => DELIM.has(c);
+    while(i < n){
+      const c = bytes[i];
+      if(isWS(c)){ i++; continue; }
+      if(c === 0x25){ while(i<n && bytes[i]!==10 && bytes[i]!==13) i++; continue; }
+      if(c === 0x2F){ // /Name
+        let j = i+1; const raw = [];
+        while(j<n && !isWS(bytes[j]) && !isDelim(bytes[j])){
+          if(bytes[j]===0x23 && j+2<n && isHexDigit(bytes[j+1]) && isHexDigit(bytes[j+2])){
+            raw.push(parseInt(String.fromCharCode(bytes[j+1],bytes[j+2]),16)); j+=3; continue;
+          }
+          raw.push(bytes[j]); j++;
+        }
+        tokens.push({t:'name', v: bytesToBin(Uint8Array.from(raw))});
+        i = j; continue;
+      }
+      if(c === 0x28){ // (chuỗi văn bản)
+        let depth=1, j=i+1; const out=[];
+        while(j<n && depth>0){
+          const cc = bytes[j];
+          if(cc===0x5C){
+            const nx = bytes[j+1];
+            if(nx===0x6E){out.push(10);j+=2;}
+            else if(nx===0x72){out.push(13);j+=2;}
+            else if(nx===0x74){out.push(9);j+=2;}
+            else if(nx===0x62){out.push(8);j+=2;}
+            else if(nx===0x66){out.push(12);j+=2;}
+            else if(nx===0x28){out.push(0x28);j+=2;}
+            else if(nx===0x29){out.push(0x29);j+=2;}
+            else if(nx===0x5C){out.push(0x5C);j+=2;}
+            else if(nx===10){j+=2;}
+            else if(nx===13){j+=2; if(bytes[j]===10) j++;}
+            else if(nx>=0x30 && nx<=0x37){
+              let oct='', k=j+1, cnt=0;
+              while(cnt<3 && bytes[k]>=0x30 && bytes[k]<=0x37){ oct+=String.fromCharCode(bytes[k]); k++; cnt++; }
+              out.push(parseInt(oct,8)&0xFF); j=k;
+            } else { out.push(nx); j+=2; }
+          } else if(cc===0x28){ depth++; out.push(cc); j++; }
+          else if(cc===0x29){ depth--; j++; if(depth>0) out.push(cc); }
+          else { out.push(cc); j++; }
+        }
+        tokens.push({t:'str', bytes: Uint8Array.from(out), hex:false});
+        i = j; continue;
+      }
+      if(c === 0x3C){ // <hex> hoặc <<dict>>
+        if(bytes[i+1]===0x3C){ tokens.push({t:'dictStart'}); i+=2; continue; }
+        let j=i+1; const hexChars=[];
+        while(j<n && bytes[j]!==0x3E){ if(!isWS(bytes[j])) hexChars.push(bytes[j]); j++; }
+        j++;
+        let hexStr = bytesToBin(Uint8Array.from(hexChars));
+        if(hexStr.length % 2 === 1) hexStr += '0';
+        const out = [];
+        for(let k=0;k<hexStr.length;k+=2) out.push(parseInt(hexStr.substr(k,2),16)||0);
+        tokens.push({t:'str', bytes: Uint8Array.from(out), hex:true});
+        i = j; continue;
+      }
+      if(c === 0x3E){ if(bytes[i+1]===0x3E){ tokens.push({t:'dictEnd'}); i+=2; continue;} i++; continue; }
+      if(c === 0x5B){ tokens.push({t:'arrStart'}); i++; continue; }
+      if(c === 0x5D){ tokens.push({t:'arrEnd'}); i++; continue; }
+      let j = i;
+      while(j<n && !isWS(bytes[j]) && !isDelim(bytes[j])) j++;
+      const raw = bytesToBin(bytes.slice(i,j));
+      if(/^[+\-]?(\d+\.?\d*|\.\d+)$/.test(raw)){
+        tokens.push({t:'num', v: parseFloat(raw)});
+      } else {
+        tokens.push({t:'kw', v: raw});
+        if(raw === 'ID'){
+          // Ảnh nhúng trực tiếp (inline image): giữ NGUYÊN byte nhị phân, không
+          // phân tích như token thường (tránh việc dữ liệu ảnh ngẫu nhiên trùng
+          // ký tự cú pháp làm hỏng việc đọc phần còn lại của content stream).
+          i = j;
+          if(i<n && isWS(bytes[i])) i++;
+          const dataStart = i;
+          let k = i;
+          while(k < n-1){
+            if(bytes[k]===0x45 && bytes[k+1]===0x49 &&
+               (k===dataStart || isWS(bytes[k-1])) &&
+               (k+2>=n || isWS(bytes[k+2]) || isDelim(bytes[k+2]))){
+              break;
+            }
+            k++;
+          }
+          tokens.push({t:'inlineData', bytes: bytes.slice(dataStart, k)});
+          i = k;
+          continue;
+        }
+      }
+      i = j;
+    }
+    return tokens;
+  }
+
+  // ---- Gom token phẳng thành danh sách lệnh {op, args} ----
+  function csParseOps(tokens){
+    const ops = [];
+    let operands = [];
+    let i = 0;
+    function readValue(){
+      const tok = tokens[i];
+      if(tok.t==='num' || tok.t==='name' || tok.t==='str'){ i++; return tok; }
+      if(tok.t==='arrStart'){
+        i++; const arr=[];
+        while(i<tokens.length && tokens[i].t!=='arrEnd'){ arr.push(readValue()); }
+        i++;
+        return {t:'arr', v:arr};
+      }
+      if(tok.t==='dictStart'){
+        let depth=1; const raw=[tok]; i++;
+        while(i<tokens.length && depth>0){
+          if(tokens[i].t==='dictStart') depth++;
+          if(tokens[i].t==='dictEnd') depth--;
+          raw.push(tokens[i]); i++;
+        }
+        return {t:'dict', raw};
+      }
+      i++; return {t:'kw', v: tok.v};
+    }
+    while(i < tokens.length){
+      const tok = tokens[i];
+      if(tok.t==='kw'){
+        if(tok.v==='true' || tok.v==='false' || tok.v==='null'){ operands.push(tok); i++; continue; }
+        const op = { op: tok.v, args: operands };
+        operands = [];
+        i++;
+        if(tok.v==='ID' && tokens[i] && tokens[i].t==='inlineData'){
+          op.inlineData = tokens[i].bytes; i++;
+        }
+        ops.push(op);
+        continue;
+      }
+      operands.push(readValue());
+    }
+    if(operands.length) ops.push({op:'__trailing__', args:operands});
+    return ops;
+  }
+
+  function fmtNum(v){
+    if(Number.isInteger(v)) return String(v);
+    let s = v.toFixed(6).replace(/0+$/,'').replace(/\.$/,'');
+    if(s === '-0') s = '0';
+    return s;
+  }
+  function escName(v){
+    let out='';
+    for(let i=0;i<v.length;i++){
+      const c = v.charCodeAt(i);
+      if(c<=0x20 || c>=0x7F || DELIM.has(c) || c===0x23){ out += '#' + c.toString(16).padStart(2,'0'); }
+      else out += v[i];
+    }
+    return out;
+  }
+  function escLiteral(bytes){
+    let out='';
+    for(let i=0;i<bytes.length;i++){
+      const c = bytes[i];
+      if(c===0x28) out+='\\(';
+      else if(c===0x29) out+='\\)';
+      else if(c===0x5C) out+='\\\\';
+      else out += String.fromCharCode(c);
+    }
+    return out;
+  }
+  function hexOf(bytes){
+    let out='';
+    for(let i=0;i<bytes.length;i++) out += bytes[i].toString(16).padStart(2,'0');
+    return out;
+  }
+  function writeValue(tok, chunks){
+    if(tok.t==='num'){ chunks.push(fmtNum(tok.v)); }
+    else if(tok.t==='name'){ chunks.push('/'+escName(tok.v)); }
+    else if(tok.t==='str'){
+      if(tok.hex) chunks.push('<'+hexOf(tok.bytes)+'>');
+      else chunks.push('('+escLiteral(tok.bytes)+')');
+    }
+    else if(tok.t==='arr'){ chunks.push('['); for(const v of tok.v) writeValue(v, chunks); chunks.push(']'); }
+    else if(tok.t==='dict'){
+      for(const rt of tok.raw){
+        if(rt.t==='dictStart') chunks.push('<<');
+        else if(rt.t==='dictEnd') chunks.push('>>');
+        else writeValue(rt, chunks);
+      }
+    }
+    else if(tok.t==='kw'){ chunks.push(tok.v); }
+  }
+  function csSerializeOps(ops){
+    const chunks = [];
+    for(const o of ops){
+      if(o.op==='__trailing__') continue;
+      for(const a of o.args) writeValue(a, chunks);
+      chunks.push(o.op);
+      if(o.op==='ID' && o.inlineData){ chunks.push(bytesToBin(o.inlineData)); }
+    }
+    return binToBytes(chunks.join(' '));
+  }
+
+  // ---- Đọc / ghi content stream của 1 trang qua pdf-lib (mức thấp) ----
+  function getPageContentBytes(pdfDoc, pdfPage){
+    const { PDFArray, decodePDFRawStream } = PDFLib;
+    const ctx = pdfDoc.context;
+    const contents = pdfPage.node.Contents();
+    const parts = [];
+    if(contents instanceof PDFArray){
+      for(let i=0;i<contents.size();i++){
+        const strm = ctx.lookup(contents.get(i));
+        parts.push(decodePDFRawStream(strm).decode());
+        parts.push(Uint8Array.from([10]));
+      }
+    } else if(contents){
+      parts.push(decodePDFRawStream(contents).decode());
+    }
+    let total = 0; for(const p of parts) total += p.length;
+    const out = new Uint8Array(total);
+    let off = 0; for(const p of parts){ out.set(p, off); off += p.length; }
+    return out;
+  }
+  function setPageContentBytes(pdfDoc, pdfPage, bytes){
+    const { PDFName } = PDFLib;
+    const ctx = pdfDoc.context;
+    const streamRef = ctx.register(ctx.stream(bytes, {}));
+    pdfPage.node.set(PDFName.of('Contents'), streamRef);
+  }
+
+  // ---- Ma trận affine 2D (theo đúng quy ước PDF: điểm × ma trận) ----
+  const IDENTITY = [1,0,0,1,0,0];
+  function matMul(m1, m2){
+    const [a1,b1,c1,d1,e1,f1] = m1, [a2,b2,c2,d2,e2,f2] = m2;
+    return [ a1*a2+b1*c2, a1*b2+b1*d2, c1*a2+d1*c2, c1*b2+d1*d2, e1*a2+f1*c2+e2, e1*b2+f1*d2+f2 ];
+  }
+
+  // ---- Duyệt danh sách lệnh, tính vị trí từng lệnh VẼ CHỮ (Tj/TJ/'/") ----
+  function computeTextRuns(ops){
+    const runs = [];
+    let ctmStack = [];
+    let ctm = IDENTITY.slice();
+    let Tm = IDENTITY.slice(), Tlm = IDENTITY.slice();
+    let font = null, fontSize = 0, TL = 0;
+    function advanceLine(tx, ty){ Tlm = matMul([1,0,0,1,tx,ty], Tlm); Tm = Tlm.slice(); }
+    function posOf(){ const R = matMul(Tm, ctm); return { x: R[4], y: R[5] }; }
+    for(let i=0;i<ops.length;i++){
+      const o = ops[i];
+      switch(o.op){
+        case 'q': ctmStack.push(ctm.slice()); break;
+        case 'Q': if(ctmStack.length) ctm = ctmStack.pop(); break;
+        case 'cm': { const v=o.args.map(a=>a.v); if(v.length===6) ctm=matMul(v,ctm); break; }
+        case 'BT': Tm = IDENTITY.slice(); Tlm = IDENTITY.slice(); break;
+        case 'Tf': if(o.args.length>=2 && o.args[0].t==='name'){ font=o.args[0].v; fontSize=o.args[1].v; } break;
+        case 'Tm': { const v=o.args.map(a=>a.v); if(v.length===6){ Tm=v.slice(); Tlm=v.slice(); } break; }
+        case 'Td': { const v=o.args.map(a=>a.v); if(v.length===2) advanceLine(v[0],v[1]); break; }
+        case 'TD': { const v=o.args.map(a=>a.v); if(v.length===2){ TL=-v[1]; advanceLine(v[0],v[1]); } break; }
+        case 'T*': advanceLine(0,-TL); break;
+        case 'TL': if(o.args.length) TL=o.args[0].v; break;
+        case 'Tj': if(o.args.length===1 && o.args[0].t==='str'){ const p=posOf(); runs.push({opIndex:i,font,size:fontSize,x:p.x,y:p.y,kind:'Tj'}); } break;
+        case "'": { advanceLine(0,-TL); if(o.args.length===1 && o.args[0].t==='str'){ const p=posOf(); runs.push({opIndex:i,font,size:fontSize,x:p.x,y:p.y,kind:"'"}); } break; }
+        case '"': { advanceLine(0,-TL); if(o.args.length===3 && o.args[2].t==='str'){ const p=posOf(); runs.push({opIndex:i,font,size:fontSize,x:p.x,y:p.y,kind:'"'}); } break; }
+        case 'TJ': if(o.args.length===1 && o.args[0].t==='arr' && o.args[0].v.some(t=>t.t==='str')){ const p=posOf(); runs.push({opIndex:i,font,size:fontSize,x:p.x,y:p.y,kind:'TJ'}); } break;
+        default: break;
+      }
+    }
+    return runs;
+  }
+
+  function runRawBytes(ops, run){
+    const o = ops[run.opIndex];
+    if(run.kind==='Tj' || run.kind==="'") return o.args[0].bytes;
+    if(run.kind==='"') return o.args[2].bytes;
+    if(run.kind==='TJ'){
+      const parts = o.args[0].v.filter(t=>t.t==='str').map(t=>t.bytes);
+      let total=0; for(const p of parts) total+=p.length;
+      const out = new Uint8Array(total); let off=0;
+      for(const p of parts){ out.set(p, off); off+=p.length; }
+      return out;
+    }
+    return new Uint8Array(0);
+  }
+
+  function fontBytesPerCode(pdfDoc, pdfPage, fontResName){
+    try{
+      const { PDFName, PDFDict } = PDFLib;
+      const res = pdfPage.node.Resources();
+      if(!res) return 1;
+      const fontDictRef = res.get(PDFName.of('Font'));
+      const fontDict = pdfDoc.context.lookup(fontDictRef, PDFDict);
+      if(!fontDict) return 1;
+      const fRef = fontDict.get(PDFName.of(fontResName));
+      if(!fRef) return 1;
+      const fDict = pdfDoc.context.lookup(fRef, PDFDict);
+      const subtype = fDict.get(PDFName.of('Subtype'));
+      const subtypeName = subtype && subtype.asString ? subtype.asString() : String(subtype);
+      return /Type0/i.test(subtypeName) ? 2 : 1;
+    }catch(e){ return 1; }
+  }
+
+  // ---- Chuẩn bị "ngữ cảnh sửa thật" cho 1 trang: parse + khớp vị trí với pdf.js ----
+  async function preparePage(pdfDoc, pdfPage, pdfjsPage){
+    const rawBytes = getPageContentBytes(pdfDoc, pdfPage);
+    const tokens = csTokenize(rawBytes);
+    const ops = csParseOps(tokens);
+    const runs = computeTextRuns(ops);
+
+    const textContent = await pdfjsPage.getTextContent();
+    // QUAN TRỌNG: lọc GIỐNG HỆT extractNativeText() (bỏ chuỗi rỗng/toàn khoảng
+    // trắng) để chỉ số (index) của items khớp đúng 1-1 với runs — nếu lọc khác
+    // đi, hai danh sách sẽ lệch số thứ tự và việc so khớp theo index sẽ sai.
+    const items = textContent.items.filter(it => it.str && it.str.trim());
+
+    let reliable = items.length === runs.length;
+    if(reliable){
+      let mismatches = 0;
+      for(let i=0;i<items.length;i++){
+        const dx = Math.abs(items[i].transform[4]-runs[i].x);
+        const dy = Math.abs(items[i].transform[5]-runs[i].y);
+        if(dx>1.5 || dy>1.5) mismatches++;
+      }
+      reliable = (mismatches/Math.max(1,items.length)) < 0.05;
+    }
+
+    const bpcCache = new Map();
+    const fontMapCache = new Map();
+    function getBytesPerCode(fontResName){
+      if(!bpcCache.has(fontResName)) bpcCache.set(fontResName, fontBytesPerCode(pdfDoc, pdfPage, fontResName));
+      return bpcCache.get(fontResName);
+    }
+    function getFontMap(fontResName){
+      if(fontMapCache.has(fontResName)) return fontMapCache.get(fontResName);
+      const bpc = getBytesPerCode(fontResName);
+      const map = new Map();
+      for(let i=0;i<runs.length;i++){
+        const run = runs[i];
+        if(run.font !== fontResName) continue;
+        const unicodeStr = items[i].str;
+        const raw = runRawBytes(ops, run);
+        if(raw.length !== unicodeStr.length*bpc) continue;
+        for(let k=0;k<unicodeStr.length;k++){
+          const ch = unicodeStr[k];
+          if(map.has(ch)) continue;
+          map.set(ch, raw.slice(k*bpc,(k+1)*bpc));
+        }
+      }
+      fontMapCache.set(fontResName, map);
+      return map;
+    }
+    return { reliable, ops, runs, items, getFontMap, getBytesPerCode, dirty:false };
+  }
+
+  // ---- Thử thay thế nội dung 1 "dòng" (1 hoặc nhiều run gộp lại) bằng chữ mới ----
+  function tryReplaceLine(ctx, itemIdxs, newText){
+    if(!ctx || !ctx.reliable || !itemIdxs || !itemIdxs.length) return {success:false};
+    const primaryIdx = itemIdxs[0];
+    const primaryRun = ctx.runs[primaryIdx];
+    if(!primaryRun || !primaryRun.font) return {success:false};
+
+    // SỬA LỖI "chữ/dấu bị dính đè lên nhau sau khi lưu PDF": nếu lệnh vẽ chữ GỐC
+    // là TJ có kèm các SỐ ĐIỀU CHỈNH khoảng cách giữa từng glyph (PDF hay dùng
+    // cách này để ghép đúng vị trí dấu tiếng Việt lên chữ cái, hoặc để canh đều
+    // chữ/justify) thì KHÔNG được gộp thành 1 chuỗi Tj đơn giản — làm vậy sẽ MẤT
+    // toàn bộ các số điều chỉnh đó, khiến glyph chỉ còn xếp theo độ rộng mặc định
+    // của font, khác với vị trí đã được tính toán riêng ban đầu -> dấu/chữ bị lệch
+    // chồng lên nhau khi hiển thị. Trong trường hợp này, KHÔNG sửa thật (trả về
+    // thất bại) để tự động dùng lại cách "che nền + vẽ chữ mới đè lên" vốn luôn
+    // hiển thị đúng, thay vì tạo ra một file lưu ra bị lỗi hiển thị.
+    function hasComplexTJ(run){
+      if(run.kind !== 'TJ') return false;
+      const arr = ctx.ops[run.opIndex].args[0].v;
+      return !(arr.length===1 && arr[0].t==='str'); // TJ chỉ bọc đúng 1 chuỗi, không số -> vô hại, coi như Tj bình thường
+    }
+    if(hasComplexTJ(primaryRun)) return {success:false};
+
+    const fontMap = ctx.getFontMap(primaryRun.font);
+    const bpc = ctx.getBytesPerCode(primaryRun.font);
+
+    const encoded = [];
+    for(const ch of newText){
+      const codeBytes = fontMap.get(ch);
+      if(!codeBytes) return {success:false};
+      encoded.push(codeBytes);
+    }
+    let total=0; for(const b of encoded) total+=b.length;
+    const outBytes = new Uint8Array(total);
+    let off=0; for(const b of encoded){ outBytes.set(b, off); off+=b.length; }
+    const newStrTok = { t:'str', bytes: outBytes, hex: bpc===2 };
+
+    const primaryOp = ctx.ops[primaryRun.opIndex];
+    if(primaryRun.kind==='Tj'){ primaryOp.op='Tj'; primaryOp.args=[newStrTok]; }
+    else if(primaryRun.kind==="'"){ primaryOp.args=[newStrTok]; }
+    else if(primaryRun.kind==='"'){ primaryOp.args=[primaryOp.args[0], primaryOp.args[1], newStrTok]; }
+    else if(primaryRun.kind==='TJ'){ primaryOp.op='Tj'; primaryOp.args=[newStrTok]; } // đến đây chắc chắn là TJ "vô hại" (đã lọc ở hasComplexTJ)
+
+    // Các run khác từng bị gộp vào cùng "dòng" hiển thị này -> xoá thật (rỗng) —
+    // luôn AN TOÀN dù TJ gốc có phức tạp hay không, vì chuỗi rỗng không cần vẽ
+    // gì nên không cần giữ lại số điều chỉnh khoảng cách nào cả.
+    for(let k=1;k<itemIdxs.length;k++){
+      const r = ctx.runs[itemIdxs[k]];
+      if(!r) continue;
+      const op = ctx.ops[r.opIndex];
+      const emptyTok = { t:'str', bytes:new Uint8Array(0), hex: ctx.getBytesPerCode(r.font)===2 };
+      if(r.kind==='Tj' || r.kind==="'"){ op.op = r.kind==="'" ? op.op : 'Tj'; op.args=[emptyTok]; }
+      else if(r.kind==='"'){ op.args=[op.args[0], op.args[1], emptyTok]; }
+      else if(r.kind==='TJ'){ op.op='Tj'; op.args=[emptyTok]; }
+    }
+    ctx.dirty = true;
+    return {success:true};
+  }
+
+  function finalizePage(pdfDoc, pdfPage, ctx){
+    if(!ctx || !ctx.dirty) return;
+    const newBytes = csSerializeOps(ctx.ops);
+    setPageContentBytes(pdfDoc, pdfPage, newBytes);
+  }
+
+  return { preparePage, tryReplaceLine, finalizePage };
+})();
+
 // ---------- Font Việt hoá nhúng sẵn cho pdf-lib (Noto Sans, đủ dấu tiếng Việt) ----------
 // Nhúng sẵn base64 để: (1) không phụ thuộc mạng lúc bấm "Lưu PDF",
 // (2) các font chuẩn 14 của PDF (Helvetica/Times...) KHÔNG có dấu tiếng Việt nên chữ sửa sẽ hiện sai/lỗi nếu dùng chúng.
@@ -1118,9 +1636,22 @@ const pdfCanvas = document.getElementById('pdfCanvas');
 const overlayCanvas = document.getElementById('overlayCanvas');
 const pageWrap = document.getElementById('pageWrap');
 const dropHint = document.getElementById('dropHint');
+const pctx = pdfCanvas.getContext('2d');
 const octx = overlayCanvas.getContext('2d');
 const textLayer = document.getElementById('textLayer');
 const floatingHighlightBtn = document.getElementById('floatingHighlightBtn');
+
+// QUAN TRỌNG — "chỉnh sửa trực tiếp trên file gốc, không qua lớp layer riêng":
+// baseCanvas là canvas ẨN (không gắn vào trang), chỉ dùng để giữ lại bản render "sạch" (chưa có
+// bất kỳ chỉnh sửa nào) của trang đang mở, ngay sau khi pdf.js vừa vẽ xong (xem renderPage()).
+// Mỗi khi cần vẽ lại (redrawOverlay), ta KHÔNG vẽ chỉnh sửa lên overlayCanvas riêng nữa — mà copy
+// lại đúng bản "sạch" này vào THẲNG pdfCanvas (file đang hiển thị), rồi vẽ toàn bộ whiteout/chữ/
+// highlight/nét vẽ của trang ngay LÊN CHÍNH pdfCanvas đó. Nhờ vậy những gì người dùng nhìn thấy đã
+// LÀ nội dung file (đã có sẵn chỉnh sửa hoà vào ảnh trang), không phải một lớp trong suốt chồng
+// lên trên. overlayCanvas từ nay chỉ còn dùng cho các thành phần giao diện tạm thời, không thuộc
+// nội dung tài liệu (khung chọn, khung gợi ý dòng chữ, khung đang kéo chọn dở...).
+const baseCanvas = document.createElement('canvas');
+const bctx = baseCanvas.getContext('2d');
 
 // ===== Thanh cuộn xem nhiều trang =====
 // pagesScroll chứa danh sách .pageSlot (một cho mỗi trang, xếp dọc, có thể cuộn). pageSlots[i] giữ
@@ -1434,6 +1965,11 @@ async function renderPage(idx, opts){
     ctx.fillRect(0,0,w,h);
   }
   if(myToken !== renderToken) return;
+  // Lưu lại bản render "sạch" (chưa có chỉnh sửa nào) của trang này vào baseCanvas — redrawOverlay()
+  // sẽ dùng lại bản này làm gốc mỗi lần cần vẽ chỉnh sửa trực tiếp lên pdfCanvas.
+  baseCanvas.width = w; baseCanvas.height = h;
+  bctx.clearRect(0, 0, w, h);
+  bctx.drawImage(pdfCanvas, 0, 0);
   pageWrap.style.width = w+'px';
   pageWrap.style.height = h+'px';
   // Gắn khung chỉnh sửa thật (#pageWrap: pdfCanvas/overlayCanvas/textLayer) vào đúng ô của trang
@@ -1588,9 +2124,20 @@ function toPdfSpace(px, py){ return { x: px/scale, y: py/scale }; }
 function toScreenSpace(x, y){ return { x: x*scale, y: y*scale }; }
 
 function redrawOverlay(){
+  // 1) VẼ CHỈNH SỬA TRỰC TIẾP LÊN FILE GỐC (pdfCanvas): xuất phát lại từ bản "sạch" (baseCanvas)
+  // rồi vẽ đè toàn bộ whiteout/chữ/highlight/nét vẽ của trang lên chính pdfCanvas — không còn một
+  // lớp (layer) overlay trong suốt riêng biệt nằm trên nội dung gốc như trước nữa.
+  if(baseCanvas.width === pdfCanvas.width && baseCanvas.height === pdfCanvas.height){
+    pctx.clearRect(0,0,pdfCanvas.width, pdfCanvas.height);
+    pctx.drawImage(baseCanvas, 0, 0);
+    const edits = cur().edits;
+    for(const e of edits) drawEdit(pctx, e, scale);
+  }
+
+  // 2) overlayCanvas giờ CHỈ còn vẽ các thành phần giao diện tạm thời — không thuộc nội dung tài
+  // liệu — như khung đang chọn, khung gợi ý dòng chữ có thể sửa, khung đang kéo chọn dở...
   octx.clearRect(0,0,overlayCanvas.width, overlayCanvas.height);
   const edits = cur().edits;
-  for(const e of edits) drawEdit(octx, e, scale);
   if(selectedEditIndex>=0 && edits[selectedEditIndex]) drawSelectionBox(edits[selectedEditIndex]);
   const region = getCurrentRegion();
   if(region) drawRegionBox(region);
@@ -2009,6 +2556,17 @@ function collectRegionLines(items, region){
     if(lineRefY === null) lineRefY = it.y0;
   }
   if(curLine.length) groups.push(curLine);
+  // SỬA LỖI "chữ trong vùng chọn hiển thị sai/đè lên nhau khi Edit Text" (ví dụ "nghĩa Việt Nam"
+  // hiện ra thành "nghĩ" đè lẫn với "iệt"): các mảnh chữ (items) ở trên được gom theo TỪNG DÒNG chỉ
+  // dựa vào khoảng cách Y gần nhau, nhưng bên trong một dòng, thứ tự các mảnh vẫn giữ nguyên theo
+  // thứ tự của mảng "sorted" (ưu tiên sắp xếp theo Y trước, X chỉ là tiêu chí phụ). Với PDF có nhiều
+  // dấu tiếng Việt/cỡ chữ hoặc khoảng cách dòng không hoàn toàn đều, 2 mảnh chữ trên CÙNG một dòng
+  // hiển thị nhưng có toạ độ Y hơi lệch nhau vẫn có thể bị xếp SAI thứ tự trái→phải trong nhóm (ví
+  // dụ mảnh của từ "Việt" lại đứng TRƯỚC mảnh của từ "nghĩa" dù nằm bên phải) — khiến joinLineItemsText
+  // ghép chữ sai thứ tự và tính khoảng cách/độ rộng dòng bị lệch, tạo cảm giác chữ đè/chồng lên nhau.
+  // Sắp xếp lại từng nhóm theo X (trái→phải) trước khi ghép chữ — giống hệt cách computePageLines()
+  // đã làm (qua bước tách "segments" theo byX) — để đảm bảo thứ tự chữ luôn đúng theo chiều đọc.
+  for(const group of groups) group.sort((a,b)=> a.x0-b.x0);
   const lines = groups.map(group=>{
     const text = joinLineItemsText(group);
     return {
@@ -2076,7 +2634,7 @@ function computePageLines(items){
 
   return segments.map(group=>{
     const text = joinLineItemsText(group);
-    return {
+    const line = {
       text,
       x0: Math.min(...group.map(i=>i.x0)),
       x1: Math.max(...group.map(i=>i.x1)),
@@ -2084,6 +2642,15 @@ function computePageLines(items){
       y1: Math.max(...group.map(i=>i.y1)),
       fontSize: group.reduce((s,i)=> s+(i.fontSize||10), 0) / group.length
     };
+    // QUAN TRỌNG cho "Edit Text sửa thật" (NativeTextEngine): nếu mọi item của
+    // dòng này đều có sẵn chỉ số gốc (_srcIdx, do extractNativeText gán — chỉ
+    // chữ PDF thật mới có, chữ OCR thì không), lưu lại danh sách chỉ số đó theo
+    // ĐÚNG thứ tự trái->phải để module sửa thật biết chính xác cần sửa/xoá lệnh
+    // Tj/TJ nào trong content stream gốc của trang.
+    if(group.every(i => i._srcIdx !== undefined)){
+      line.itemIdxs = [...group].sort((a,b)=> a.x0-b.x0).map(i=>i._srcIdx);
+    }
+    return line;
   }).filter(l=>l.text);
 }
 
@@ -2612,6 +3179,10 @@ function editLineAt(px, py, editType, customLines){
         existing.edit.fontFamily = currentFontFamily;
         existing.edit.fontSize = currentFontSize;
         existing.edit.color = currentFontColor;
+        // Chỉ số các lệnh vẽ chữ GỐC (Tj/TJ) trong content stream mà dòng này khớp tới — dùng bởi
+        // NativeTextEngine lúc xuất file để thử SỬA THẬT trực tiếp trên văn bản gốc thay vì chỉ che
+        // + vẽ đè. `line.itemIdxs` chỉ tồn tại với chữ PDF thật (không có với dòng OCR).
+        existing.edit.nativeItemIdxs = line.itemIdxs || null;
         selectedEditIndex = existing.index;
         // Đảm bảo luôn có nền che (phòng trường hợp bản chỉnh sửa này được tạo từ phiên bản
         // cũ chưa che nền), để chữ cũ không bị lộ ra khi xem/xuất file.
@@ -2672,7 +3243,9 @@ function editLineAt(px, py, editType, customLines){
         // Độ rộng THẬT của dòng chữ gốc (PDF thật/OCR) — dùng để giữ đúng khoảng cách giữa các từ
         // khi vẽ lại bằng font thay thế (xem applyOriginalSpacing), không đổi kể cả khi khung ed.w
         // sau này được nới rộng ra cho nội dung dài hơn.
-        origLineW: line.x1 - line.x0
+        origLineW: line.x1 - line.x0,
+        // Xem chú thích ở nhánh "existing" phía trên — dùng cho NativeTextEngine.
+        nativeItemIdxs: line.itemIdxs || null
       });
       selectedEditIndex = newIdx;
     } else {
@@ -2864,7 +3437,12 @@ async function extractNativeText(idx){
     const yBaseline = m[5];
     const width = it.width || (it.str.length*fontSize*0.5);
     const y0 = H - yBaseline - fontSize*0.85;
-    items.push({ text: it.str, x0, y0, x1: x0+width, y1: y0+fontSize*1.15, fontSize });
+    // _srcIdx: chỉ số của item này trong chính mảng `items` (=p.textItems) sau
+    // khi xuất file. NativeTextEngine.preparePage() lọc content.items bằng ĐÚNG
+    // điều kiện `it.str && it.str.trim()` ở trên để tái tạo lại chỉ số này một
+    // cách nhất quán — nhờ đó "Edit Text" có thể khớp đúng dòng đang sửa với
+    // đúng lệnh Tj/TJ tương ứng trong content stream gốc của trang.
+    items.push({ text: it.str, x0, y0, x1: x0+width, y1: y0+fontSize*1.15, fontSize, _srcIdx: items.length });
   }
   p.textItems = items;
   p.nativeLines = computePageLines(items);
@@ -3193,11 +3771,44 @@ async function exportPdfAs(filename){
         outDoc.addPage(copiedPage);
         pageObj = copiedPage;
         H = pageObj.getHeight();
+
+        // ---- NativeTextEngine: thử SỬA THẬT trực tiếp trên content stream gốc ----
+        // Chỉ những chỉnh sửa bắt nguồn từ chữ PDF thật (có nativeItemIdxs, xem editLineAt)
+        // mới đủ điều kiện thử. Nếu thành công cho dòng nào, dòng đó được đánh dấu
+        // "_nativeApplied" để KHÔNG vẽ đè lớp che+chữ mới (drawEditOnPdfPage) lên nữa —
+        // tránh vẽ chồng 2 lần. Nếu vì lý do gì đó thất bại/không chắc chắn (font đã bị
+        // cắt gọn thiếu glyph cần dùng, cấu trúc trang không khớp được...), chỉnh sửa đó
+        // tự động rơi về cách "che nền + vẽ chữ mới đè lên" như trước — KHÔNG BAO GIỜ làm
+        // hỏng file hay mất chữ, chỉ đơn giản là không "sửa thật" được cho riêng dòng đó.
+        // Bỏ đánh dấu "_nativeApplied" từ lần xuất TRƯỚC (nếu có) trước khi thử lại từ đầu —
+        // tránh trường hợp nội dung dòng đã đổi (không còn đủ điều kiện sửa thật ở lần xuất
+        // này) nhưng vẫn còn sót cờ cũ khiến lớp che+vẽ đè bị bỏ qua nhầm.
+        for(const ed of p.edits) ed._nativeApplied = false;
+        try{
+          const nativeEdits = p.edits.filter(ed => ed.type==='textfix' && ed.nativeItemIdxs && ed.nativeItemIdxs.length);
+          if(nativeEdits.length){
+            const pdfjsPage = await p.doc.getPage(p.srcPage);
+            const nativeCtx = await NativeTextEngine.preparePage(outDoc, pageObj, pdfjsPage);
+            for(const ed of nativeEdits){
+              const res = NativeTextEngine.tryReplaceLine(nativeCtx, ed.nativeItemIdxs, ed.text);
+              if(res.success) ed._nativeApplied = true;
+            }
+            NativeTextEngine.finalizePage(outDoc, pageObj, nativeCtx);
+          }
+        }catch(nativeErr){
+          // Không để lỗi ở bước "sửa thật" làm hỏng cả quá trình xuất file — mọi chỉnh sửa
+          // của trang này chỉ đơn giản là chưa được đánh dấu _nativeApplied nên sẽ tự động
+          // dùng cách "che + vẽ đè" như bình thường ở vòng lặp bên dưới.
+          console.warn('NativeTextEngine: không sửa thật được trang '+(i+1)+' (tự dùng cách che+vẽ đè):', nativeErr);
+        }
       } else {
         pageObj = outDoc.addPage([p.width, p.height]);
         H = p.height;
       }
-      for(const ed of p.edits) drawEditOnPdfPage(pageObj, ed, H, editFont, fallbackFont);
+      for(const ed of p.edits){
+        if(ed._nativeApplied) continue; // đã sửa thật trực tiếp trên content stream, không vẽ đè nữa
+        drawEditOnPdfPage(pageObj, ed, H, editFont, fallbackFont);
+      }
     }
 
     const bytes = await outDoc.save();
@@ -3215,67 +3826,272 @@ async function exportPdfAs(filename){
 
 document.getElementById('btnSave').onclick = ()=> exportPdfAs(originalFileName);
 
-// ---------- Xuất sang Word (.doc) ----------
+// ---------- Xuất sang Word (.doc) — giữ đúng vị trí/bố cục như bản gốc ----------
 function escapeHtml(str){
   return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
-async function getPageTextForWord(idx){
-  const p = pages[idx];
-  // 1) Nếu đã có văn bản OCR sẵn -> dùng luôn
-  if(p.ocrText && p.ocrText.trim()) return p.ocrText;
-  // 2) Nếu là trang PDF văn bản thật -> trích trực tiếp (nhanh, chính xác, không cần OCR)
-  if(p.type==='pdf'){
-    await extractNativeText(idx);
-    if(p.textItems && p.textItems.length){
-      // Ghép các item theo dòng dựa trên vị trí y để giữ ngắt dòng tương đối
-      const sorted = [...p.textItems].sort((a,b)=> a.y0-b.y0 || a.x0-b.x0);
-      const lines = [];
-      let curLine = [], lastY = null;
-      for(const it of sorted){
-        if(lastY !== null && Math.abs(it.y0-lastY) > it.fontSize*0.6){
-          lines.push(curLine.map(i=>i.text).join(' ')); curLine = [];
-        }
-        curLine.push(it); lastY = it.y0;
-      }
-      if(curLine.length) lines.push(curLine.map(i=>i.text).join(' '));
-      const text = lines.join('\n');
-      p.ocrText = text;
-      return text;
-    }
-  }
-  // 3) Trang scan chưa có văn bản -> chạy OCR
-  const res = await runOcrForPage(idx, true);
-  return res.ocrText || '';
+// ---------- Dò đường kẻ bảng (khung hàng/cột) từ PDF để giữ lại khi xuất Word ----------
+// Rất nhiều PDF (đặc biệt bảng báo giá, bảng biểu) vẽ khung bảng bằng các LỆNH VẼ VECTOR
+// (đường thẳng "m..l..S" hoặc hình chữ nhật "re" có tô/kẻ viền), KHÔNG phải bằng chữ. Cách
+// xuất Word trước đây chỉ định vị lại CHỮ nên các đường kẻ này bị mất hoàn toàn, khiến bảng
+// trông như một khối chữ không có ô. Hàm dưới đây tự đọc "operator list" (danh sách lệnh vẽ)
+// của pdf.js cho từng trang, tính đúng toạ độ từng đoạn thẳng (có áp dụng ma trận biến đổi
+// hiện hành — CTM — vì toạ độ thô trong content stream chưa được biến đổi), rồi chỉ giữ lại
+// những đoạn thẳng NẰM NGANG hoặc THẲNG ĐỨNG (đúng kiểu đường kẻ bảng, bỏ qua nét vẽ trang trí
+// xiên/cong). Kết quả này được buildWordPageHtml() vẽ lại thành các <div> mảnh, đặt đúng vị
+// trí như khung bảng gốc.
+
+// Nhân 2 ma trận affine kiểu PDF [a,b,c,d,e,f] (áp dụng m2 trước rồi đến m1).
+function mat3Mul_(m1, m2){
+  return [
+    m1[0]*m2[0] + m1[2]*m2[1],
+    m1[1]*m2[0] + m1[3]*m2[1],
+    m1[0]*m2[2] + m1[2]*m2[3],
+    m1[1]*m2[2] + m1[3]*m2[3],
+    m1[0]*m2[4] + m1[2]*m2[5] + m1[4],
+    m1[1]*m2[4] + m1[3]*m2[5] + m1[5]
+  ];
+}
+function mat3Apply_(m, x, y){
+  return { x: m[0]*x + m[2]*y + m[4], y: m[1]*x + m[3]*y + m[5] };
 }
 
-document.getElementById('btnExportWord').onclick = async ()=>{
-  if(!pages.length){ alert('Hãy mở một file PDF trước.'); return; }
+// Gộp nhiều đoạn thẳng cùng toạ độ (cùng y với đường ngang / cùng x với đường dọc) và
+// nằm sát/chồng nhau (thường mỗi ô trong bảng vẽ riêng 1 cạnh) thành MỘT đoạn liền mạch
+// duy nhất, tránh vẽ chồng chéo hàng trăm <div> mảnh trùng lặp lên nhau.
+function mergeTableSegments_(segs, orient){
+  const byCoord = {};
+  for(const s of segs){
+    const key = orient==='h' ? Math.round(s.y*2)/2 : Math.round(s.x*2)/2;
+    (byCoord[key] = byCoord[key] || []).push(s);
+  }
+  const out = [];
+  for(const key in byCoord){
+    const arr = byCoord[key].slice().sort((a,b)=> orient==='h' ? a.x0-b.x0 : a.y0-b.y0);
+    let cur = null;
+    for(const s of arr){
+      if(orient==='h'){
+        if(cur && s.x0 <= cur.x1 + 1.2){ cur.x1 = Math.max(cur.x1, s.x1); }
+        else { if(cur) out.push(cur); cur = { orient:'h', y:+key, x0:s.x0, x1:s.x1 }; }
+      } else {
+        if(cur && s.y0 <= cur.y1 + 1.2){ cur.y1 = Math.max(cur.y1, s.y1); }
+        else { if(cur) out.push(cur); cur = { orient:'v', x:+key, y0:s.y0, y1:s.y1 }; }
+      }
+    }
+    if(cur) out.push(cur);
+  }
+  return out;
+}
+
+// Đọc operator list của 1 trang PDF, trả về { segments, lineWidth } — segments là danh
+// sách đoạn thẳng ngang/dọc (hệ toạ độ PDF gốc, gốc dưới-trái) đại diện cho khung bảng.
+async function extractTableLinesForWord(idx){
+  const p = pages[idx];
+  const empty = { segments: [], lineWidth: 1 };
+  if(p.type !== 'pdf') return empty;
+  let page, opList;
+  try{
+    page = await p.doc.getPage(p.srcPage);
+    opList = await page.getOperatorList();
+  }catch(err){
+    console.warn('Không đọc được operator list để dò đường kẻ bảng (trang '+(idx+1)+'):', err);
+    return empty;
+  }
+  const OPS = pdfjsLib.OPS;
+  const { fnArray, argsArray } = opList;
+  let ctm = [1,0,0,1,0,0];
+  const stack = [];
+  let lineWidth = 1;
+  const EPS = 0.6; // dung sai (point) để coi một đoạn thẳng là NẰM NGANG hoặc THẲNG ĐỨNG tuyệt đối
+  const raw = [];
+
+  function isPaintOp(op){
+    return op===OPS.stroke || op===OPS.closeStroke || op===OPS.fill || op===OPS.eoFill ||
+           op===OPS.fillStroke || op===OPS.eoFillStroke || op===OPS.closeFillStroke || op===OPS.closeEOFillStroke;
+  }
+  function addSegment(x0,y0,x1,y1){
+    const a = mat3Apply_(ctm, x0, y0), b = mat3Apply_(ctm, x1, y1);
+    raw.push({ x0:a.x, y0:a.y, x1:b.x, y1:b.y });
+  }
+
+  for(let i=0;i<fnArray.length && raw.length < 4000; i++){
+    const op = fnArray[i], args = argsArray[i];
+    if(op === OPS.save){ stack.push(ctm.slice()); continue; }
+    if(op === OPS.restore){ if(stack.length) ctm = stack.pop(); continue; }
+    if(op === OPS.transform){ ctm = mat3Mul_(ctm, args); continue; }
+    if(op === OPS.setLineWidth){ lineWidth = args[0] || lineWidth; continue; }
+    if(op !== OPS.constructPath) continue;
+
+    const subOps = args[0], coords = args[1];
+    // Tìm lệnh tô/kẻ áp dụng cho path này (có thể xen kẽ lệnh clip ở giữa) — nếu path
+    // chỉ dùng để cắt vùng hiển thị (clip) chứ không được vẽ ra, bỏ qua vì không nhìn thấy.
+    let j = i+1;
+    while(j<fnArray.length && (fnArray[j]===OPS.clip || fnArray[j]===OPS.eoClip)) j++;
+    if(!isPaintOp(j<fnArray.length ? fnArray[j] : null)) continue;
+
+    let ci = 0, curX=0, curY=0, startX=0, startY=0;
+    for(const sub of subOps){
+      if(sub === OPS.moveTo){
+        curX = coords[ci++]; curY = coords[ci++]; startX = curX; startY = curY;
+      } else if(sub === OPS.lineTo){
+        const nx = coords[ci++], ny = coords[ci++];
+        addSegment(curX,curY,nx,ny); curX = nx; curY = ny;
+      } else if(sub === OPS.curveTo){
+        ci += 4; curX = coords[ci++]; curY = coords[ci++]; // bỏ qua đường cong, không phải khung bảng
+      } else if(sub === OPS.curveTo2 || sub === OPS.curveTo3){
+        ci += 2; curX = coords[ci++]; curY = coords[ci++];
+      } else if(sub === OPS.closePath){
+        addSegment(curX,curY,startX,startY); curX = startX; curY = startY;
+      } else if(sub === OPS.rectangle){
+        const rx = coords[ci++], ry = coords[ci++], rw = coords[ci++], rh = coords[ci++];
+        addSegment(rx,ry, rx+rw,ry); addSegment(rx+rw,ry, rx+rw,ry+rh);
+        addSegment(rx+rw,ry+rh, rx,ry+rh); addSegment(rx,ry+rh, rx,ry);
+        curX = rx; curY = ry; startX = rx; startY = ry;
+      }
+    }
+  }
+
+  // Chỉ giữ đoạn NGANG hoặc DỌC tuyệt đối (đúng kiểu khung bảng), rồi gộp các đoạn trùng/nối tiếp nhau
+  const hSegs = [], vSegs = [];
+  for(const l of raw){
+    const dx = Math.abs(l.x1-l.x0), dy = Math.abs(l.y1-l.y0);
+    if(dy <= EPS && dx > EPS) hSegs.push({ x0:Math.min(l.x0,l.x1), x1:Math.max(l.x0,l.x1), y:(l.y0+l.y1)/2 });
+    else if(dx <= EPS && dy > EPS) vSegs.push({ y0:Math.min(l.y0,l.y1), y1:Math.max(l.y0,l.y1), x:(l.x0+l.x1)/2 });
+  }
+  const segments = mergeTableSegments_(hSegs,'h').concat(mergeTableSegments_(vSegs,'v'));
+  return { segments, lineWidth };
+}
+
+// Trả về danh sách "dòng đang hiển thị" của một trang, kèm toạ độ (điểm/point,
+// gốc góc trên-trái trang — giống hệ toạ độ đã dùng cho Edit Text) + cỡ chữ +
+// màu chữ. Danh sách này GỘP CẢ: (1) chữ PDF thật / chữ OCR còn nguyên (chưa bị
+// một chỉnh sửa nào che lên), LẪN (2) nội dung của mọi chỉnh sửa văn bản người
+// dùng đã thực hiện (Edit Text) — đúng như những gì đang hiển thị trên trang và
+// sẽ có trong file PDF xuất ra. Nhờ giữ nguyên toạ độ gốc, khi dựng lại bằng
+// position:absolute trong file Word, bố cục (kể cả bảng biểu, canh lề trái/giữa/
+// phải) sẽ giống bản gốc thay vì bị dồn hết thành các đoạn văn xuôi mất bố cục.
+async function getPageVisualLinesForWord(idx){
+  const p = pages[idx];
+  let W, H;
+  if(p.type==='pdf'){
+    const page = await p.doc.getPage(p.srcPage);
+    const vp = page.getViewport({scale:1});
+    W = vp.width; H = vp.height;
+    if(p.textItems === null){ try{ await extractNativeText(idx); }catch(err){ console.warn('Không trích được văn bản gốc:', err); } }
+  } else {
+    W = p.width; H = p.height;
+  }
+  // Trang scan/ảnh chưa có chữ nào (chưa từng OCR) -> chạy OCR để vẫn có vị trí dòng chữ
+  if((!p.textItems || !p.textItems.length) && (!p.ocrLines || !p.ocrLines.length)){
+    try{ await runOcrForPage(idx, true); }catch(err){ console.warn('OCR thất bại cho trang '+(idx+1)+':', err); }
+  }
+  const baseLines = editTextLinesFor(p) || []; // chữ PDF thật + chữ OCR (đã gộp sẵn, dùng chung với Edit Text)
+
+  // Bỏ qua dòng gốc nào đã bị một chỉnh sửa văn bản CÓ NỀN CHE (bg:true) đè lên phần lớn diện
+  // tích — vì nội dung đó đã được người dùng thay bằng nội dung mới, không còn hiển thị nữa.
+  function isCovered(x0,y0,x1,y1){
+    const area = Math.max(1,(x1-x0)*(y1-y0));
+    return (p.edits||[]).some(ed=>{
+      if(!isTextEdit(ed) || !ed.bg) return false;
+      const ex0=ed.x, ey0=ed.y, ex1=ed.x+ed.w, ey1=ed.y+ed.h;
+      const ow = Math.min(x1,ex1)-Math.max(x0,ex0), oh = Math.min(y1,ey1)-Math.max(y0,ey0);
+      return ow>0 && oh>0 && (ow*oh) > area*0.4;
+    });
+  }
+
+  const lines = [];
+  for(const l of baseLines){
+    if(!l.text || !l.text.trim()) continue;
+    if(isCovered(l.x0,l.y0,l.x1,l.y1)) continue;
+    lines.push({ x0:l.x0, y0:l.y0, fontSize: l.fontSize||12, text:l.text, color:'#000000' });
+  }
+  // Thêm nội dung của mọi chỉnh sửa dạng chữ (gõ mới / sửa lại dòng có sẵn), đúng vị trí+font+màu
+  for(const ed of (p.edits||[])){
+    if(!isTextEdit(ed) || !ed.text || !ed.text.trim()) continue;
+    lines.push({ x0:ed.x, y0:ed.y, fontSize: ed.fontSize||12, text: ed.text, color: ed.color||'#000000' });
+  }
+  lines.sort((a,b)=> a.y0-b.y0 || a.x0-b.x0);
+  return { lines, W: W||612, H: H||792 };
+}
+
+// Dựng HTML cho MỘT trang: một khối kích thước đúng bằng trang gốc (point), mỗi dòng chữ được
+// định vị TUYỆT ĐỐI (position:absolute) đúng toạ độ đã trích được — Word (qua bộ lọc mso) hiểu
+// và giữ được vị trí này, nên bảng biểu/canh lề trông giống hệt bản gốc thay vì bị dồn thành
+// văn bản xuôi dòng như cách xuất trước đây.
+async function buildWordPageHtml(idx){
+  const { lines, W, H } = await getPageVisualLinesForWord(idx);
+  let tableLines = { segments: [], lineWidth: 1 };
+  try{ tableLines = await extractTableLinesForWord(idx); }
+  catch(err){ console.warn('Không dò được đường kẻ bảng trang '+(idx+1)+':', err); }
+
+  let inner = '';
+  // Vẽ khung bảng (đường kẻ ngang/dọc dò được từ PDF gốc) TRƯỚC, để lớp chữ luôn nổi lên trên.
+  // Mỗi đường kẻ được vẽ bằng 1 <div> mảnh có nền đen (background), định vị tuyệt đối đúng toạ
+  // độ — cách này giữ được đường kẻ ổn định hơn khi Word (qua bộ lọc mso) đọc file HTML, so với
+  // dùng border trên khối có height:0 (dễ bị lọc/mất khi Word nhập file).
+  const lw = Math.max(0.5, Math.min(3, tableLines.lineWidth || 1)).toFixed(2);
+  for(const seg of tableLines.segments){
+    if(seg.orient === 'h'){
+      const top = (H - seg.y).toFixed(2), left = seg.x0.toFixed(2), width = Math.max(0,(seg.x1-seg.x0)).toFixed(2);
+      inner += `<div style="position:absolute;left:${left}pt;top:${top}pt;width:${width}pt;height:${lw}pt;`+
+                `background:#000000;line-height:0;font-size:0;">&nbsp;</div>\n`;
+    } else {
+      const top = (H - seg.y1).toFixed(2), left = seg.x.toFixed(2), height = Math.max(0,(seg.y1-seg.y0)).toFixed(2);
+      inner += `<div style="position:absolute;left:${left}pt;top:${top}pt;width:${lw}pt;height:${height}pt;`+
+                `background:#000000;line-height:0;font-size:0;">&nbsp;</div>\n`;
+    }
+  }
+
+  if(!lines.length && !tableLines.segments.length){
+    return `<div style="position:relative;width:${W.toFixed(2)}pt;height:${H.toFixed(2)}pt;margin:0 auto;background:#fff;">`+
+           `<p style="position:absolute;left:0;top:0;color:#9aa0a8;font-style:italic;">[Trang không có văn bản]</p></div>`;
+  }
+  for(const l of lines){
+    const subLines = String(l.text).split('\n');
+    const lh = Math.max(6, l.fontSize) * 1.22;
+    subLines.forEach((sub, subIdx)=>{
+      if(!sub.trim()) return;
+      const top = (l.y0 + subIdx*lh).toFixed(2);
+      const fs = Math.max(6, l.fontSize).toFixed(2);
+      inner += `<p style="position:absolute;left:${l.x0.toFixed(2)}pt;top:${top}pt;margin:0;padding:0;`+
+                `font-size:${fs}pt;line-height:1.15;white-space:pre;color:${l.color};">${escapeHtml(sub)}</p>\n`;
+    });
+  }
+  return `<div style="position:relative;width:${W.toFixed(2)}pt;height:${H.toFixed(2)}pt;margin:0 auto;background:#fff;overflow:hidden;">${inner}</div>`;
+}
+
+// Xuất Word cho ĐÚNG danh sách chỉ số trang được chọn (theo thứ tự tăng dần trong tài liệu).
+async function exportWordSelected(indices){
+  if(!indices || !indices.length){ alert('Hãy chọn ít nhất một trang để xuất.'); return; }
   flushPendingEdit(); // chốt chỉnh sửa dang dở trước khi đọc nội dung để xuất Word
   const spinner = document.getElementById('spinner');
   const spinnerLabel = spinner.lastChild;
   spinner.classList.add('show');
   try{
     let bodyHtml = '';
-    for(let i=0;i<pages.length;i++){
-      spinnerLabel.textContent = ` Đang chuyển trang ${i+1}/${pages.length} sang Word…`;
-      let text = '';
-      try{ text = await getPageTextForWord(i); }
-      catch(err){ text = '[Không thể nhận dạng văn bản của trang này]'; }
-      const paras = (text || '[Trang không có văn bản]').split('\n').filter(l=>l.trim()!=='')
-        .map(l=>`<p>${escapeHtml(l)}</p>`).join('\n');
-      bodyHtml += `<div>${paras || '<p>&nbsp;</p>'}</div>`;
-      if(i < pages.length-1){
+    for(let k=0;k<indices.length;k++){
+      const i = indices[k];
+      spinnerLabel.textContent = ` Đang chuyển trang ${i+1} sang Word (${k+1}/${indices.length})…`;
+      let pageHtml;
+      try{ pageHtml = await buildWordPageHtml(i); }
+      catch(err){
+        console.warn('Không chuyển được trang '+(i+1)+' sang Word:', err);
+        pageHtml = `<p>[Không thể chuyển trang ${i+1} sang Word]</p>`;
+      }
+      bodyHtml += pageHtml;
+      if(k < indices.length-1){
         bodyHtml += `<br clear="all" style="mso-special-character:line-break;page-break-before:always">`;
       }
     }
     const docHtml = `<!DOCTYPE html>
 <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">
 <head><meta charset="utf-8">
-<!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View><w:Zoom>100</w:Zoom></w:WordDocument></xml><![endif]-->
+<!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View><w:Zoom>100</w:Zoom><w:DoNotOptimizeForBrowser/></w:WordDocument></xml><![endif]-->
 <style>
-  body{font-family:'Times New Roman',serif;font-size:13pt;line-height:1.5;}
-  p{margin:0 0 8pt 0;}
+  @page{ margin:0; }
+  body{font-family:'Times New Roman',serif;font-size:13pt;line-height:1.5;margin:0;}
+  p{margin:0;}
 </style>
 </head>
 <body>
@@ -3283,7 +4099,8 @@ ${bodyHtml}
 </body></html>`;
     const blob = new Blob(['\ufeff', docHtml], {type:'application/msword'});
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-    a.download = originalFileName.replace(/\.pdf$/i,'').replace(/-edited$/,'') + '.doc';
+    const base = originalFileName.replace(/\.pdf$/i,'').replace(/-edited$/,'');
+    a.download = indices.length===pages.length ? base+'.doc' : base+'-trang-'+indices.map(i=>i+1).join('_')+'.doc';
     a.click();
   }catch(err){
     alert('Lỗi khi xuất Word: '+err.message);
@@ -3291,7 +4108,94 @@ ${bodyHtml}
     spinner.classList.remove('show');
     spinnerLabel.textContent = ' Đang xử lý OCR…';
   }
-};
+}
+
+// ---------- Modal chọn trang để xuất Word ----------
+const exportWordModal = document.getElementById('exportWordModal');
+const ewList = document.getElementById('ewList');
+const ewSelectAll = document.getElementById('ewSelectAll');
+const ewSelectedCount = document.getElementById('ewSelectedCount');
+const ewError = document.getElementById('ewError');
+
+document.getElementById('btnExportWord').onclick = openExportWordModal;
+document.getElementById('ewCancelBtn').addEventListener('click', closeExportWordModal);
+document.getElementById('ewCloseBtn').addEventListener('click', closeExportWordModal);
+exportWordModal.addEventListener('click', function(e){ if(e.target === exportWordModal) closeExportWordModal(); });
+
+function closeExportWordModal(){ exportWordModal.style.display = 'none'; }
+
+function updateEwSelectedCount(){
+  const total = ewList.querySelectorAll('.dp-checkbox').length;
+  const checked = ewList.querySelectorAll('.dp-checkbox:checked').length;
+  ewSelectedCount.textContent = checked>0 ? `Đã chọn ${checked}/${total} trang` : `${total} trang`;
+  ewSelectAll.checked = total>0 && checked===total;
+  ewSelectAll.indeterminate = checked>0 && checked<total;
+}
+
+async function openExportWordModal(){
+  ewError.textContent = '';
+  if(!pages.length){ alert('Hãy mở một file PDF trước.'); return; }
+  ewList.innerHTML = '';
+  exportWordModal.style.display = 'flex';
+
+  // Dựng lưới trang trước (khung rỗng, MẶC ĐỊNH CHỌN TẤT CẢ = "Xuất tất cả"), rồi vẽ ảnh thu nhỏ
+  // dần dần, để mở modal ngay lập tức thay vì phải đợi render hết mọi trang.
+  const items = [];
+  for(let i=0;i<pages.length;i++){
+    const item = document.createElement('label');
+    item.className = 'dp-item selected';
+    item.dataset.idx = i;
+
+    const wrap = document.createElement('div');
+    wrap.className = 'dp-thumb-wrap';
+    const c = document.createElement('canvas');
+    wrap.appendChild(c);
+
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.className = 'dp-checkbox';
+    cb.dataset.idx = i;
+    cb.checked = true; // mặc định: xuất TẤT CẢ các trang
+    cb.addEventListener('change', () => {
+      item.classList.toggle('selected', cb.checked);
+      updateEwSelectedCount();
+    });
+    wrap.appendChild(cb);
+
+    const pnum = document.createElement('div');
+    pnum.className = 'dp-pnum';
+    pnum.textContent = 'Trang ' + (i+1);
+
+    item.appendChild(wrap);
+    item.appendChild(pnum);
+    ewList.appendChild(item);
+    items.push({idx:i, canvas:c});
+  }
+  updateEwSelectedCount();
+
+  for(const {idx, canvas} of items){
+    try{ await renderDpThumb(idx, canvas); }
+    catch(err){ console.warn('Không vẽ được ảnh thu nhỏ trang', idx+1, err); }
+  }
+}
+
+ewSelectAll.addEventListener('change', (e) => {
+  ewList.querySelectorAll('.dp-checkbox').forEach(cb => {
+    cb.checked = e.target.checked;
+    cb.closest('.dp-item').classList.toggle('selected', cb.checked);
+  });
+  updateEwSelectedCount();
+});
+
+document.getElementById('ewConfirmBtn').addEventListener('click', async () => {
+  const selected = Array.from(ewList.querySelectorAll('.dp-checkbox:checked'))
+    .map(cb => parseInt(cb.dataset.idx, 10)).sort((a,b)=>a-b);
+  if(!selected.length){ ewError.textContent = 'Hãy chọn ít nhất một trang.'; return; }
+  ewError.textContent = '';
+  closeExportWordModal();
+  await exportWordSelected(selected);
+});
 </script>
 </body>
 </html>
+
