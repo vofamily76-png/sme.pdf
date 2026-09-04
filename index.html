@@ -539,24 +539,24 @@
 </div>
 
 <div id="toolbar">
-  <button class="tbtn primary" id="btnOpen"><span class="ic">📂</span>Mở PDF</button>
+  <button class="tbtn primary" id="btnOpen"><span class="ic">📂</span>Open PDF</button>
   <input type="file" id="fileInput" accept="application/pdf">
   <div class="sep"></div>
 
-  <button class="tbtn" data-tool="select" id="toolSelect"><span class="ic">🖱️</span>Chọn</button>
-  <button class="tbtn" data-tool="textselect" id="toolTextSelect" title="Bôi đen văn bản trong PDF để copy (Ctrl+C). Có thể là chữ PDF thật hoặc chữ OCR từ ảnh/scan. Sau khi bôi đen, bấm nút 'Đánh dấu' nổi lên để tô sáng đúng đoạn đã chọn."><span class="ic">🔤</span>Chọn văn bản (Copy)</button>
-  <button class="tbtn" data-tool="addtext" id="toolAddText"><span class="ic">🅰️</span>Thêm văn bản</button>
+  <button class="tbtn" data-tool="select" id="toolSelect"><span class="ic">🖱️</span>Select</button>
+  <button class="tbtn" data-tool="textselect" id="toolTextSelect" title="Bôi đen văn bản trong PDF để copy (Ctrl+C). Có thể là chữ PDF thật hoặc chữ OCR từ ảnh/scan. Sau khi bôi đen, bấm nút 'Đánh dấu' nổi lên để tô sáng đúng đoạn đã chọn."><span class="ic">🔤</span>Select text to copy</button>
+  <button class="tbtn" data-tool="addtext" id="toolAddText"><span class="ic">🅰️</span>Add text</button>
   <button class="tbtn" data-tool="edittext" id="toolEditText" title="Bấm để hiện toàn bộ chữ có thể sửa trên trang — trỏ chuột vào bất kỳ đoạn nào và bấm để sửa ngay, không cần chọn vùng"><span class="ic">✎</span>Edit Text</button>
   <div class="sep"></div>
-  <button class="tbtn" data-tool="region" id="toolRegion" title="Kéo chọn một vùng trên trang, sau đó bấm 'Edit Text' hoặc 'Sửa văn bản (OCR)' để sửa nhanh cả vùng"><span class="ic">🔲</span>Chọn vùng</button>
-  <button class="tbtn" id="btnClearRegion" title="Bỏ chọn vùng hiện tại"><span class="ic">✕</span>Bỏ vùng</button>
-  <button class="tbtn" data-tool="ocr" id="toolOcr"><span class="ic">🔎</span>Sửa văn bản (OCR - PDF scan)</button>
-  <button class="tbtn" data-tool="highlight" id="toolHighlight"><span class="ic">🖍️</span>Đánh dấu</button>
-  <button class="tbtn" data-tool="draw" id="toolDraw"><span class="ic">✏️</span>Vẽ tự do</button>
-  <button class="tbtn" data-tool="whiteout" id="toolWhiteout"><span class="ic">▭</span>Che (Whiteout)</button>
+  <button class="tbtn" data-tool="region" id="toolRegion" title="Kéo chọn một vùng trên trang, sau đó bấm 'Edit Text' hoặc 'Sửa văn bản (OCR)' để sửa nhanh cả vùng"><span class="ic">🔲</span>Selection area</button>
+  <button class="tbtn" id="btnClearRegion" title="Bỏ chọn vùng hiện tại"><span class="ic">✕</span>Deselect</button>
+  <button class="tbtn" data-tool="ocr" id="toolOcr"><span class="ic">🔎</span>Edit Document (OCR-PDF scan)</button>
+  <button class="tbtn" data-tool="highlight" id="toolHighlight"><span class="ic">🖍️</span>Marker</button>
+  <button class="tbtn" data-tool="draw" id="toolDraw"><span class="ic">✏️</span>Paint</button>
+  <button class="tbtn" data-tool="whiteout" id="toolWhiteout"><span class="ic">▭</span>Text overlay</button>
   <input type="color" id="colorSwatch" value="#e2402c" title="Màu">
   <span style="display:inline-flex;align-items:center;gap:4px;font-size:11.5px;color:var(--text-dim);margin-left:2px;">
-    <input type="color" id="whiteoutColorSwatch" value="#ffffff" title="Chọn màu che (Whiteout) tùy ý">Màu che
+    <input type="color" id="whiteoutColorSwatch" value="#ffffff" title="Chọn màu che (Whiteout) tùy ý">Color overlay
   </span>
   <select id="fontFamilySelect" title="Font chữ">
     <option value="Arial" selected>Arial</option>
@@ -585,21 +585,21 @@
     <option value="48">48</option>
   </select>
   <span style="display:inline-flex;align-items:center;gap:4px;font-size:11.5px;color:var(--text-dim);margin-left:2px;">
-    <input type="color" id="fontColorSwatch" value="#000000" title="Chọn màu chữ (font) khi thêm/sửa văn bản">Màu chữ
+    <input type="color" id="fontColorSwatch" value="#000000" title="Chọn màu chữ (font) khi thêm/sửa văn bản">Color text
   </span>
   <div class="sep"></div>
 
   <button class="tbtn" id="btnUndo" title="Hoàn tác"><span class="ic">↩️</span>Undo</button>
-  <button class="tbtn" id="btnClearPage" title="Xóa hết chỉnh sửa trên trang (không xóa trang)"><span class="ic">🧹</span>Xóa chỉnh sửa</button>
+  <button class="tbtn" id="btnClearPage" title="Xóa hết chỉnh sửa trên trang (không xóa trang)"><span class="ic">🧹</span>Delete edit</button>
   <div class="sep"></div>
 
-  <button class="tbtn" id="btnInsertBlank" title="Chèn trang trắng sau trang hiện tại"><span class="ic">➕</span>Chèn trang trắng</button>
+  <button class="tbtn" id="btnInsertBlank" title="Chèn trang trắng sau trang hiện tại"><span class="ic">➕</span>Insert a blank page</button>
   <button class="tbtn" id="btnInsertPdf" title="Chèn các trang từ một file PDF khác vào trước/sau trang đang chọn"><span class="ic">📥</span>Insert pages</button>
   <input type="file" id="insertFileInput" accept="application/pdf">
   <button class="tbtn" id="btnDeletePage" title="Chọn một hoặc nhiều trang để xóa khỏi tài liệu"><span class="ic">🗑️</span>Delete page</button>
   <div class="sep"></div>
 
-  <button class="tbtn" id="btnOcrFull"><span class="ic">📄</span>Trích văn bản OCR</button>
+  <button class="tbtn" id="btnOcrFull"><span class="ic">📄</span>OCR text extract</button>
   <button class="tbtn" id="btnExportWord"><span class="ic">📝</span>Export Word Document</button>
   <div class="sep"></div>
 
@@ -608,7 +608,7 @@
   <button class="tbtn" id="zoomIn"><span class="ic">+</span></button>
   <div class="sep"></div>
 
-  <button class="tbtn primary" id="btnSave" style="margin-left:auto"><span class="ic">💾</span>Lưu PDF</button>
+  <button class="tbtn primary" id="btnSave" style="margin-left:auto"><span class="ic">💾</span>Save PDF</button>
 </div>
 
 <div id="body">
@@ -620,7 +620,7 @@
     <div id="dropHint">
       <span class="big">📄</span>
       Chưa có file PDF nào được mở.<br>
-      Nhấn <b>"Mở PDF"</b> ở thanh công cụ để bắt đầu chỉnh sửa.<br>
+      Nhấn <b>"Open PDF"</b> ở thanh công cụ để bắt đầu chỉnh sửa.<br>
       <span style="font-size:12px">Hỗ trợ: thêm văn bản, đánh dấu, vẽ, che nội dung và sửa văn bản trên PDF scan bằng OCR.</span>
     </div>
     <div id="pagesScroll">
@@ -635,7 +635,7 @@
 
   <div id="rightPanel">
     <h3>Văn bản OCR (trang hiện tại)</h3>
-    <textarea id="ocrText" placeholder="Nhấn 'Trích văn bản OCR' để nhận dạng chữ trên trang này..."></textarea>
+    <textarea id="ocrText" placeholder="Nhấn 'OCR text extract' để nhận dạng chữ trên trang này..."></textarea>
     <div class="actions">
       <button class="tbtn" id="btnCopyOcr">📋 Sao chép</button>
       <button class="tbtn" id="btnDownloadTxt">⬇️ Tải .txt</button>
@@ -2323,15 +2323,15 @@ async function updateZoom(){
 
 // ---------- Chọn công cụ ----------
 const toolLabels = {
-  select:'Chọn (nhấn để chọn, kéo để di chuyển, đúp chuột để sửa chữ, phím Delete để xóa)',
-  textselect:'Chọn văn bản (Copy) — bôi đen (kéo chuột) qua chữ trong PDF rồi Ctrl+C để copy ra ngoài; bấm nút "🖍️ Đánh dấu" nổi lên cạnh vùng vừa bôi đen để tô sáng đúng đoạn chữ đó.',
-  addtext:'Thêm văn bản',
+  select:'Select — nhấn để chọn, kéo để di chuyển, đúp chuột để sửa chữ, phím Delete để xóa',
+  textselect:'Select text to copy — bôi đen (kéo chuột) qua chữ trong PDF rồi Ctrl+C để copy ra ngoài; bấm nút "🖍️ Marker" nổi lên cạnh vùng vừa bôi đen để tô sáng đúng đoạn chữ đó.',
+  addtext:'Add text',
   edittext:'Edit Text — trỏ chuột vào bất kỳ đoạn chữ nào (chữ PDF thật hoặc chữ trong ảnh/scan) rồi bấm để sửa ngay, không cần chọn vùng.',
-  region:'Chọn vùng — kéo để chọn một vùng trên trang, sau đó bấm "Edit Text" hoặc "Sửa văn bản (OCR)" để sửa nhanh toàn bộ chữ trong vùng cùng lúc',
-  ocr:'Sửa văn bản (OCR) — dùng cho PDF scan/ảnh, trỏ chuột vào dòng chữ để thấy khung cam báo có thể sửa, bấm vào để sửa ngay. Mẹo: dùng "Chọn vùng" trước để sửa nhanh cả đoạn nhiều dòng.',
-  highlight:'Đánh dấu (kéo để chọn vùng)',
-  draw:'Vẽ tự do',
-  whiteout:'Che nội dung (kéo để chọn vùng) — chọn màu che tùy ý ở ô "Màu che" cạnh Font chữ'
+  region:'Selection area — kéo để chọn một vùng trên trang, sau đó bấm "Edit Text" hoặc "Edit Document (OCR-PDF scan)" để sửa nhanh toàn bộ chữ trong vùng cùng lúc',
+  ocr:'Edit Document (OCR-PDF scan) — dùng cho PDF scan/ảnh, trỏ chuột vào dòng chữ để thấy khung cam báo có thể sửa, bấm vào để sửa ngay. Mẹo: dùng "Selection area" trước để sửa nhanh cả đoạn nhiều dòng.',
+  highlight:'Marker — kéo để chọn vùng',
+  draw:'Paint',
+  whiteout:'Text overlay — kéo để chọn vùng, chọn màu che tùy ý ở ô "Color overlay" cạnh Font chữ'
 };
 document.querySelectorAll('.tbtn[data-tool]').forEach(btn=>{
   btn.onclick = ()=>{
