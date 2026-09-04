@@ -435,6 +435,50 @@
   </div>
 </div>
 
+<!-- ===================== MODAL: EXTRACT PAGES (chọn trang để tách ra file PDF mới) ===================== -->
+<div id="extractPagesModal" style="
+  position:fixed;inset:0;z-index:1100;display:none;
+  background:rgba(0,0,0,.55);
+  align-items:center;justify-content:center;
+  font-family:'Segoe UI',Roboto,Arial,sans-serif;color:#eceff1;">
+  <div style="
+    background:#25282e;border:1px solid #454a52;border-radius:10px;
+    padding:22px 24px;width:560px;max-width:92vw;max-height:86vh;overflow:auto;
+    box-shadow:0 10px 40px rgba(0,0,0,.5);">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+      <div style="font-weight:600;font-size:15px;">✂️ Extract Pages</div>
+      <button type="button" id="epCloseBtn" style="
+        background:transparent;border:none;color:#9aa0a8;font-size:18px;cursor:pointer;line-height:1;">✕</button>
+    </div>
+    <div style="font-size:12px;color:#9aa0a8;margin-bottom:12px;">
+      Chọn một hoặc nhiều trang muốn tách ra. Các trang đã chọn sẽ được lưu thành 1 file PDF MỚI
+      (giữ nguyên mọi chỉnh sửa đã thực hiện) — tài liệu đang mở trên màn hình không bị thay đổi gì.
+    </div>
+
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+      <label style="display:flex;align-items:center;gap:8px;font-size:12.5px;cursor:pointer;">
+        <input type="checkbox" id="epSelectAll"> Chọn tất cả
+      </label>
+      <span id="epSelectedCount" style="font-size:11.5px;color:#9aa0a8;"></span>
+    </div>
+
+    <div id="epList" style="
+      display:grid;grid-template-columns:repeat(auto-fill,minmax(86px,1fr));gap:10px;
+      margin-bottom:14px;max-height:380px;overflow:auto;padding:2px;"></div>
+
+    <div id="epError" style="min-height:18px;color:#ff8a80;font-size:12px;margin-bottom:4px;"></div>
+
+    <div style="display:flex;gap:8px;margin-top:6px;">
+      <button type="button" id="epCancelBtn" style="
+        flex:1;padding:10px;border:1px solid #454a52;border-radius:6px;background:transparent;color:#eceff1;
+        font-weight:600;font-size:13px;cursor:pointer;">Huỷ</button>
+      <button type="button" id="epConfirmBtn" style="
+        flex:1;padding:10px;border:none;border-radius:6px;background:#e2402c;color:#fff;
+        font-weight:600;font-size:13px;cursor:pointer;">✂️ Tách trang đã chọn</button>
+    </div>
+  </div>
+</div>
+
 <!-- ===================== MODAL: EXPORT WORD DOCUMENT (chọn trang cần xuất) ===================== -->
 <div id="exportWordModal" style="
   position:fixed;inset:0;z-index:1100;display:none;
@@ -600,6 +644,7 @@
   <button class="tbtn" id="btnInsertPdf" title="Chèn các trang từ một file PDF khác vào trước/sau trang đang chọn"><span class="ic">📥</span>Insert pages</button>
   <input type="file" id="insertFileInput" accept="application/pdf">
   <button class="tbtn" id="btnDeletePage" title="Chọn một hoặc nhiều trang để xóa khỏi tài liệu"><span class="ic">🗑️</span>Delete page</button>
+  <button class="tbtn" id="btnExtractPages" title="Chọn một hoặc nhiều trang để tách ra thành 1 file PDF mới (không ảnh hưởng tài liệu đang mở)"><span class="ic">✂️</span>Extract Pages</button>
   <div class="sep"></div>
 
   <button class="tbtn" id="btnOcrFull"><span class="ic">📄</span>OCR text extract</button>
@@ -2051,6 +2096,112 @@ document.getElementById('dpConfirmBtn').addEventListener('click', async () => {
   await rebuildPageSlots();
   await renderPage(currentIndex);
   buildThumbnails();
+});
+
+// ---------- Tách trang (Extract Pages) — chọn 1 hoặc nhiều trang để lưu thành 1 file PDF mới ----------
+// Khác với "Delete page": KHÔNG đụng gì tới tài liệu đang mở, chỉ tạo và tải về một file PDF mới
+// gồm đúng các trang đã chọn (dùng lại đúng engine ghép trang + áp dụng chỉnh sửa của exportPdfAs()
+// bằng cách truyền vào danh sách chỉ số trang cần lấy, thay vì lấy toàn bộ tài liệu như "Save PDF").
+const extractPagesModal = document.getElementById('extractPagesModal');
+const epList = document.getElementById('epList');
+const epSelectAll = document.getElementById('epSelectAll');
+const epSelectedCount = document.getElementById('epSelectedCount');
+const epError = document.getElementById('epError');
+
+document.getElementById('btnExtractPages').onclick = openExtractPagesModal;
+document.getElementById('epCancelBtn').addEventListener('click', closeExtractPagesModal);
+document.getElementById('epCloseBtn').addEventListener('click', closeExtractPagesModal);
+extractPagesModal.addEventListener('click', function(e){ if(e.target === extractPagesModal) closeExtractPagesModal(); });
+
+function closeExtractPagesModal(){ extractPagesModal.style.display = 'none'; }
+
+function updateEpSelectedCount(){
+  const total = epList.querySelectorAll('.dp-checkbox').length;
+  const checked = epList.querySelectorAll('.dp-checkbox:checked').length;
+  epSelectedCount.textContent = checked>0 ? `Đã chọn ${checked}/${total} trang` : `${total} trang`;
+  epSelectAll.checked = total>0 && checked===total;
+  epSelectAll.indeterminate = checked>0 && checked<total;
+}
+
+async function openExtractPagesModal(){
+  epError.textContent = '';
+  if(!pages.length){ alert('Hãy mở một file PDF trước.'); return; }
+  epList.innerHTML = '';
+  extractPagesModal.style.display = 'flex';
+
+  // Dựng lưới trang trước (khung rỗng), rồi vẽ ảnh thu nhỏ từng trang dần dần,
+  // để mở modal ngay lập tức thay vì phải đợi render hết mọi trang.
+  const items = [];
+  for(let i=0;i<pages.length;i++){
+    const item = document.createElement('label');
+    item.className = 'dp-item';
+    item.dataset.idx = i;
+
+    const wrap = document.createElement('div');
+    wrap.className = 'dp-thumb-wrap';
+    const c = document.createElement('canvas');
+    wrap.appendChild(c);
+
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.className = 'dp-checkbox';
+    cb.dataset.idx = i;
+    if(i === currentIndex) cb.checked = true; // mặc định chọn sẵn trang đang xem
+    cb.addEventListener('change', () => {
+      item.classList.toggle('selected', cb.checked);
+      updateEpSelectedCount();
+    });
+    wrap.appendChild(cb);
+
+    const pnum = document.createElement('div');
+    pnum.className = 'dp-pnum';
+    pnum.textContent = 'Trang ' + (i+1);
+
+    item.appendChild(wrap);
+    item.appendChild(pnum);
+    if(cb.checked) item.classList.add('selected');
+    epList.appendChild(item);
+    items.push({idx:i, canvas:c});
+  }
+  updateEpSelectedCount();
+
+  // Vẽ ảnh thu nhỏ (không chặn việc mở modal) — dùng chung renderDpThumb() với modal Delete page.
+  for(const {idx, canvas} of items){
+    try{ await renderDpThumb(idx, canvas); }
+    catch(err){ console.warn('Không vẽ được ảnh thu nhỏ trang', idx+1, err); }
+  }
+}
+
+epSelectAll.addEventListener('change', (e) => {
+  epList.querySelectorAll('.dp-checkbox').forEach(cb => {
+    cb.checked = e.target.checked;
+    cb.closest('.dp-item').classList.toggle('selected', cb.checked);
+  });
+  updateEpSelectedCount();
+});
+
+document.getElementById('epConfirmBtn').addEventListener('click', async () => {
+  const selected = Array.from(epList.querySelectorAll('.dp-checkbox:checked'))
+    .map(cb => Number(cb.dataset.idx))
+    .sort((a,b)=>a-b);
+
+  if(selected.length===0){
+    epError.textContent = 'Hãy chọn ít nhất 1 trang cần tách.';
+    return;
+  }
+  epError.textContent = '';
+  closeExtractPagesModal();
+
+  // Đặt tên file mới dựa theo tên file gốc: liệt kê rõ số trang nếu chọn ít (dễ nhận biết), hoặc
+  // chỉ ghi số lượng nếu chọn nhiều trang (tránh tên file quá dài).
+  const base = originalFileName.replace(/\.pdf$/i,'').replace(/-edited$/,'');
+  const filename = selected.length >= pages.length
+    ? base + '-tach-trang.pdf'
+    : (selected.length <= 8
+        ? base + '-trang-' + selected.map(i=>i+1).join('_') + '.pdf'
+        : base + '-tach-' + selected.length + '-trang.pdf');
+
+  await exportPdfAs(filename, selected);
 });
 
 // ---------- Vẽ trang lên canvas ----------
@@ -3974,7 +4125,7 @@ document.getElementById('btnDownloadTxt').onclick = ()=>{
 // Toàn bộ thao tác ghép/xuất PDF chỉ làm việc TRÊN BỘ NHỚ (mảng `pages`/`edits` trong trình duyệt)
 // và tạo ra một file PDF MỚI để tải xuống — file PDF gốc mà người dùng mở lên (trên máy họ) không
 // hề bị đụng tới hay ghi đè trong suốt quá trình này.
-async function exportPdfAs(filename){
+async function exportPdfAs(filename, pageIndexes){
   if(!pages.length){ alert('Hãy mở một file PDF trước.'); return; }
   // QUAN TRỌNG: chốt lại ô nhập sửa chữ đang mở (nếu có) TRƯỚC khi đọc dữ liệu "edits" để xuất
   // PDF. Nếu người dùng vừa gõ xong rồi bấm thẳng nút "Lưu PDF" mà chưa click ra ngoài, một số
@@ -3986,6 +4137,9 @@ async function exportPdfAs(filename){
   const spinnerLabel = spinner.lastChild;
   spinner.classList.add('show');
   try{
+    // Nếu có truyền pageIndexes (dùng khi "Tách trang" chỉ chọn 1 số trang), chỉ ghép đúng những
+    // trang đó theo đúng thứ tự đã chọn; mặc định (Save PDF bình thường) ghép TOÀN BỘ tài liệu.
+    const indexes = (pageIndexes && pageIndexes.length) ? pageIndexes : pages.map((_,i)=>i);
     const outDoc = await PDFDocument.create();
     const imageEmbedCache = new Map(); // cache ảnh đã nhúng (theo từng edit) trong lượt xuất file này
     // Font dự phòng CHẮC CHẮN dùng được (chuẩn PDF, không cần tải/nhúng gì thêm) — dùng khi font
@@ -4027,8 +4181,9 @@ async function exportPdfAs(filename){
       return srcDocCache.get(buf);
     }
 
-    for(let i=0;i<pages.length;i++){
-      spinnerLabel.textContent = ` Đang ghép trang ${i+1}/${pages.length}…`;
+    for(let k=0;k<indexes.length;k++){
+      const i = indexes[k];
+      spinnerLabel.textContent = ` Đang ghép trang ${k+1}/${indexes.length}…`;
       const p = pages[i];
       let pageObj, H;
       if(p.type==='pdf'){
