@@ -5217,7 +5217,7 @@ function buildTableFromSegments_(tableLines, lines, H){
   // margin-left giữ đúng khoảng thụt lề trái, margin-top (điền vào chỗ __TOPMARGIN__ bởi hàm gọi
   // buildWordPageHtml, dựa trên khoảng cách tới nội dung ngay phía trên) giữ đúng khoảng cách dọc.
   let html = `<table cellspacing="0" cellpadding="4" style="margin:__TOPMARGIN__pt 0 0 ${left.toFixed(2)}pt;`+
-    `width:${(right-left).toFixed(2)}pt;border-collapse:collapse;table-layout:fixed;font-family:'Times New Roman',serif;">\n`;
+    `width:${(right-left).toFixed(2)}pt;border-collapse:collapse;table-layout:fixed;mso-table-layout-alt:fixed;font-family:'Times New Roman',serif;">\n`;
   // Khai báo rõ chiều rộng từng cột bằng <colgroup><col style="width:...pt"> — Word (bộ lọc mso)
   // đôi khi bỏ qua width đặt trực tiếp trên <td> khi table-layout:fixed nếu không có colgroup đi
   // kèm, khiến các cột bị co giãn sai lệch. Khai báo qua colgroup đảm bảo cột luôn đúng bề rộng.
@@ -5320,8 +5320,17 @@ function renderMultiColumnRow_(row, W, marginTop){
   // được, ví dụ tên công ty dính liền quốc hiệu). Khắc phục bằng cách quy đổi sang bề rộng TUYỆT
   // ĐỐI theo đơn vị "pt" (giống hệ đơn vị point đã dùng xuyên suốt tài liệu) cho cả bảng lẫn từng
   // cột, kèm thêm <colgroup> khai báo rõ bề rộng — đây là kiểu khai báo Word luôn tôn trọng.
+  // SỬA LỖI QUAN TRỌNG (LẦN 2 — lỗi vẫn còn dù đã đổi % sang pt): Word có cơ chế "AutoFit to
+  // Contents" BẬT MẶC ĐỊNH cho bảng nhập từ HTML — cơ chế này tự động CO độ rộng từng cột về sát
+  // đúng nội dung thật của nó, BỎ QUA hoàn toàn "table-layout:fixed" dù width đã khai báo bằng
+  // đơn vị tuyệt đối "pt" ở cả <table>, <col> lẫn <td> (đây là lý do dù bản sửa trước đã đổi từ %
+  // sang pt vẫn không hết lỗi "hai cột dính liền chữ" — vì AutoFit không quan tâm đơn vị, nó ghi
+  // đè lên toàn bộ width đã khai báo). Cách duy nhất buộc Word THỰC SỰ tôn trọng độ rộng cột cố
+  // định là khai báo thêm thuộc tính CSS RIÊNG của Word "mso-table-layout-alt:fixed" — đây là cờ
+  // duy nhất tắt được AutoFit (table-layout:fixed theo chuẩn CSS thường không đủ, Word cần đúng
+  // thuộc tính mso- này).
   let html = `<table cellspacing="0" cellpadding="0" style="width:${W.toFixed(2)}pt;border-collapse:collapse;`+
-    `table-layout:fixed;margin:${mt}pt 0 0 0;" width="${Math.round(W)}">`;
+    `table-layout:fixed;mso-table-layout-alt:fixed;margin:${mt}pt 0 0 0;" width="${Math.round(W)}">`;
   html += '<colgroup>';
   for(let i=0;i<row.length;i++){ html += `<col style="width:${(bounds[i+1]-bounds[i]).toFixed(2)}pt">`; }
   html += '</colgroup><tr>';
@@ -5337,8 +5346,18 @@ function renderMultiColumnRow_(row, W, marginTop){
     else if(leftGap>8 && rightGap>8 && Math.abs(leftGap-rightGap) < Math.max(leftGap,rightGap)*0.35) align = 'center';
     const fs = Math.max(6, l.fontSize).toFixed(2);
     const text = String(l.text).split('\n').map(s=>escapeHtml(s)).join('<br>');
-    html += `<td style="width:${colW.toFixed(2)}pt;text-align:${align};vertical-align:top;border:none;`+
-              `padding:0;font-size:${fs}pt;color:${l.color};white-space:pre-wrap;" width="${Math.round(colW)}">${text || '&nbsp;'}</td>`;
+    // SỬA LỖI: trước đây căn trái/phải luôn ép chữ sát mép cột (colLeft/colRight), làm mất khoảng
+    // thụt lề thật của chữ so với biên cột (ví dụ tên gara vốn thụt vào so với lề trái của "cột"
+    // chứa nó thì lại bị xuất ra dính sát mép 0, lệch hẳn vị trí so với PDF gốc). Đặt khoảng thụt
+    // lề (padding-left/right đúng bằng khoảng cách gốc) lên một <div> LỒNG BÊN TRONG <td> — không
+    // đặt trực tiếp lên <td> (vì <td> đã có width cố định theo mô hình content-box mặc định, cộng
+    // thêm padding sẽ làm tổng bề rộng ô PHÌNH RỘNG hơn cột đã khai báo, đè chồng sang cột kế bên).
+    // Div bên trong có width mặc định "auto" (co giãn vừa khít bên trong ô cha), nên thêm padding
+    // vào đó chỉ thu hẹp phần chữ hiển thị bên trong, không làm ô bảng phình ra ngoài biên cột.
+    const padLeft = align==='left' ? Math.max(0, leftGap).toFixed(2) : '0';
+    const padRight = align==='right' ? Math.max(0, rightGap).toFixed(2) : '0';
+    html += `<td style="width:${colW.toFixed(2)}pt;vertical-align:top;border:none;padding:0;" width="${Math.round(colW)}">`+
+              `<div style="text-align:${align};padding:0 ${padRight}pt 0 ${padLeft}pt;font-size:${fs}pt;color:${l.color};white-space:pre-wrap;">${text || '&nbsp;'}</div></td>`;
     bottom = Math.max(bottom, l.y0 + Math.max(6,l.fontSize)*1.22*(String(l.text).split('\n').length));
   }
   html += '</tr></table>\n';
