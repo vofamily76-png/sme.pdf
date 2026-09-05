@@ -3423,7 +3423,14 @@ function computePageLines(items){
       x1: Math.max(...group.map(i=>i.x1)),
       y0: Math.min(...group.map(i=>i.y0)),
       y1: Math.max(...group.map(i=>i.y1)),
-      fontSize: group.reduce((s,i)=> s+(i.fontSize||10), 0) / group.length
+      fontSize: group.reduce((s,i)=> s+(i.fontSize||10), 0) / group.length,
+      // Danh sách item gốc (trước khi ghép thành 1 dòng), giữ lại toạ độ x0/x1 riêng của từng
+      // mảnh chữ. Dùng cho việc XUẤT WORD: khi dòng này vô tình gộp chung chữ của HAI Ô BẢNG
+      // khác nhau (vì khoảng cách giữa chúng tình cờ hẹp hơn ngưỡng tách "segments" ở trên, ví
+      // dụ "7.1" dính liền vào tên hàng hóa ngay sau nó), buildTableFromSegments_ có thể dùng lại
+      // đúng toạ độ từng mảnh để tách ngược trở lại theo ranh giới cột THẬT đã dò được từ đường kẻ
+      // bảng — thay vì phải đoán mò một ngưỡng khoảng cách chung cho cả trang.
+      items: group.map(i => ({ x0:i.x0, x1:i.x1, fontSize:i.fontSize||10, text:i.text }))
     };
     // QUAN TRỌNG cho "Edit Text sửa thật" (NativeTextEngine): nếu mọi item của
     // dòng này đều có sẵn chỉ số gốc (_srcIdx, do extractNativeText gán — chỉ
@@ -4988,7 +4995,7 @@ async function getPageVisualLinesForWord(idx){
     if(!l.text || !l.text.trim()) continue;
     if(isCovered(l.x0,l.y0,l.x1,l.y1)) continue;
     const x1 = (l.x1 != null) ? l.x1 : (l.x0 + l.text.length*(l.fontSize||12)*0.5);
-    lines.push({ x0:l.x0, x1, y0:l.y0, fontSize: l.fontSize||12, text:l.text, color:'#000000' });
+    lines.push({ x0:l.x0, x1, y0:l.y0, fontSize: l.fontSize||12, text:l.text, color:'#000000', items:l.items });
   }
   // Thêm nội dung của mọi chỉnh sửa dạng chữ (gõ mới / sửa lại dòng có sẵn), đúng vị trí+font+màu
   for(const ed of (p.edits||[])){
@@ -5041,6 +5048,49 @@ function clusterLineCoords_(vals, tol){
 //    "có ô có chữ mà xuất ra bị trống, chữ lại dạt sang chỗ khác"), hàm sẽ chọn băng có TÂM
 //    (midpoint) gần `val` nhất, đảm bảo dòng chữ luôn được xếp vào đúng ô gần nó nhất thay vì
 //    bị văng ra khỏi bảng.
+// SỬA LỖI CỐT LÕI ("bảng báo giá xuất Word bị lệch/dính cột"): bước dựng "dòng chữ" dùng chung
+// cho toàn trang (computePageLines, chạy TRƯỚC KHI biết trang có bảng hay không) tách các mảnh
+// chữ thành từng "dòng" chỉ dựa vào một ngưỡng khoảng cách X cố định (xem computePageLines).
+// Ngưỡng này chỉ là ước lượng chung ("khoảng cách giữa 2 từ trong câu" so với "khoảng cách giữa
+// 2 ô bảng"), nên với nhiều bảng thực tế (đặc biệt các hàng có mã số dài hơn hẳn các hàng khác,
+// ví dụ "7.1"/"7.2" so với "1".."7"), khoảng trống giữa CỘT SỐ THỨ TỰ và CỘT TÊN HÀNG HÓA ngay
+// sau đó đôi khi hẹp hơn ngưỡng này một chút -> bị gộp NHẦM thành một "dòng" duy nhất chứa chữ
+// của CẢ HAI cột (ví dụ "7.1 lán đĩa + lán tam bua"), khiến khi xuất Word, toàn bộ cụm chữ này
+// bị nhét chung vào MỘT ô (thường là cột đầu), còn ô đúng ra phải chứa tên hàng hóa lại trống.
+// Cùng lỗi này cũng xảy ra ở chính hàng tiêu đề ("ĐVT" dính liền "Số lượng").
+// Khắc phục: một khi ĐÃ dò được lưới cột THẬT (colXs) từ đường kẻ bảng trong PDF, ta có căn cứ
+// đáng tin cậy hơn hẳn ngưỡng khoảng cách chung ở trên. Hàm này kiểm tra từng MẢNH CHỮ GỐC (items,
+// giữ lại từ computePageLines) cấu thành nên dòng — nếu chúng thực sự rơi vào từ 2 băng cột trở
+// lên, tách dòng trở lại thành nhiều dòng con, mỗi dòng con chỉ chứa các mảnh cùng một cột, rồi
+// ghép lại chữ bằng đúng hàm joinLineItemsText đã dùng khi dựng dòng ban đầu — đảm bảo văn bản
+// trong mỗi ô vẫn đúng như hiển thị, chỉ khác là được xếp đúng cột thay vì bị dồn nhầm.
+function splitLineAcrossColumns_(l, colXs, TOL){
+  const rawItems = (l.items && l.items.length) ? l.items : [{ x0:l.x0, x1:l.x1, fontSize:l.fontSize, text:l.text }];
+  const byCol = {};
+  for(const it of rawItems){
+    const c = bandIndex_(it.x0, colXs, TOL);
+    (byCol[c] = byCol[c] || []).push(it);
+  }
+  const cols = Object.keys(byCol).map(Number).sort((a,b)=>a-b);
+  if(cols.length <= 1){
+    return [{ col: cols.length ? cols[0] : bandIndex_(l.x0, colXs, TOL), line: l }];
+  }
+  return cols.map(c => {
+    const group = byCol[c].slice().sort((a,b)=> a.x0-b.x0);
+    return {
+      col: c,
+      line: {
+        x0: Math.min(...group.map(i=>i.x0)),
+        x1: Math.max(...group.map(i=>i.x1)),
+        y0: l.y0,
+        fontSize: l.fontSize,
+        text: joinLineItemsText(group),
+        color: l.color
+      }
+    };
+  });
+}
+
 function bandIndex_(val, edges, TOL){
   const n = edges.length - 1;
   for(let i=0;i<n;i++){
@@ -5057,8 +5107,49 @@ function bandIndex_(val, edges, TOL){
   return best;
 }
 
+// Nhóm các đoạn thẳng ngang/dọc thành từng CỤM LIÊN THÔNG THẬT SỰ — hai đoạn chỉ được coi là
+// cùng một cụm (cùng thuộc một bảng) nếu chúng thực sự GIAO/CHẠM NHAU (điểm giao nằm trong phạm
+// vi của cả 2 đoạn, có dung sai nhỏ để bù sai số dò đường kẻ), dùng thuật toán union-find.
+// LÝ DO CẦN BƯỚC NÀY (SỬA LỖI QUAN TRỌNG so với bản cũ): bản cũ gộp CHUNG mọi đường kẻ "đủ dài"
+// trên CẢ TRANG thành một lưới hàng/cột DUY NHẤT, bất kể chúng có thực sự tạo thành một bảng với
+// nhau hay không. Rất nhiều biểu mẫu/văn bản hành chính Việt Nam có một KHUNG VIỀN bao quanh
+// TOÀN BỘ TRANG (hoặc một ô checkbox nhỏ ở phần tiêu đề) — khung viền này cũng đủ dài để lọt qua
+// bước lọc độ dài ở trên, và bị gộp NHẦM chung với các đường kẻ của bảng dữ liệu thật (ví dụ bảng
+// báo giá) nằm ở giữa/dưới trang, tạo ra MỘT bảng khổng lồ trải dài từ đỉnh trang (kéo cả phần
+// quốc hiệu/tiêu đề vào làm ô bảng) cho tới cuối trang. Đây chính là nguyên nhân khiến phần tiêu
+// đề bị dồn/ép chật vào ô bảng và toàn bộ bố cục xuất ra sai lệch hẳn so với bản gốc. Cách khắc
+// phục: chỉ nhóm các đoạn NGANG/DỌC thực sự giao nhau; sau đó CHỈ CHỌN ĐÚNG MỘT cụm "giống bảng
+// dữ liệu thật nhất" (nhiều hàng*cột nhất) để dựng bảng — các cụm còn lại (khung viền trang, ô
+// lẻ...) bị bỏ qua hoàn toàn, không còn ảnh hưởng tới bảng đã chọn.
+function clusterConnectedGridSegments_(hSegs, vSegs, tol){
+  const nodes = hSegs.map(s => ({ type:'h', seg:s })).concat(vSegs.map(s => ({ type:'v', seg:s })));
+  const n = nodes.length;
+  const parent = Array.from({length:n}, (_,i)=>i);
+  function find(x){ while(parent[x]!==x){ parent[x]=parent[parent[x]]; x=parent[x]; } return x; }
+  function union(a,b){ const ra=find(a), rb=find(b); if(ra!==rb) parent[ra]=rb; }
+  function touch(a,b){
+    if(a.type === b.type) return false; // chỉ đoạn ngang<->dọc mới có thể "giao" nhau tại 1 điểm
+    const h = a.type==='h' ? a.seg : b.seg;
+    const v = a.type==='h' ? b.seg : a.seg;
+    return v.x >= h.x0-tol && v.x <= h.x1+tol && h.y >= v.y0-tol && h.y <= v.y1+tol;
+  }
+  for(let i=0;i<n;i++){
+    for(let j=i+1;j<n;j++){
+      if(touch(nodes[i], nodes[j])) union(i,j);
+    }
+  }
+  const groups = {};
+  for(let i=0;i<n;i++){
+    const r = find(i);
+    if(!groups[r]) groups[r] = { h: [], v: [] };
+    (nodes[i].type==='h' ? groups[r].h : groups[r].v).push(nodes[i].seg);
+  }
+  return Object.values(groups);
+}
+
 function buildTableFromSegments_(tableLines, lines, H){
-  const TOL = 2.2; // pt
+  const TOL = 2.2;       // pt — dung sai gộp mốc hàng/cột
+  const TOUCH_TOL = 3;   // pt — dung sai coi 2 đoạn ngang/dọc là "chạm/giao nhau" ở góc ô bảng
 
   // BƯỚC 1 — lọc bỏ các đường kẻ NGẮN không thuộc khung bảng (ví dụ gạch chân dưới dòng
   // "Độc lập - Tự do - Hạnh phúc", gạch chân tiêu đề, gạch dưới ô ký tên...). Đường kẻ hàng/cột
@@ -5078,12 +5169,22 @@ function buildTableFromSegments_(tableLines, lines, H){
   const vCore = vSegs.filter(s => (s.y1 - s.y0) >= Math.max(maxVSpan * 0.30, 12));
   if(hCore.length < 3 || vCore.length < 2) return null;
 
-  const hYs = hCore.map(s => H - s.y);
-  const vXs = vCore.map(s => s.x);
-  const rowYs = clusterLineCoords_(hYs, TOL);
-  const colXs = clusterLineCoords_(vXs, TOL);
+  // BƯỚC 2 — chỉ giữ lại đúng MỘT cụm đường kẻ thực sự liên thông với nhau (xem giải thích ở
+  // clusterConnectedGridSegments_ phía trên), chọn cụm có nhiều hàng*cột nhất làm bảng dữ liệu
+  // thật; bỏ qua khung viền trang hay các đoạn kẻ lẻ không ăn khớp với lưới này.
+  const groups = clusterConnectedGridSegments_(hCore, vCore, TOUCH_TOL);
+  let best = null;
+  for(const g of groups){
+    if(g.h.length < 3 || g.v.length < 2) continue;
+    const gRowYs = clusterLineCoords_(g.h.map(s => H - s.y), TOL);
+    const gColXs = clusterLineCoords_(g.v.map(s => s.x), TOL);
+    if(gRowYs.length < 3 || gColXs.length < 2) continue;
+    const score = (gRowYs.length - 1) * (gColXs.length - 1);
+    if(!best || score > best.score) best = { rowYs: gRowYs, colXs: gColXs, score };
+  }
   // Cần tối thiểu 2 hàng (3 đường ngang) và 1 cột (2 đường dọc) mới coi là một bảng thật.
-  if(rowYs.length < 3 || colXs.length < 2) return null;
+  if(!best) return null;
+  const { rowYs, colXs } = best;
 
   const top = rowYs[0], bottom = rowYs[rowYs.length-1];
   const left = colXs[0], right = colXs[colXs.length-1];
@@ -5101,8 +5202,13 @@ function buildTableFromSegments_(tableLines, lines, H){
     // khiến trước đây có ô rõ ràng có chữ nhưng xuất Word lại trống, còn chữ thì dạt ra ngoài
     // bảng, trông như "nằm nhầm hàng/cột khác").
     const r = bandIndex_(l.y0, rowYs, TOL);
-    const c = bandIndex_(l.x0, colXs, TOL);
-    cells[r][c].push(l);
+    // Trước khi xếp vào MỘT cột duy nhất theo l.x0, kiểm tra xem dòng này có vô tình chứa chữ
+    // của NHIỀU cột khác nhau hay không (xem giải thích ở splitLineAcrossColumns_) — nếu có,
+    // tách lại đúng theo từng cột thay vì nhét chung cả cụm vào 1 ô.
+    const parts = splitLineAcrossColumns_(l, colXs, TOL);
+    for(const { col, line } of parts){
+      cells[r][col].push(line);
+    }
   }
 
   // QUAN TRỌNG: Word (bộ lọc mso khi mở .doc dạng HTML) KHÔNG áp dụng position:absolute —
@@ -5112,6 +5218,12 @@ function buildTableFromSegments_(tableLines, lines, H){
   // buildWordPageHtml, dựa trên khoảng cách tới nội dung ngay phía trên) giữ đúng khoảng cách dọc.
   let html = `<table cellspacing="0" cellpadding="4" style="margin:__TOPMARGIN__pt 0 0 ${left.toFixed(2)}pt;`+
     `width:${(right-left).toFixed(2)}pt;border-collapse:collapse;table-layout:fixed;font-family:'Times New Roman',serif;">\n`;
+  // Khai báo rõ chiều rộng từng cột bằng <colgroup><col style="width:...pt"> — Word (bộ lọc mso)
+  // đôi khi bỏ qua width đặt trực tiếp trên <td> khi table-layout:fixed nếu không có colgroup đi
+  // kèm, khiến các cột bị co giãn sai lệch. Khai báo qua colgroup đảm bảo cột luôn đúng bề rộng.
+  html += '<colgroup>';
+  for(let c=0;c<nCols;c++){ html += `<col style="width:${(colXs[c+1]-colXs[c]).toFixed(2)}pt">`; }
+  html += '</colgroup>\n';
   for(let r=0;r<nRows;r++){
     html += '<tr>';
     for(let c=0;c<nCols;c++){
@@ -5201,13 +5313,23 @@ function renderMultiColumnRow_(row, W, marginTop){
     bounds.push(Math.max(bounds[bounds.length-1] + 1, Math.min(mid, W - 1)));
   }
   bounds.push(W);
-  let html = `<table cellspacing="0" cellpadding="0" style="width:100%;border-collapse:collapse;`+
-    `table-layout:fixed;margin:${mt}pt 0 0 0;"><tr>`;
+  // SỬA LỖI QUAN TRỌNG: bản cũ đặt bề rộng cột bằng PHẦN TRĂM (width:...%). Word (bộ lọc "mso"
+  // dùng khi mở .doc dạng HTML) không tôn trọng đáng tin cậy width dạng % trên <td> khi kết hợp
+  // table-layout:fixed — kết quả thực tế là các cột bị co lại gần như bằng 0 và toàn bộ chữ của
+  // các cột bị dồn sát vào nhau không còn khoảng cách (đúng lỗi "hai cột dính liền chữ" quan sát
+  // được, ví dụ tên công ty dính liền quốc hiệu). Khắc phục bằng cách quy đổi sang bề rộng TUYỆT
+  // ĐỐI theo đơn vị "pt" (giống hệ đơn vị point đã dùng xuyên suốt tài liệu) cho cả bảng lẫn từng
+  // cột, kèm thêm <colgroup> khai báo rõ bề rộng — đây là kiểu khai báo Word luôn tôn trọng.
+  let html = `<table cellspacing="0" cellpadding="0" style="width:${W.toFixed(2)}pt;border-collapse:collapse;`+
+    `table-layout:fixed;margin:${mt}pt 0 0 0;" width="${Math.round(W)}">`;
+  html += '<colgroup>';
+  for(let i=0;i<row.length;i++){ html += `<col style="width:${(bounds[i+1]-bounds[i]).toFixed(2)}pt">`; }
+  html += '</colgroup><tr>';
   let bottom = 0;
   for(let i=0;i<row.length;i++){
     const l = row[i];
     const colLeft = bounds[i], colRight = bounds[i+1];
-    const widthPct = Math.max(1, (colRight-colLeft)/W*100).toFixed(2);
+    const colW = Math.max(1, colRight - colLeft);
     const x1 = (l.x1 != null && l.x1 > l.x0) ? l.x1 : (l.x0 + String(l.text).length*(l.fontSize||12)*0.5);
     const leftGap = Math.max(0, l.x0-colLeft), rightGap = Math.max(0, colRight-x1);
     let align = 'left';
@@ -5215,8 +5337,8 @@ function renderMultiColumnRow_(row, W, marginTop){
     else if(leftGap>8 && rightGap>8 && Math.abs(leftGap-rightGap) < Math.max(leftGap,rightGap)*0.35) align = 'center';
     const fs = Math.max(6, l.fontSize).toFixed(2);
     const text = String(l.text).split('\n').map(s=>escapeHtml(s)).join('<br>');
-    html += `<td style="width:${widthPct}%;text-align:${align};vertical-align:top;border:none;`+
-              `padding:0;font-size:${fs}pt;color:${l.color};white-space:pre-wrap;">${text || '&nbsp;'}</td>`;
+    html += `<td style="width:${colW.toFixed(2)}pt;text-align:${align};vertical-align:top;border:none;`+
+              `padding:0;font-size:${fs}pt;color:${l.color};white-space:pre-wrap;" width="${Math.round(colW)}">${text || '&nbsp;'}</td>`;
     bottom = Math.max(bottom, l.y0 + Math.max(6,l.fontSize)*1.22*(String(l.text).split('\n').length));
   }
   html += '</tr></table>\n';
