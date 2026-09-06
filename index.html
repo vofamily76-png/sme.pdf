@@ -912,7 +912,8 @@
   <button class="tbtn" id="zoomIn"><span class="ic">+</span></button>
   <div class="sep"></div>
 
-  <button class="tbtn primary" id="btnSave" style="margin-left:auto"><span class="ic">💾</span>Save PDF</button>
+  <button class="tbtn" id="btnPrint" style="margin-left:auto" title="In trực tiếp file PDF (bao gồm mọi chỉnh sửa hiện có)"><span class="ic">🖨️</span>Print</button>
+  <button class="tbtn primary" id="btnSave"><span class="ic">💾</span>Save PDF</button>
 </div>
 
 <div id="body">
@@ -5228,6 +5229,126 @@ async function exportPdfAs(filename, pageIndexes){
 }
 
 document.getElementById('btnSave').onclick = ()=> exportPdfAs(originalFileName);
+
+// ---------- In PDF (Print) ----------
+// LƯU Ý QUAN TRỌNG: KHÔNG được nạp thẳng file PDF (blob URL kiểu application/pdf) vào <iframe>
+// rồi gọi print() — vì khi đó Chrome/Edge sẽ tự động hiện TRÌNH XEM PDF NỘI BỘ của trình duyệt
+// (giao diện lạ với các icon "Lưu vào Google Drive", "Tải xuống", "In", "⋮" như trong ảnh người
+// dùng chụp), đây là giao diện do CHÍNH trình duyệt vẽ đè lên (không phải HTML/CSS của web page)
+// nên không thể ẩn/xóa các icon đó bằng code. Cách khắc phục: KHÔNG cho trình duyệt biết đây là
+// một file PDF — thay vào đó, dùng pdf.js "vẽ" (rasterize) từng trang (đã gồm mọi chỉnh sửa)
+// thành ảnh, rồi dựng một trang HTML thuần (mỗi ảnh là 1 trang, có ngắt trang giữa các ảnh) nạp
+// vào iframe ẩn và gọi lệnh in trên chính trang HTML đó. Vì nội dung nạp vào iframe lúc này là
+// HTML/ảnh (không phải PDF) nên trình duyệt sẽ không bao giờ hiện trình xem PDF kèm các icon
+// Google Drive/Tải xuống nữa — hộp thoại in hiện ra chỉ có đúng các tùy chọn in tiêu chuẩn.
+async function printPdf(){
+  if(!pages.length){ alert('Hãy mở một file PDF trước.'); return; }
+  flushPendingEdit();
+  const spinner = document.getElementById('spinner');
+  const spinnerLabel = spinner.lastChild;
+  spinner.classList.add('show');
+  spinnerLabel.textContent = ' Đang chuẩn bị bản in…';
+  try{
+    // Bước 1: ghép toàn bộ trang + mọi chỉnh sửa hiện có thành 1 file PDF hoàn chỉnh trong bộ nhớ
+    // (giống hệt "Save PDF"), để bản in luôn khớp 100% nội dung đang chỉnh sửa trên màn hình.
+    const indexes = pages.map((_,i)=>i);
+    const outDoc = await buildEditedOutDoc(indexes, spinnerLabel);
+    const bytes = await outDoc.save();
+
+    // Bước 2: dùng pdf.js vẽ lại từng trang ra canvas ở độ phân giải đủ nét để in (~200dpi), rồi
+    // xuất thành ảnh PNG (data URL) — không tạo blob URL kiểu "application/pdf" ở bất kỳ đâu.
+    const docJs = await pdfjsLib.getDocument({ data: bytes }).promise;
+    const PRINT_SCALE = 2.5; // ~180dpi (1 point = 1/72 inch), đủ nét để in, không quá nặng bộ nhớ
+    const pageImages = [];
+    for(let i=0;i<docJs.numPages;i++){
+      spinnerLabel.textContent = ` Đang dựng trang in ${i+1}/${docJs.numPages}…`;
+      const page = await docJs.getPage(i+1);
+      const vp1 = page.getViewport({ scale: 1 }); // kích thước gốc theo point, dùng để giữ đúng tỉ lệ khổ giấy
+      const vp = page.getViewport({ scale: PRINT_SCALE });
+      const tmpCanvas = document.createElement('canvas');
+      tmpCanvas.width = Math.max(1, Math.round(vp.width));
+      tmpCanvas.height = Math.max(1, Math.round(vp.height));
+      const ctx = tmpCanvas.getContext('2d');
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, 0, tmpCanvas.width, tmpCanvas.height);
+      await page.render({ canvasContext: ctx, viewport: vp }).promise;
+      pageImages.push({
+        dataUrl: tmpCanvas.toDataURL('image/png'),
+        widthPt: vp1.width,
+        heightPt: vp1.height
+      });
+      tmpCanvas.width = 0; tmpCanvas.height = 0; // giải phóng bộ nhớ canvas ngay sau khi lấy ảnh
+    }
+
+    // Bước 3: dựng 1 trang HTML thuần — mỗi ảnh là đúng 1 trang in (page-break-after:always),
+    // khổ giấy theo đúng tỉ lệ trang PDF gốc (đơn vị pt đổi sang cm cho @page).
+    const PT_TO_CM = 0.0352778;
+    const pagesHtml = pageImages.map((p, i)=>{
+      const wCm = (p.widthPt * PT_TO_CM).toFixed(2);
+      const hCm = (p.heightPt * PT_TO_CM).toFixed(2);
+      return `<div class="print-page" style="width:${wCm}cm;height:${hCm}cm;">`
+           +   `<img src="${p.dataUrl}" style="width:100%;height:100%;display:block;">`
+           + `</div>`;
+    }).join('');
+    // @page lấy khổ giấy theo trang ĐẦU TIÊN (đa số PDF các trang cùng khổ); nếu tài liệu có nhiều
+    // khổ giấy khác nhau, mỗi .print-page vẫn giữ đúng kích thước riêng nhờ style width/height ở trên.
+    const firstW = pageImages.length ? (pageImages[0].widthPt * PT_TO_CM).toFixed(2) : '21';
+    const firstH = pageImages.length ? (pageImages[0].heightPt * PT_TO_CM).toFixed(2) : '29.7';
+    const printDocHtml = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${(originalFileName||'In tài liệu').replace(/</g,'')}</title>
+      <style>
+        @page{ size:${firstW}cm ${firstH}cm; margin:0; }
+        *{ margin:0; padding:0; box-sizing:border-box; }
+        html,body{ background:#fff; }
+        .print-page{ overflow:hidden; page-break-after:always; break-after:page; }
+        .print-page:last-child{ page-break-after:auto; break-after:auto; }
+      </style></head><body>${pagesHtml}</body></html>`;
+
+    // Bước 4: nạp trang HTML này vào iframe ẩn rồi gọi in — vì nội dung là HTML (không phải file
+    // PDF) nên trình duyệt sẽ KHÔNG mở trình xem PDF riêng, tránh hoàn toàn các icon Google
+    // Drive/Tải xuống ngoài ý muốn.
+    let printFrame = document.getElementById('printFrame');
+    if(printFrame) printFrame.remove();
+    printFrame = document.createElement('iframe');
+    printFrame.id = 'printFrame';
+    printFrame.style.position = 'fixed';
+    printFrame.style.right = '0';
+    printFrame.style.bottom = '0';
+    printFrame.style.width = '0';
+    printFrame.style.height = '0';
+    printFrame.style.border = '0';
+    document.body.appendChild(printFrame);
+
+    const frameDoc = printFrame.contentDocument || printFrame.contentWindow.document;
+    frameDoc.open();
+    frameDoc.write(printDocHtml);
+    frameDoc.close();
+
+    // Chờ toàn bộ ảnh trong iframe tải xong (data URL nên gần như tức thì, nhưng vẫn chờ cho chắc
+    // với tài liệu nhiều trang/ảnh nặng) rồi mới mở hộp thoại in.
+    const waitImagesReady = ()=> new Promise(resolve=>{
+      const imgs = Array.from(frameDoc.images || []);
+      if(!imgs.length) return resolve();
+      let remaining = imgs.length;
+      const done = ()=>{ remaining--; if(remaining<=0) resolve(); };
+      imgs.forEach(img=>{
+        if(img.complete) done();
+        else{ img.addEventListener('load', done); img.addEventListener('error', done); }
+      });
+    });
+    await waitImagesReady();
+
+    printFrame.contentWindow.focus();
+    printFrame.contentWindow.print();
+  }catch(err){
+    console.error('Lỗi khi in PDF:', err);
+    alert('Lỗi khi in PDF: '+err.message+'\n\nGợi ý: nếu vừa tải lại trang trình duyệt, dữ liệu file gốc trong bộ nhớ có thể đã mất — hãy mở lại file PDF rồi thử lại.');
+  }finally{
+    spinner.classList.remove('show');
+    spinnerLabel.textContent = ' Đang xử lý OCR…';
+  }
+}
+
+document.getElementById('btnPrint').onclick = printPdf;
 
 // ---------- Compress PDF (nén dung lượng file PDF) ----------
 // Cách nén: KHÔNG có máy chủ riêng để xử lý (mọi thứ chạy ngay trên trình duyệt người dùng), nên
