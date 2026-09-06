@@ -98,6 +98,20 @@
   .tbtn .ic{font-size:15px;}
   .sep{width:1px;align-self:stretch;background:var(--border);margin:2px 6px;}
   .tbtn.primary{background:var(--accent);}
+
+  /* ===== Menu "Document" (menu thả xuống kế bên nút "Open PDF") =====
+     Gom các thao tác quản lý TOÀN BỘ tài liệu (chèn/xoá/tách/xoay trang, gộp nhiều file, nén file)
+     vào một menu duy nhất thay vì để rời rạc ngoài thanh công cụ chính, cho gọn thanh công cụ. */
+  .menu-wrap{position:relative;display:inline-flex;}
+  .menu-dropdown{
+    display:none;flex-direction:column;position:absolute;top:calc(100% + 4px);left:0;
+    background:var(--bg-toolbar-2);border:1px solid var(--border);border-radius:8px;
+    box-shadow:0 8px 24px rgba(0,0,0,.45);padding:6px;min-width:230px;z-index:50;gap:2px;
+  }
+  .menu-dropdown.open{display:flex;}
+  .menu-dropdown .tbtn{width:100%;justify-content:flex-start;}
+  .menu-dropdown .sep{width:auto;height:1px;align-self:stretch;margin:4px 2px;}
+
   .tbtn.primary:hover{background:var(--accent-dim);}
   #colorSwatch, #whiteoutColorSwatch, #fontColorSwatch{width:20px;height:20px;border-radius:4px;border:1px solid var(--border);cursor:pointer;padding:0;}
   #fontFamilySelect, #fontSizeSelect{
@@ -538,6 +552,62 @@
   </div>
 </div>
 
+<!-- ===================== MODAL: ROTATE PAGES (chọn trang để xoay 90°/180°) ===================== -->
+<div id="rotatePagesModal" style="
+  position:fixed;inset:0;z-index:1100;display:none;
+  background:rgba(0,0,0,.55);
+  align-items:center;justify-content:center;
+  font-family:'Segoe UI',Roboto,Arial,sans-serif;color:#eceff1;">
+  <div style="
+    background:#25282e;border:1px solid #454a52;border-radius:10px;
+    padding:22px 24px;width:620px;max-width:92vw;max-height:86vh;overflow:auto;
+    box-shadow:0 10px 40px rgba(0,0,0,.5);">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+      <div style="font-weight:600;font-size:15px;">🔄 Rotate pages</div>
+      <button type="button" id="rpCloseBtn" style="
+        background:transparent;border:none;color:#9aa0a8;font-size:18px;cursor:pointer;line-height:1;">✕</button>
+    </div>
+    <div style="font-size:12px;color:#9aa0a8;margin-bottom:12px;">
+      Chọn một hoặc nhiều trang, sau đó bấm một trong các nút xoay bên dưới để áp dụng ngay cho các
+      trang đã chọn (có thể bấm nhiều lần / theo nhiều hướng khác nhau cho tới khi ưng ý). Hướng
+      xoay sẽ được áp dụng khi bạn bấm "Save PDF" hoặc "Extract Pages".
+    </div>
+
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+      <label style="display:flex;align-items:center;gap:8px;font-size:12.5px;cursor:pointer;">
+        <input type="checkbox" id="rpSelectAll"> Chọn tất cả
+      </label>
+      <span id="rpSelectedCount" style="font-size:11.5px;color:#9aa0a8;"></span>
+    </div>
+
+    <div id="rpList" style="
+      display:grid;grid-template-columns:repeat(auto-fill,minmax(86px,1fr));gap:10px;
+      margin-bottom:14px;max-height:380px;overflow:auto;padding:2px;"></div>
+
+    <div id="rpError" style="min-height:18px;color:#ff8a80;font-size:12px;margin-bottom:4px;"></div>
+
+    <div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap;">
+      <button type="button" id="rpRotateCCW" style="
+        flex:1;min-width:150px;padding:10px;border:1px solid #454a52;border-radius:6px;background:transparent;color:#eceff1;
+        font-weight:600;font-size:13px;cursor:pointer;">↺ Xoay trái 90°</button>
+      <button type="button" id="rpRotateCW" style="
+        flex:1;min-width:150px;padding:10px;border:1px solid #454a52;border-radius:6px;background:transparent;color:#eceff1;
+        font-weight:600;font-size:13px;cursor:pointer;">↻ Xoay phải 90°</button>
+      <button type="button" id="rpRotate180" style="
+        flex:1;min-width:150px;padding:10px;border:1px solid #454a52;border-radius:6px;background:transparent;color:#eceff1;
+        font-weight:600;font-size:13px;cursor:pointer;">⟲ Xoay 180°</button>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:8px;">
+      <button type="button" id="rpResetBtn" style="
+        flex:1;padding:10px;border:1px solid #454a52;border-radius:6px;background:transparent;color:#9aa0a8;
+        font-weight:600;font-size:13px;cursor:pointer;">Bỏ xoay (về 0°) cho trang đã chọn</button>
+      <button type="button" id="rpDoneBtn" style="
+        flex:1;padding:10px;border:none;border-radius:6px;background:#e2402c;color:#fff;
+        font-weight:600;font-size:13px;cursor:pointer;">Xong</button>
+    </div>
+  </div>
+</div>
+
 <!-- ===================== MODAL: EXPORT WORD DOCUMENT (chọn trang cần xuất) ===================== -->
 <div id="exportWordModal" style="
   position:fixed;inset:0;z-index:1100;display:none;
@@ -742,16 +812,50 @@
   <input type="file" id="fileInput" accept="application/pdf">
   <div class="sep"></div>
 
+  <!-- ===== Menu "Document" — gom Insert pages / Delete page / Extract Pages / Rotate pages /
+       Combine Files / Compress PDF vào một menu thả xuống kế bên nút "Open PDF" (thay vì để rời
+       rạc ngoài thanh công cụ chính như trước). Các nút bên trong GIỮ NGUYÊN id cũ (btnInsertPdf,
+       btnDeletePage, btnExtractPages, btnRotatePages, btnCombineFiles, btnCompress) nên toàn bộ
+       code JS gắn sự kiện (.onclick = ...) cho các nút này ở phía dưới không cần sửa gì thêm. -->
+  <div class="menu-wrap" id="documentMenuWrap">
+    <button class="tbtn" id="btnDocumentMenu" title="Các thao tác trên toàn bộ tài liệu: chèn/xoá/tách/xoay trang, gộp nhiều file, nén file"><span class="ic">📄</span>Document ▾</button>
+    <div class="menu-dropdown" id="documentMenuDropdown">
+      <button class="tbtn" id="btnInsertPdf" title="Chèn các trang từ một file PDF khác vào trước/sau trang đang chọn"><span class="ic">📥</span>Insert pages</button>
+      <input type="file" id="insertFileInput" accept="application/pdf">
+      <button class="tbtn" id="btnDeletePage" title="Chọn một hoặc nhiều trang để xóa khỏi tài liệu"><span class="ic">🗑️</span>Delete page</button>
+      <button class="tbtn" id="btnExtractPages" title="Chọn một hoặc nhiều trang để tách ra thành 1 file PDF mới (không ảnh hưởng tài liệu đang mở)"><span class="ic">✂️</span>Extract Pages</button>
+      <button class="tbtn" id="btnRotatePages" title="Chọn một hoặc nhiều trang để xoay 90°/180° (áp dụng khi Save PDF hoặc Extract Pages)"><span class="ic">🔄</span>Rotate pages</button>
+      <div class="sep"></div>
+      <button class="tbtn" id="btnCombineFiles" title="Gộp nhiều file PDF lại thành một file duy nhất, có thể sắp xếp lại thứ tự các file trước khi gộp"><span class="ic">🧩</span>Combine Files</button>
+      <button class="tbtn" id="btnCompress" title="Giảm dung lượng file PDF (chọn mức nén tiêu chuẩn hoặc siêu nén) — file nén ra sẽ dựng lại các trang thành ảnh, chữ trong file nén sẽ không còn bôi đen/copy được như file gốc"><span class="ic">🗜️</span>Compress PDF</button>
+    </div>
+  </div>
+  <div class="sep"></div>
+
+  <!-- ===== Menu "Edit" — gom Add text / Edit Document (OCR-PDF scan) / OCR text extract / Edit Text
+       vào một menu thả xuống kế bên nút "Open PDF" (cạnh menu "Document"). Các nút bên trong GIỮ
+       NGUYÊN id cũ (toolAddText, toolOcr, btnOcrFull, toolEditText) nên toàn bộ code JS gắn sự kiện
+       cho các nút này ở phía dưới (kể cả logic chọn công cụ theo data-tool ở "Chọn công cụ") không
+       cần sửa gì thêm — vẫn hoạt động y hệt dù nút nằm trong menu thay vì ngoài thanh công cụ. -->
+  <div class="menu-wrap" id="editMenuWrap">
+    <button class="tbtn" id="btnEditMenu" title="Các công cụ chỉnh sửa nội dung: thêm chữ, sửa chữ, sửa văn bản trên PDF scan/ảnh, trích xuất văn bản OCR"><span class="ic">✏️</span>Edit ▾</button>
+    <div class="menu-dropdown" id="editMenuDropdown">
+      <button class="tbtn" data-tool="addtext" id="toolAddText"><span class="ic">🅰️</span>Add text</button>
+      <button class="tbtn" data-tool="ocr" id="toolOcr"><span class="ic">🔎</span>Edit Document (OCR-PDF scan)</button>
+      <button class="tbtn" id="btnOcrFull"><span class="ic">📄</span>OCR text extract</button>
+      <button class="tbtn" data-tool="edittext" id="toolEditText" title="Bấm để hiện toàn bộ chữ có thể sửa trên trang — trỏ chuột vào bất kỳ đoạn nào và bấm để sửa ngay, không cần chọn vùng"><span class="ic">✎</span>Edit Text</button>
+    </div>
+  </div>
+  <div class="sep"></div>
+
   <button class="tbtn" data-tool="select" id="toolSelect"><span class="ic">🖱️</span>Select</button>
   <button class="tbtn" data-tool="textselect" id="toolTextSelect" title="Bôi đen văn bản trong PDF để copy (Ctrl+C). Có thể là chữ PDF thật hoặc chữ OCR từ ảnh/scan. Sau khi bôi đen, bấm nút 'Đánh dấu' nổi lên để tô sáng đúng đoạn đã chọn."><span class="ic">🔤</span>Select text to copy</button>
-  <button class="tbtn" data-tool="addtext" id="toolAddText"><span class="ic">🅰️</span>Add text</button>
   <button class="tbtn" id="btnInsertImage" title="Chèn ảnh (PNG/JPG) vào trang đang xem — sau khi chèn có thể kéo để di chuyển, kéo 4 góc để đổi kích thước"><span class="ic">🖼️</span>Insert Image</button>
   <input type="file" id="insertImageInput" accept="image/png,image/jpeg,image/jpg,image/webp,image/gif,image/bmp" style="display:none">
-  <button class="tbtn" data-tool="edittext" id="toolEditText" title="Bấm để hiện toàn bộ chữ có thể sửa trên trang — trỏ chuột vào bất kỳ đoạn nào và bấm để sửa ngay, không cần chọn vùng"><span class="ic">✎</span>Edit Text</button>
   <div class="sep"></div>
   <button class="tbtn" data-tool="region" id="toolRegion" title="Kéo chọn một vùng trên trang, sau đó bấm 'Edit Text' hoặc 'Sửa văn bản (OCR)' để sửa nhanh cả vùng"><span class="ic">🔲</span>Selection area</button>
   <button class="tbtn" id="btnClearRegion" title="Bỏ chọn vùng hiện tại"><span class="ic">✕</span>Deselect</button>
-  <button class="tbtn" data-tool="ocr" id="toolOcr"><span class="ic">🔎</span>Edit Document (OCR-PDF scan)</button>
+  <button class="tbtn" id="btnSnapshot" title="Dùng công cụ 'Selection area' để kéo chọn một vùng trên trang, sau đó bấm nút này để chụp đúng vùng đó (kèm mọi chỉnh sửa đã thêm) và lưu thành file ảnh PNG"><span class="ic">📸</span>Snapshot</button>
   <button class="tbtn" data-tool="highlight" id="toolHighlight"><span class="ic">🖍️</span>Marker</button>
   <button class="tbtn" data-tool="draw" id="toolDraw"><span class="ic">✏️</span>Paint</button>
   <button class="tbtn" data-tool="whiteout" id="toolWhiteout"><span class="ic">▭</span>Text overlay</button>
@@ -798,15 +902,8 @@
   <div class="sep"></div>
 
   <button class="tbtn" id="btnInsertBlank" title="Chèn trang trắng sau trang hiện tại"><span class="ic">➕</span>Insert a blank page</button>
-  <button class="tbtn" id="btnInsertPdf" title="Chèn các trang từ một file PDF khác vào trước/sau trang đang chọn"><span class="ic">📥</span>Insert pages</button>
-  <input type="file" id="insertFileInput" accept="application/pdf">
-  <button class="tbtn" id="btnDeletePage" title="Chọn một hoặc nhiều trang để xóa khỏi tài liệu"><span class="ic">🗑️</span>Delete page</button>
-  <button class="tbtn" id="btnExtractPages" title="Chọn một hoặc nhiều trang để tách ra thành 1 file PDF mới (không ảnh hưởng tài liệu đang mở)"><span class="ic">✂️</span>Extract Pages</button>
-  <button class="tbtn" id="btnCombineFiles" title="Gộp nhiều file PDF lại thành một file duy nhất, có thể sắp xếp lại thứ tự các file trước khi gộp"><span class="ic">🧩</span>Combine Files</button>
-  <button class="tbtn" id="btnCompress" title="Giảm dung lượng file PDF (chọn mức nén tiêu chuẩn hoặc siêu nén) — file nén ra sẽ dựng lại các trang thành ảnh, chữ trong file nén sẽ không còn bôi đen/copy được như file gốc"><span class="ic">🗜️</span>Compress PDF</button>
   <div class="sep"></div>
 
-  <button class="tbtn" id="btnOcrFull"><span class="ic">📄</span>OCR text extract</button>
   <button class="tbtn" id="btnExportWord"><span class="ic">📝</span>Export Word Document</button>
   <div class="sep"></div>
 
@@ -2052,6 +2149,40 @@ function sampleBackgroundColor(pdfX, pdfY, pdfW, pdfH){
 
 // ---------- Mở PDF ----------
 document.getElementById('btnOpen').onclick = () => document.getElementById('fileInput').click();
+
+// ---------- Các menu thả xuống trên thanh công cụ (Document, Edit,...) ----------
+// Hàm dùng chung để gắn hành vi mở/đóng cho MỌI menu thả xuống kế bên nút "Open PDF": bấm nút menu
+// để mở/đóng, bấm ra ngoài tự đóng, bấm chọn một thao tác bên trong thì tự đóng ngay (các nút bên
+// trong đều tự làm việc của chúng — mở modal hoặc chọn công cụ — không cần menu còn mở nữa), và mở
+// menu này thì tự đóng các menu thả xuống KHÁC đang mở (không để 2 menu cùng mở chồng lên nhau).
+const allToolbarMenus_ = [];
+function setupToolbarMenu_(wrapId, btnId, dropdownId){
+  const wrap = document.getElementById(wrapId);
+  const menuBtn = document.getElementById(btnId);
+  const dropdown = document.getElementById(dropdownId);
+  if(!wrap || !menuBtn || !dropdown) return;
+
+  function closeThisMenu(){ dropdown.classList.remove('open'); }
+  allToolbarMenus_.push(closeThisMenu);
+
+  menuBtn.addEventListener('click', (e)=>{
+    e.stopPropagation();
+    const willOpen = !dropdown.classList.contains('open');
+    allToolbarMenus_.forEach(closeFn => closeFn()); // đóng hết các menu khác trước
+    if(willOpen) dropdown.classList.add('open');
+  });
+  document.addEventListener('click', (e)=>{
+    if(!wrap.contains(e.target)) closeThisMenu();
+  });
+  dropdown.addEventListener('click', (e)=>{
+    if(e.target.closest('.tbtn')) closeThisMenu();
+  }, true);
+}
+// Menu "Document": Insert pages/Delete page/Extract Pages/Rotate pages/Combine Files/Compress PDF
+setupToolbarMenu_('documentMenuWrap', 'btnDocumentMenu', 'documentMenuDropdown');
+// Menu "Edit": Add text/Edit Document (OCR-PDF scan)/OCR text extract/Edit Text
+setupToolbarMenu_('editMenuWrap', 'btnEditMenu', 'editMenuDropdown');
+
 document.getElementById('fileInput').onchange = async (e) => {
   const file = e.target.files[0];
   if(!file) return;
@@ -2444,7 +2575,10 @@ async function openDeletePageModal(){
 
   // Vẽ ảnh thu nhỏ (không chặn việc mở modal)
   for(const {idx, canvas} of items){
-    try{ await renderDpThumb(idx, canvas); }
+    try{
+      await renderDpThumb(idx, canvas);
+      applyCanvasRotation_(canvas, getPageRotation_(pages[idx]));
+    }
     catch(err){ console.warn('Không vẽ được ảnh thu nhỏ trang', idx+1, err); }
   }
 }
@@ -2572,7 +2706,10 @@ async function openExtractPagesModal(){
 
   // Vẽ ảnh thu nhỏ (không chặn việc mở modal) — dùng chung renderDpThumb() với modal Delete page.
   for(const {idx, canvas} of items){
-    try{ await renderDpThumb(idx, canvas); }
+    try{
+      await renderDpThumb(idx, canvas);
+      applyCanvasRotation_(canvas, getPageRotation_(pages[idx]));
+    }
     catch(err){ console.warn('Không vẽ được ảnh thu nhỏ trang', idx+1, err); }
   }
 }
@@ -2607,6 +2744,280 @@ document.getElementById('epConfirmBtn').addEventListener('click', async () => {
         : base + '-tach-' + selected.length + '-trang.pdf');
 
   await exportPdfAs(filename, selected);
+});
+
+// ---------- Xoay trang (Rotate pages) — chọn 1 hoặc nhiều trang để xoay 90°/180° ----------
+// Chỉ lưu lại GÓC XOAY (page.rotation: 0/90/180/270, cộng dồn) cho từng trang trong bộ nhớ — KHÔNG
+// động vào nội dung/toạ độ các chỉnh sửa (edits) đã có, và KHÔNG xoay trực tiếp khung đang chỉnh sửa
+// (pdfCanvas/overlayCanvas) để tránh làm lệch toạ độ các công cụ thêm/sửa chữ, đánh dấu, OCR... vốn
+// đang tính theo hệ toạ độ GỐC (chưa xoay) của trang. Góc xoay này được:
+//   1) Hiển thị trực quan ở các ảnh thu nhỏ KHÔNG cần tương tác (sidebar bên trái, ảnh xem trước
+//      tĩnh trong danh sách cuộn trang, và ngay trong modal này) — xem hàm applyThumbRotation().
+//   2) Áp dụng THẬT vào file PDF khi xuất file (Save PDF / Extract Pages) — xem buildEditedOutDoc(),
+//      dùng pdf-lib page.setRotation() (chỉ đổi cờ /Rotate hiển thị của trang PDF, không đụng gì tới
+//      toạ độ nội dung/chữ đã vẽ bên trong trang) nên hoàn toàn an toàn, không làm lệch bất kỳ chỉnh
+//      sửa nào đã áp dụng.
+function normalizeRotation_(deg){
+  return ((Math.round(deg||0) % 360) + 360) % 360;
+}
+function getPageRotation_(p){
+  return normalizeRotation_(p && p.rotation);
+}
+
+// =====================================================================
+//  SỬA LỖI: "Rotate pages" chỉ xoay ảnh thu nhỏ ở sidebar/thumbnail, khung
+//  chỉnh sửa CHÍNH ở giữa (#pageWrap: pdfCanvas/overlayCanvas/textLayer) lại
+//  không xoay theo.
+//
+//  NGUYÊN NHÂN: applyCanvasRotation_() (bên trên) chỉ được gọi cho các ảnh xem
+//  trước KHÔNG tương tác — sidebar (buildThumbnails), danh sách cuộn trang của
+//  các trang KHÔNG đang mở (renderStaticPreview), và modal Rotate pages. Trang
+//  đang "sống"/đang mở (currentIndex) lại dùng thẳng #pageWrap thật để chỉnh
+//  sửa, và closeRotatePagesModal() còn CHỦ ĐỘNG bỏ qua đúng trang đó khi vẽ lại
+//  ("if(i !== currentIndex)") — nên nó không bao giờ được cập nhật hiển thị xoay.
+//  Không thể xoay thẳng PIXEL của pdfCanvas/overlayCanvas như các ảnh xem trước
+//  tĩnh, vì mọi phép toán thêm/sửa chữ, tô vàng, vẽ, OCR... (toPdfSpace,
+//  hitTestEdits, v.v...) đều tính theo hệ toạ độ GỐC (chưa xoay) của canvas —
+//  xoay pixel thật sẽ làm lệch hết các chỉnh sửa đang có.
+//
+//  CÁCH SỬA: xoay bằng CSS transform trên #pageWrap (chỉ đổi CÁCH HIỂN THỊ,
+//  không đụng gì tới canvas.width/height hay bộ đệm pixel bên trong), rồi xoay
+//  NGƯỢC lại mọi điểm bấm chuột (clientToCanvasXY_) về đúng hệ toạ độ gốc trước
+//  khi dùng cho các phép toán chỉnh sửa — nhờ vậy vừa hiển thị đúng góc xoay ở
+//  khung chính, vừa không làm lệch bất kỳ chỉnh sửa nào.
+// =====================================================================
+
+// Xoay HIỂN THỊ (CSS transform) khung đang chỉnh sửa "sống" (#pageWrap) của trang idx theo đúng
+// góc xoay hiện tại của trang đó (pages[idx].rotation). w,h là kích thước GỐC (chưa xoay) của
+// pdfCanvas/overlayCanvas tại trang này. Gọi lại hàm này bất cứ khi nào: (1) vừa render xong trang
+// (renderPage), hoặc (2) người dùng vừa đổi góc xoay của ĐÚNG trang đang mở trong modal Rotate pages,
+// để khung chính cập nhật xoay ngay lập tức, không cần đợi đóng modal hay chuyển trang.
+function applyLiveRotationDisplay_(idx, w, h){
+  const slot = pageSlots[idx];
+  const rot = getPageRotation_(pages[idx]);
+  const swapped = (rot === 90 || rot === 270);
+  // Đổi kích thước ô (.pageSlot) trong danh sách cuộn cho khớp với kích thước ĐÃ XOAY (đổi chỗ
+  // rộng<->cao khi xoay 90°/270°), giống hệt cách renderStaticPreview() đang làm cho các trang khác,
+  // để bố cục cuộn trang không bị chồng lấn/lệch với các trang lân cận.
+  if(slot){
+    slot.el.style.width = (swapped ? h : w)+'px';
+    slot.el.style.height = (swapped ? w : h)+'px';
+  }
+  // #pageWrap luôn giữ NGUYÊN kích thước GỐC (chưa xoay) — vì bên trong nó là pdfCanvas/overlayCanvas
+  // với canvas.width/height cũng chưa xoay. Chỉ xoay CÁCH HIỂN THỊ bằng transform, canh giữa khung
+  // trong chính ô của nó (left/top:50% + translate(-50%,-50%)) rồi rotate quanh tâm.
+  pageWrap.style.width = w+'px';
+  pageWrap.style.height = h+'px';
+  if(rot){
+    pageWrap.style.left = '50%';
+    pageWrap.style.top = '50%';
+    pageWrap.style.transform = 'translate(-50%,-50%) rotate('+rot+'deg)';
+  } else {
+    pageWrap.style.left = '0';
+    pageWrap.style.top = '0';
+    pageWrap.style.transform = 'none';
+  }
+}
+
+// Chuyển một điểm trên MÀN HÌNH (toạ độ client, ví dụ e.clientX/e.clientY) về đúng toạ độ pixel
+// trên `canvas` (pdfCanvas/overlayCanvas) THEO HỆ TOẠ ĐỘ GỐC (chưa xoay) của nó — cần thiết vì kể
+// từ khi #pageWrap được CSS xoay để hiển thị đúng góc xoay (xem applyLiveRotationDisplay_ ở trên),
+// hộp hiển thị (bounding box) của canvas trên màn hình đã bị xoay/đổi kích thước theo góc đó, nhưng
+// bộ đệm pixel bên trong canvas và mọi phép toán vẽ/chọn/kéo-thả trong file này vẫn tính theo hệ
+// toạ độ GỐC. Nếu không xoay ngược điểm bấm chuột về đúng hệ đó trước, mọi thao tác thêm chữ, tô
+// vàng, vẽ, kéo-thả... trên trang đang có góc xoay khác 0 sẽ bị lệch vị trí.
+function clientToCanvasXY_(canvas, clientX, clientY){
+  const rect = canvas.getBoundingClientRect();
+  const p = cur();
+  const rot = p ? getPageRotation_(p) : 0;
+  if(!rot){
+    return { x: clientX-rect.left, y: clientY-rect.top };
+  }
+  const cx = rect.left + rect.width/2, cy = rect.top + rect.height/2;
+  const sx = clientX-cx, sy = clientY-cy;
+  const rad = rot * Math.PI/180;
+  const cos = Math.cos(rad), sin = Math.sin(rad);
+  // Xoay NGƯỢC lại góc đang hiển thị để quy đổi điểm bấm chuột về đúng hệ toạ độ gốc (chưa xoay).
+  const lx = sx*cos + sy*sin;
+  const ly = -sx*sin + sy*cos;
+  return { x: lx + canvas.width/2, y: ly + canvas.height/2 };
+}
+
+// Xoay ảnh RASTER đã vẽ sẵn (không xoay) trên `canvas` đi `deg` độ (0/90/180/270), tự đổi luôn
+// chiều rộng/cao của canvas cho khớp (đổi chỗ rộng<->cao khi xoay 90°/270°). Chỉ dùng cho các canvas
+// XEM TRƯỚC / KHÔNG tương tác (không dùng cho pdfCanvas/overlayCanvas đang sống để chỉnh sửa).
+function applyCanvasRotation_(canvas, deg){
+  const d = normalizeRotation_(deg);
+  if(d === 0) return;
+  const w = canvas.width, h = canvas.height;
+  if(!w || !h) return;
+  const off = document.createElement('canvas');
+  off.width = w; off.height = h;
+  off.getContext('2d').drawImage(canvas, 0, 0);
+  const swapped = (d === 90 || d === 270);
+  const newW = swapped ? h : w;
+  const newH = swapped ? w : h;
+  canvas.width = newW; canvas.height = newH;
+  const ctx = canvas.getContext('2d');
+  ctx.save();
+  ctx.translate(newW/2, newH/2);
+  ctx.rotate(d * Math.PI / 180);
+  ctx.drawImage(off, -w/2, -h/2);
+  ctx.restore();
+}
+
+const rotatePagesModal = document.getElementById('rotatePagesModal');
+const rpList = document.getElementById('rpList');
+const rpSelectAll = document.getElementById('rpSelectAll');
+const rpSelectedCount = document.getElementById('rpSelectedCount');
+const rpError = document.getElementById('rpError');
+
+document.getElementById('btnRotatePages').onclick = openRotatePagesModal;
+document.getElementById('rpCloseBtn').addEventListener('click', closeRotatePagesModal);
+document.getElementById('rpDoneBtn').addEventListener('click', closeRotatePagesModal);
+rotatePagesModal.addEventListener('click', function(e){ if(e.target === rotatePagesModal) closeRotatePagesModal(); });
+
+function closeRotatePagesModal(){
+  rotatePagesModal.style.display = 'none';
+  // Đóng modal xong, cập nhật lại ảnh xem trước ở sidebar + danh sách cuộn trang cho khớp góc xoay
+  // mới nhất (không cần đợi mở lại file / chuyển trang mới thấy).
+  buildThumbnails();
+  pages.forEach((_,i)=>{ if(i !== currentIndex) renderStaticPreview(i).catch(()=>{}); });
+}
+
+function updateRpSelectedCount(){
+  const total = rpList.querySelectorAll('.dp-checkbox').length;
+  const checked = rpList.querySelectorAll('.dp-checkbox:checked').length;
+  rpSelectedCount.textContent = checked>0 ? `Đã chọn ${checked}/${total} trang` : `${total} trang`;
+  rpSelectAll.checked = total>0 && checked===total;
+  rpSelectAll.indeterminate = checked>0 && checked<total;
+}
+
+function rpSelectedIndexes(){
+  return Array.from(rpList.querySelectorAll('.dp-checkbox:checked')).map(cb => Number(cb.dataset.idx));
+}
+
+async function openRotatePagesModal(){
+  rpError.textContent = '';
+  if(!pages.length){ alert('Hãy mở một file PDF trước.'); return; }
+  rpList.innerHTML = '';
+  rotatePagesModal.style.display = 'flex';
+
+  const items = [];
+  for(let i=0;i<pages.length;i++){
+    const item = document.createElement('label');
+    item.className = 'dp-item';
+    item.dataset.idx = i;
+
+    const wrap = document.createElement('div');
+    wrap.className = 'dp-thumb-wrap';
+    const c = document.createElement('canvas');
+    c.style.maxHeight = '150px';
+    wrap.appendChild(c);
+
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.className = 'dp-checkbox';
+    cb.dataset.idx = i;
+    if(i === currentIndex) cb.checked = true; // mặc định chọn sẵn trang đang xem
+    cb.addEventListener('change', () => {
+      item.classList.toggle('selected', cb.checked);
+      updateRpSelectedCount();
+    });
+    wrap.appendChild(cb);
+
+    const pnum = document.createElement('div');
+    pnum.className = 'dp-pnum';
+    item.appendChild(wrap);
+    item.appendChild(pnum);
+    if(cb.checked) item.classList.add('selected');
+    rpList.appendChild(item);
+    items.push({idx:i, canvas:c, pnum});
+  }
+  updateRpSelectedCount();
+  items.forEach(({idx,pnum}) => setRpItemLabel(idx, pnum));
+
+  // Vẽ ảnh thu nhỏ (không chặn việc mở modal) — dùng chung renderDpThumb() với modal Delete page,
+  // rồi xoay ảnh thu nhỏ đó theo đúng góc xoay hiện tại của trang để xem trước trực quan.
+  for(const {idx, canvas} of items){
+    try{
+      await renderDpThumb(idx, canvas);
+      applyCanvasRotation_(canvas, getPageRotation_(pages[idx]));
+    }catch(err){ console.warn('Không vẽ được ảnh thu nhỏ trang', idx+1, err); }
+  }
+}
+
+function setRpItemLabel(idx, pnumEl){
+  const rot = getPageRotation_(pages[idx]);
+  pnumEl.textContent = 'Trang ' + (idx+1) + (rot ? (' · ' + rot + '°') : '');
+}
+
+rpSelectAll.addEventListener('change', (e) => {
+  rpList.querySelectorAll('.dp-checkbox').forEach(cb => {
+    cb.checked = e.target.checked;
+    cb.closest('.dp-item').classList.toggle('selected', cb.checked);
+  });
+  updateRpSelectedCount();
+});
+
+// Áp dụng thêm `deltaDeg` (cộng dồn vào góc xoay hiện có, ví dụ -90/+90/180) cho các trang đang
+// được chọn (checkbox) trong modal, rồi vẽ lại ngay ảnh thu nhỏ + nhãn góc xoay của đúng những
+// trang vừa đổi (không cần đóng/mở lại modal).
+async function rotateSelectedPages_(deltaDeg){
+  const selected = rpSelectedIndexes();
+  if(selected.length === 0){
+    rpError.textContent = 'Hãy chọn ít nhất 1 trang cần xoay.';
+    return;
+  }
+  rpError.textContent = '';
+  for(const idx of selected){
+    const p = pages[idx];
+    p.rotation = normalizeRotation_(getPageRotation_(p) + deltaDeg);
+  }
+  // Vẽ lại đúng những ô (item) vừa đổi góc xoay trong modal
+  for(const idx of selected){
+    const item = rpList.querySelector('.dp-item[data-idx="'+idx+'"]');
+    if(!item) continue;
+    const canvas = item.querySelector('canvas');
+    const pnumEl = item.querySelector('.dp-pnum');
+    setRpItemLabel(idx, pnumEl);
+    try{
+      await renderDpThumb(idx, canvas);
+      applyCanvasRotation_(canvas, getPageRotation_(pages[idx]));
+    }catch(err){ console.warn('Không vẽ lại được ảnh thu nhỏ trang', idx+1, err); }
+  }
+  // SỬA LỖI "khung chính không xoay theo": nếu trong các trang vừa xoay có ĐÚNG trang đang mở
+  // (currentIndex), cập nhật ngay hiển thị xoay của khung chính — không cần đợi đóng modal.
+  if(selected.includes(currentIndex)){
+    applyLiveRotationDisplay_(currentIndex, pdfCanvas.width, pdfCanvas.height);
+  }
+}
+
+document.getElementById('rpRotateCW').addEventListener('click', () => rotateSelectedPages_(90));
+document.getElementById('rpRotateCCW').addEventListener('click', () => rotateSelectedPages_(-90));
+document.getElementById('rpRotate180').addEventListener('click', () => rotateSelectedPages_(180));
+document.getElementById('rpResetBtn').addEventListener('click', async () => {
+  const selected = rpSelectedIndexes();
+  if(selected.length === 0){
+    rpError.textContent = 'Hãy chọn ít nhất 1 trang cần bỏ xoay.';
+    return;
+  }
+  rpError.textContent = '';
+  for(const idx of selected){
+    pages[idx].rotation = 0;
+    const item = rpList.querySelector('.dp-item[data-idx="'+idx+'"]');
+    if(!item) continue;
+    const canvas = item.querySelector('canvas');
+    const pnumEl = item.querySelector('.dp-pnum');
+    setRpItemLabel(idx, pnumEl);
+    try{ await renderDpThumb(idx, canvas); }
+    catch(err){ console.warn('Không vẽ lại được ảnh thu nhỏ trang', idx+1, err); }
+  }
+  // Đồng bộ với rotateSelectedPages_(): nếu trang đang mở nằm trong số vừa bỏ xoay, cập nhật ngay
+  // khung chính (bỏ transform xoay) — không cần đợi đóng modal.
+  if(selected.includes(currentIndex)){
+    applyLiveRotationDisplay_(currentIndex, pdfCanvas.width, pdfCanvas.height);
+  }
 });
 
 // ---------- Vẽ trang lên canvas ----------
@@ -2681,6 +3092,9 @@ async function renderPage(idx, opts){
   // Gắn khung chỉnh sửa thật (#pageWrap: pdfCanvas/overlayCanvas/textLayer) vào đúng ô của trang
   // idx trong danh sách cuộn nhiều trang; trả trang "sống" trước đó (nếu khác) về xem trước tĩnh.
   activateSlot(idx, prevLiveIdx, w, h);
+  // Áp dụng đúng góc xoay hiện tại của trang này lên khung chính đang chỉnh sửa (xem giải thích ở
+  // applyLiveRotationDisplay_) — đây là phần còn thiếu khiến khung chính không xoay theo thumbnail.
+  applyLiveRotationDisplay_(idx, w, h);
   document.getElementById('pageCount').textContent = pages.length;
   document.getElementById('pageNumInput').max = pages.length;
   redrawOverlay();
@@ -2761,10 +3175,14 @@ async function renderStaticPreview(idx){
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0,0,w,h);
   }
-  slot.el.style.width = w+'px';
-  slot.el.style.height = h+'px';
   const ctx = c.getContext('2d');
   for(const e of p.edits) drawEdit(ctx, e, scale);
+  // Xoay ảnh xem trước tĩnh này theo đúng góc xoay đã đặt cho trang (nếu có) — chỉ ảnh hưởng hiển
+  // thị, KHÔNG đụng gì tới toạ độ edits vừa vẽ ở trên (đã vẽ xong trước khi xoay raster).
+  const rot = getPageRotation_(p);
+  if(rot) applyCanvasRotation_(c, rot);
+  slot.el.style.width = c.width+'px';
+  slot.el.style.height = c.height+'px';
 }
 
 // Dựng lại toàn bộ danh sách ô (.pageSlot) cho đúng số trang hiện có — gọi mỗi khi mở file, chèn
@@ -3084,6 +3502,11 @@ async function buildThumbnails(){
       const tctx = c.getContext('2d'); tctx.fillStyle='#fff'; tctx.fillRect(0,0,c.width,c.height);
       tctx.strokeStyle='#ccc'; tctx.strokeRect(0,0,c.width,c.height);
     }
+    const rot = getPageRotation_(p);
+    if(rot){
+      applyCanvasRotation_(c, rot);
+      pnum.textContent = (i+1) + ' · ' + rot + '°';
+    }
   }
   highlightThumb(currentIndex);
 }
@@ -3311,6 +3734,61 @@ document.getElementById('btnClearRegion').onclick = ()=>{
   delete regionSelections[cur().id];
   redrawOverlay();
 };
+
+// ---------- Snapshot: chụp ảnh đúng vùng đã chọn (công cụ "Selection area") và lưu thành file ảnh ----------
+// Vẽ lại trang ở độ phân giải CAO (không phụ thuộc mức zoom hiện tại trên màn hình) rồi mới cắt
+// đúng vùng đã chọn ra -> ảnh chụp luôn nét, không bị vỡ hạt dù đang zoom nhỏ. Mọi chỉnh sửa đã
+// thêm (đánh dấu, vẽ, che, chữ chèn thêm, ảnh chèn thêm...) đều được vẽ đè lên trước khi cắt, để
+// ảnh chụp ra giống hệt những gì đang hiển thị trên trang, không chỉ riêng nội dung PDF gốc.
+async function captureRegionSnapshot(){
+  if(!pages.length){ alert('Hãy mở một file PDF trước.'); return; }
+  const p = cur();
+  const region = regionSelections[p.id];
+  if(!region || Math.abs(region.w) < 4 || Math.abs(region.h) < 4){
+    alert('Hãy dùng công cụ "Selection area" để kéo chọn một vùng trên trang trước, rồi mới bấm "Snapshot".');
+    return;
+  }
+  flushPendingEdit(); // chốt chỉnh sửa dang dở (nếu có) trước khi chụp
+  const spinner = document.getElementById('spinner');
+  const spinnerLabel = spinner.lastChild;
+  spinner.classList.add('show');
+  spinnerLabel.textContent = ' Đang tạo ảnh chụp vùng chọn…';
+  try{
+    const SNAPSHOT_SCALE = 3; // độ phân giải cao hơn hẳn màn hình để ảnh chụp ra luôn nét
+    const tmp = await renderPageToCanvas(currentIndex, SNAPSHOT_SCALE);
+    const tctx = tmp.getContext('2d');
+    for(const e of p.edits) drawEdit(tctx, e, SNAPSHOT_SCALE);
+
+    const rx = Math.min(region.x, region.x + region.w);
+    const ry = Math.min(region.y, region.y + region.h);
+    const rw = Math.abs(region.w), rh = Math.abs(region.h);
+    const sx = Math.max(0, Math.round(rx * SNAPSHOT_SCALE));
+    const sy = Math.max(0, Math.round(ry * SNAPSHOT_SCALE));
+    const sw = Math.max(1, Math.min(Math.round(rw * SNAPSHOT_SCALE), tmp.width - sx));
+    const sh = Math.max(1, Math.min(Math.round(rh * SNAPSHOT_SCALE), tmp.height - sy));
+
+    const out = document.createElement('canvas');
+    out.width = sw; out.height = sh;
+    out.getContext('2d').drawImage(tmp, sx, sy, sw, sh, 0, 0, sw, sh);
+
+    out.toBlob((blob)=>{
+      if(!blob){ alert('Không thể tạo ảnh chụp, hãy thử lại.'); return; }
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      const base = originalFileName.replace(/\.pdf$/i,'').replace(/-edited$/,'');
+      a.download = `${base}-trang-${currentIndex+1}-snapshot.png`;
+      a.click();
+      setTimeout(()=>URL.revokeObjectURL(a.href), 2000);
+    }, 'image/png');
+  }catch(err){
+    alert('Lỗi khi chụp ảnh vùng chọn: ' + err.message);
+  }finally{
+    spinner.classList.remove('show');
+    spinnerLabel.textContent = ' Đang xử lý OCR…';
+  }
+}
+
+document.getElementById('btnSnapshot').onclick = ()=>{ captureRegionSnapshot().catch(()=>{}); };
 
 // ---------- Gom văn bản trong một vùng đã chọn thành các DÒNG (kèm tọa độ) để sửa nhanh ----------
 // Trả về từng dòng kèm bounding box của riêng dòng đó (thay vì gộp chung cả vùng thành 1 khối chữ nhật),
@@ -3841,8 +4319,7 @@ overlayCanvas.addEventListener('mousedown', (e)=>{
   // xoá luôn ô nhập liệu trước khi người dùng kịp gõ chữ nào. Gọi preventDefault() ngay từ đầu
   // để ngăn trình duyệt "cướp lại" focus sau khi ta vừa focus() vào ô sửa chữ.
   e.preventDefault();
-  const rect = overlayCanvas.getBoundingClientRect();
-  const px = e.clientX-rect.left, py = e.clientY-rect.top;
+  const {x:px, y:py} = clientToCanvasXY_(overlayCanvas, e.clientX, e.clientY);
   const pdfP = toPdfSpace(px, py);
 
   if(activeTool === 'addtext'){
@@ -4124,8 +4601,7 @@ function editLineAt(px, py, editType, customLines){
 overlayCanvas.addEventListener('dblclick', (e)=>{
   if(activeTool !== 'select' || !pages.length) return;
   e.preventDefault();
-  const rect = overlayCanvas.getBoundingClientRect();
-  const px = e.clientX-rect.left, py = e.clientY-rect.top;
+  const {x:px, y:py} = clientToCanvasXY_(overlayCanvas, e.clientX, e.clientY);
   const idx = hitTestEdits(px, py);
   if(idx<0) return;
   const edits = cur().edits;
@@ -4165,8 +4641,7 @@ window.addEventListener('keydown', (e)=>{
 
 overlayCanvas.addEventListener('mousemove', (e)=>{
   if(!pages.length) return;
-  const rect = overlayCanvas.getBoundingClientRect();
-  const px = e.clientX-rect.left, py = e.clientY-rect.top;
+  const {x:px, y:py} = clientToCanvasXY_(overlayCanvas, e.clientX, e.clientY);
   // Mặc định về con trỏ chuột bình thường; nhánh xử lý bên dưới (nếu đang rê trên tay cầm resize
   // ảnh) sẽ tự ghi đè lại thành mũi tên resize khi cần, nên phải reset TRƯỚC mỗi lần di chuột.
   if(!resizingImage && !draggingSelected) overlayCanvas.style.cursor = '';
@@ -4279,9 +4754,9 @@ window.addEventListener('mouseup', (e)=>{
     freehandPoints = []; redrawOverlay();
   }
   if(draggingRect && dragStart && pages.length){
-    const rect = overlayCanvas.getBoundingClientRect();
-    const px = Math.min(Math.max(e.clientX-rect.left,0), overlayCanvas.width);
-    const py = Math.min(Math.max(e.clientY-rect.top,0), overlayCanvas.height);
+    const cxy = clientToCanvasXY_(overlayCanvas, e.clientX, e.clientY);
+    const px = Math.min(Math.max(cxy.x,0), overlayCanvas.width);
+    const py = Math.min(Math.max(cxy.y,0), overlayCanvas.height);
     const x = Math.min(dragStart.x, px), y = Math.min(dragStart.y, py);
     const w = Math.abs(px-dragStart.x), h = Math.abs(py-dragStart.y);
     if(w>4 && h>4 && (activeTool==='highlight' || activeTool==='whiteout')){
@@ -4296,9 +4771,9 @@ window.addEventListener('mouseup', (e)=>{
     draggingRect = false; dragStart = null; redrawOverlay();
   }
   if(draggingRegionSel && regionDragStart && pages.length){
-    const rect = overlayCanvas.getBoundingClientRect();
-    const px = Math.min(Math.max(e.clientX-rect.left,0), overlayCanvas.width);
-    const py = Math.min(Math.max(e.clientY-rect.top,0), overlayCanvas.height);
+    const cxy = clientToCanvasXY_(overlayCanvas, e.clientX, e.clientY);
+    const px = Math.min(Math.max(cxy.x,0), overlayCanvas.width);
+    const py = Math.min(Math.max(cxy.y,0), overlayCanvas.height);
     const x = Math.min(regionDragStart.x, px), y = Math.min(regionDragStart.y, py);
     const w = Math.abs(px-regionDragStart.x), h = Math.abs(py-regionDragStart.y);
     if(w>4 && h>4){
@@ -4487,9 +4962,13 @@ document.addEventListener('selectionchange', ()=>{
   const rects = range.getClientRects();
   if(!rects.length){ floatingHighlightBtn.style.display = 'none'; return; }
   const last = rects[rects.length-1];
-  const wrapRect = pageWrap.getBoundingClientRect();
-  let left = last.right - wrapRect.left;
-  let top = last.top - wrapRect.top - 34;
+  // SỬA CÙNG LỖI XOAY TRANG: trước đây dùng thẳng pageWrap.getBoundingClientRect(), vốn giờ là
+  // hộp bao đã bị CSS xoay (xem applyLiveRotationDisplay_) nên phép trừ toạ độ màn hình trực tiếp
+  // không còn đúng khi trang đang có góc xoay khác 0. Dùng clientToCanvasXY_ để quy đổi về đúng hệ
+  // toạ độ gốc (chưa xoay) của pdfCanvas — cùng hệ mà pageWrap dùng làm kích thước (width/height).
+  const cornerXY = clientToCanvasXY_(pdfCanvas, last.right, last.top);
+  let left = cornerXY.x;
+  let top = cornerXY.y - 34;
   left = Math.max(0, Math.min(left, pageWrap.clientWidth - 100));
   top = Math.max(0, top);
   floatingHighlightBtn.style.left = left+'px';
@@ -4503,14 +4982,20 @@ floatingHighlightBtn.addEventListener('click', ()=>{
   if(!sel || sel.isCollapsed || sel.rangeCount===0 || !pages.length) return;
   const range = sel.getRangeAt(0);
   if(!textLayer.contains(range.commonAncestorContainer)) return;
-  const wrapRect = pageWrap.getBoundingClientRect();
   const rects = Array.from(range.getClientRects()).filter(r=>r.width>0.5 && r.height>0.5);
   if(!rects.length) return;
   pushUndo(currentIndex);
   for(const r of rects){
-    const x = (r.left - wrapRect.left)/scale;
-    const y = (r.top - wrapRect.top)/scale;
-    const w = r.width/scale, h = r.height/scale;
+    // Cùng lý do như floatingHighlightBtn ở trên: quy đổi 2 góc màn hình của mỗi rect về hệ toạ độ
+    // gốc (chưa xoay) qua clientToCanvasXY_, thay vì trừ trực tiếp theo pageWrap.getBoundingClientRect()
+    // (đã bị xoay), rồi mới lấy min/max để ra đúng x,y,w,h — vẫn đúng ngay cả khi trang đang xoay 90/270°
+    // (khi đó góc trái-trên trên màn hình không còn tương ứng với góc trái-trên trong hệ toạ độ gốc).
+    const c1 = clientToCanvasXY_(pdfCanvas, r.left, r.top);
+    const c2 = clientToCanvasXY_(pdfCanvas, r.right, r.bottom);
+    const x0 = Math.min(c1.x, c2.x), y0 = Math.min(c1.y, c2.y);
+    const x1 = Math.max(c1.x, c2.x), y1 = Math.max(c1.y, c2.y);
+    const x = x0/scale, y = y0/scale;
+    const w = (x1-x0)/scale, h = (y1-y0)/scale;
     cur().edits.push({ type:'highlight', x, y, w, h, color: currentColor });
   }
   sel.removeAllRanges();
@@ -4697,6 +5182,17 @@ async function buildEditedOutDoc(indexes, spinnerLabel){
     for(const ed of p.edits){
       if(ed._nativeApplied) continue; // đã sửa thật trực tiếp trên content stream, không vẽ đè nữa
       await drawEditOnPdfPage(pageObj, ed, H, editFont, fallbackFont, outDoc, imageEmbedCache);
+    }
+
+    // ---- Áp dụng góc xoay trang (tính năng "Rotate pages") ----
+    // Chỉ đổi cờ /Rotate của trang PDF (pdf-lib setRotation) — KHÔNG đụng gì tới toạ độ nội dung/
+    // chữ vừa vẽ ở trên (drawEditOnPdfPage đã vẽ theo đúng hệ toạ độ GỐC của trang, độc lập với cờ
+    // /Rotate), nên hoàn toàn không làm lệch bất kỳ chỉnh sửa nào. Cộng dồn với góc xoay CÓ SẴN của
+    // trang PDF gốc (nếu file gốc vốn đã có /Rotate, ví dụ ảnh scan xoay ngang) để không bị mất.
+    const extraRotation = getPageRotation_(p);
+    if(extraRotation){
+      const baseRotation = (pageObj.getRotation && pageObj.getRotation().angle) || 0;
+      pageObj.setRotation(degrees(normalizeRotation_(baseRotation + extraRotation)));
     }
   }
   return outDoc;
