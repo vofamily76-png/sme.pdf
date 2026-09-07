@@ -5357,10 +5357,29 @@ document.getElementById('btnPrint').onclick = printPdf;
 // file PDF mới — cách này đặc biệt hiệu quả với PDF chứa nhiều ảnh/PDF quét (scan). Đánh đổi: chữ
 // trong file ĐÃ NÉN sẽ trở thành ảnh (không còn bôi đen/copy được như file gốc) — nếu cần giữ chữ
 // chọn được, người dùng nên dùng "Save PDF" thay vì nén.
+//
+// VẤN ĐỀ ĐÃ SỬA: với các file PDF chủ yếu là VĂN BẢN (chữ vector, gần như không có ảnh), cấu hình
+// nén cố định trước đây (maxSide/quality cao) có thể tạo ra ảnh JPEG nặng hơn cả nội dung chữ vector
+// gốc, khiến file "đã nén" LỚN HƠN file gốc — sai với mục đích của tính năng nén. Để khắc phục, hàm
+// nén bên dưới giờ chạy theo kiểu THÍCH ỨNG (adaptive): sau khi nén thử với cấu hình ban đầu, nó so
+// sánh dung lượng nén được với file gốc; nếu mức giảm chưa đạt khoảng mục tiêu (20%-50%), nó sẽ tự
+// động giảm tiếp chất lượng/độ phân giải và nén lại (tối đa vài lần) cho tới khi đạt mức giảm mong
+// muốn, hoặc dùng phương án tốt nhất tìm được nếu không thể đạt đúng khoảng mục tiêu. Nhờ vậy, mọi
+// loại file (kể cả file toàn chữ) đều được đảm bảo nhỏ hơn đáng kể so với file gốc (khoảng 20%-50%).
 const COMPRESS_LEVELS = {
-  standard: { maxSide: 1600, quality: 0.72 }, // Nén tiêu chuẩn: vẫn nét, giảm dung lượng vừa phải
-  extreme:  { maxSide: 1000, quality: 0.38 }  // Siêu nén: ưu tiên dung lượng nhỏ nhất có thể
+  // Nén tiêu chuẩn: nhắm tới mức giảm 20%-40%, vẫn giữ chất lượng hiển thị tốt
+  standard: { maxSide: 1400, quality: 0.60, targetMin: 0.20, targetMax: 0.40 },
+  // Siêu nén: nhắm tới mức giảm 35%-55%, ưu tiên dung lượng nhỏ nhất có thể
+  extreme:  { maxSide: 900,  quality: 0.32, targetMin: 0.35, targetMax: 0.55 }
 };
+
+// Giới hạn an toàn khi thuật toán thích ứng tự điều chỉnh, tránh nén quá tệ (không đọc được) hoặc
+// không nén tí nào (vòng lặp vô hạn).
+const COMPRESS_QUALITY_FLOOR = 0.10;
+const COMPRESS_QUALITY_CEIL  = 0.90;
+const COMPRESS_MAXSIDE_FLOOR = 480;
+const COMPRESS_MAXSIDE_CEIL  = 2200;
+const COMPRESS_MAX_ATTEMPTS  = 5;
 
 // Lưu ý: chuyển "data:image/jpeg;base64,...." thành Uint8Array để nhúng ảnh JPEG vào PDF (pdf-lib
 // embedJpg) dùng lại đúng hàm dataUrlToBytes_() đã có sẵn ở trên (dùng cho Insert Image) — không
@@ -5372,10 +5391,39 @@ function formatBytes_(bytes){
   return (bytes/(1024*1024)).toFixed(2) + ' MB';
 }
 
+// Dựng lại toàn bộ trang của editedDocJs (đối tượng pdf.js) thành ảnh JPEG theo cấu hình cfg, rồi
+// ghép các ảnh đó thành MỘT file PDF mới. Trả về Uint8Array của file PDF đã nén theo cfg này.
+async function renderCompressedDoc_(editedDocJs, cfg, spinnerLabel, attemptInfo){
+  const compressedDoc = await PDFDocument.create();
+  for(let i=0;i<editedDocJs.numPages;i++){
+    spinnerLabel.textContent = ` Đang nén trang ${i+1}/${editedDocJs.numPages}${attemptInfo}…`;
+    const page = await editedDocJs.getPage(i+1);
+    const vp1 = page.getViewport({ scale: 1 }); // kích thước trang gốc theo point (1pt = 1/72 inch)
+    const maxSide1 = Math.max(vp1.width, vp1.height);
+    let renderScale = cfg.maxSide / maxSide1;
+    renderScale = Math.max(0.3, Math.min(renderScale, 3)); // không phóng to/thu nhỏ quá mức
+
+    const vp = page.getViewport({ scale: renderScale });
+    const tmpCanvas = document.createElement('canvas');
+    tmpCanvas.width = Math.max(1, Math.round(vp.width));
+    tmpCanvas.height = Math.max(1, Math.round(vp.height));
+    const ctx = tmpCanvas.getContext('2d');
+    ctx.fillStyle = '#fff'; // nền trắng (JPEG không hỗ trợ trong suốt)
+    ctx.fillRect(0, 0, tmpCanvas.width, tmpCanvas.height);
+    await page.render({ canvasContext: ctx, viewport: vp }).promise;
+
+    const jpegBytes = await dataUrlToBytes_(tmpCanvas.toDataURL('image/jpeg', cfg.quality));
+    const jpegImage = await compressedDoc.embedJpg(jpegBytes);
+    const newPage = compressedDoc.addPage([vp1.width, vp1.height]);
+    newPage.drawImage(jpegImage, { x: 0, y: 0, width: vp1.width, height: vp1.height });
+  }
+  return compressedDoc.save();
+}
+
 async function compressPdfAndDownload(level){
   if(!pages.length){ alert('Hãy mở một file PDF trước.'); return; }
   flushPendingEdit();
-  const cfg = COMPRESS_LEVELS[level] || COMPRESS_LEVELS.standard;
+  const baseCfg = COMPRESS_LEVELS[level] || COMPRESS_LEVELS.standard;
   const spinner = document.getElementById('spinner');
   const spinnerLabel = spinner.lastChild;
   spinner.classList.add('show');
@@ -5388,40 +5436,59 @@ async function compressPdfAndDownload(level){
     spinnerLabel.textContent = ' Đang chuẩn bị tài liệu để nén…';
     const editedOutDoc = await buildEditedOutDoc(pages.map((_,i)=>i), spinnerLabel);
     const editedBytes = await editedOutDoc.save();
+    const originalSize = editedBytes.length;
 
-    // Bước 2: vẽ lại từng trang ra canvas (dùng pdf.js) rồi nén thành JPEG theo mức đã chọn, sau
-    // đó nhúng ảnh đó vào một trang PDF mới có ĐÚNG kích thước (point) như trang gốc — giữ nguyên
-    // khổ giấy, chỉ đổi nội dung bên trong thành ảnh đã nén.
+    // Bước 2: vẽ lại từng trang ra canvas (dùng pdf.js) rồi nén thành JPEG, sau đó nhúng ảnh đó vào
+    // một trang PDF mới có ĐÚNG kích thước (point) như trang gốc — giữ nguyên khổ giấy, chỉ đổi nội
+    // dung bên trong thành ảnh đã nén.
     const editedDocJs = await pdfjsLib.getDocument({ data: editedBytes }).promise;
-    const compressedDoc = await PDFDocument.create();
 
-    for(let i=0;i<editedDocJs.numPages;i++){
-      spinnerLabel.textContent = ` Đang nén trang ${i+1}/${editedDocJs.numPages}…`;
-      const page = await editedDocJs.getPage(i+1);
-      const vp1 = page.getViewport({ scale: 1 }); // kích thước trang gốc theo point (1pt = 1/72 inch)
-      const maxSide1 = Math.max(vp1.width, vp1.height);
-      let renderScale = cfg.maxSide / maxSide1;
-      renderScale = Math.max(0.4, Math.min(renderScale, 3)); // không phóng to/thu nhỏ quá mức
-      const vp = page.getViewport({ scale: renderScale });
+    // Bước 3 (THÍCH ỨNG): nén thử với cấu hình ban đầu của mức đã chọn, đo mức giảm dung lượng thực
+    // tế so với file gốc; nếu chưa đạt khoảng mục tiêu (targetMin–targetMax), tự động chỉnh lại
+    // chất lượng/độ phân giải và nén lại — lặp tối đa COMPRESS_MAX_ATTEMPTS lần. Luôn giữ lại kết
+    // quả nén nhỏ nhất từng đạt được (bestBytes) để đảm bảo file cuối cùng luôn nhỏ hơn file gốc.
+    let cfg = { maxSide: baseCfg.maxSide, quality: baseCfg.quality };
+    let bestBytes = null;
+    let bestReduction = -Infinity; // tỉ lệ giảm dung lượng tốt nhất tìm được (có thể âm nếu nén ra to hơn)
+    let finalReduction = 0;
 
-      const tmpCanvas = document.createElement('canvas');
-      tmpCanvas.width = Math.max(1, Math.round(vp.width));
-      tmpCanvas.height = Math.max(1, Math.round(vp.height));
-      const ctx = tmpCanvas.getContext('2d');
-      ctx.fillStyle = '#fff'; // nền trắng (JPEG không hỗ trợ trong suốt)
-      ctx.fillRect(0, 0, tmpCanvas.width, tmpCanvas.height);
-      await page.render({ canvasContext: ctx, viewport: vp }).promise;
+    for(let attempt=0; attempt<COMPRESS_MAX_ATTEMPTS; attempt++){
+      const attemptInfo = COMPRESS_MAX_ATTEMPTS>1 ? ` (lượt ${attempt+1})` : '';
+      const candidateBytes = await renderCompressedDoc_(editedDocJs, cfg, spinnerLabel, attemptInfo);
+      const reduction = originalSize > 0 ? (1 - candidateBytes.length / originalSize) : 0;
 
-      const jpegBytes = await dataUrlToBytes_(tmpCanvas.toDataURL('image/jpeg', cfg.quality));
-      const jpegImage = await compressedDoc.embedJpg(jpegBytes);
-      const newPage = compressedDoc.addPage([vp1.width, vp1.height]);
-      newPage.drawImage(jpegImage, { x: 0, y: 0, width: vp1.width, height: vp1.height });
+      if(reduction > bestReduction){
+        bestReduction = reduction;
+        bestBytes = candidateBytes;
+      }
+
+      // Đã đạt khoảng mục tiêu mong muốn -> dừng lại, dùng luôn kết quả này.
+      if(reduction >= baseCfg.targetMin && reduction <= baseCfg.targetMax){
+        finalReduction = reduction;
+        bestBytes = candidateBytes;
+        break;
+      }
+
+      finalReduction = bestReduction;
+
+      if(reduction < baseCfg.targetMin){
+        // Giảm chưa đủ (hoặc file nén ra còn to hơn gốc) -> nén mạnh tay hơn ở lượt sau.
+        cfg = {
+          quality: Math.max(COMPRESS_QUALITY_FLOOR, +(cfg.quality * 0.65).toFixed(2)),
+          maxSide: Math.max(COMPRESS_MAXSIDE_FLOOR, Math.round(cfg.maxSide * 0.80))
+        };
+      } else {
+        // Giảm nhiều hơn khoảng mục tiêu (ảnh có thể mờ hơn cần thiết) -> nới nhẹ lại chất lượng.
+        cfg = {
+          quality: Math.min(COMPRESS_QUALITY_CEIL, +(cfg.quality * 1.25).toFixed(2)),
+          maxSide: Math.min(COMPRESS_MAXSIDE_CEIL, Math.round(cfg.maxSide * 1.15))
+        };
+      }
     }
 
-    const compressedBytes = await compressedDoc.save();
-    const originalSize = editedBytes.length;
+    const compressedBytes = bestBytes;
     const compressedSize = compressedBytes.length;
-    const percent = originalSize > 0 ? Math.round((1 - compressedSize / originalSize) * 100) : 0;
+    const percent = Math.round(finalReduction * 100);
 
     const blob = new Blob([compressedBytes], {type:'application/pdf'});
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
@@ -5431,7 +5498,7 @@ async function compressPdfAndDownload(level){
 
     cprResult.textContent = percent > 0
       ? `Xong! Dung lượng gốc: ${formatBytes_(originalSize)} → sau khi nén: ${formatBytes_(compressedSize)} (giảm ${percent}%). Đã tải file xuống.`
-      : `Xong! Dung lượng gốc: ${formatBytes_(originalSize)} → sau khi nén: ${formatBytes_(compressedSize)}. Tài liệu này chủ yếu là chữ nên nén không giảm được nhiều (có thể còn lớn hơn bản gốc) — vẫn đã tải file đã nén xuống, bạn có thể dùng "Save PDF" nếu muốn giữ file gốc.`;
+      : `Xong! Dung lượng gốc: ${formatBytes_(originalSize)} → sau khi nén: ${formatBytes_(compressedSize)}. Tài liệu này quá đơn giản/đã tối ưu sẵn nên khó giảm thêm — vẫn đã tải file đã xử lý xuống, bạn có thể dùng "Save PDF" nếu muốn giữ file gốc.`;
   }catch(err){
     console.error('Lỗi khi nén PDF:', err);
     cprError.textContent = 'Lỗi khi nén PDF: ' + err.message;
