@@ -350,12 +350,12 @@
       margin:20px 0 30px;text-align:center;">PDF EDITOR</div>
 
     <form id="loginForm" style="width:100%;max-width:280px;">
-      <label style="display:block;font-size:12.5px;color:#eaf1ff;margin-bottom:5px;">Tài khoản</label>
+      <label style="display:block;font-size:12.5px;color:#eaf1ff;margin-bottom:5px;">Accounts</label>
       <input id="loginUsername" type="text" autocomplete="username" required style="
         width:100%;padding:10px 12px;margin-bottom:16px;box-sizing:border-box;
         background:#f2f5f9;border:1px solid transparent;border-radius:6px;color:#1c1e22;font-size:13px;">
 
-      <label style="display:block;font-size:12.5px;color:#eaf1ff;margin-bottom:5px;">Mật khẩu</label>
+      <label style="display:block;font-size:12.5px;color:#eaf1ff;margin-bottom:5px;">Password</label>
       <input id="loginPassword" type="password" autocomplete="current-password" required style="
         width:100%;padding:10px 12px;margin-bottom:10px;box-sizing:border-box;
         background:#f2f5f9;border:1px solid transparent;border-radius:6px;color:#1c1e22;font-size:13px;">
@@ -364,7 +364,7 @@
 
       <button id="loginSubmitBtn" type="submit" style="
         width:100%;padding:11px;border:none;border-radius:6px;background:#ec5b64;color:#fff;
-        font-weight:600;font-size:13.5px;cursor:pointer;margin-top:6px;">Đăng nhập</button>
+        font-weight:600;font-size:13.5px;cursor:pointer;margin-top:6px;">Log in</button>
 
       <div id="loginHint" style="font-size:11px;color:#dbe6fb;margin-top:14px;line-height:1.5;text-align:center;"></div>
     </form>
@@ -481,12 +481,12 @@
         background:transparent;border:none;color:#9aa0a8;font-size:18px;cursor:pointer;line-height:1;">✕</button>
     </div>
     <div style="font-size:12px;color:#9aa0a8;margin-bottom:12px;">
-      Chọn một hoặc nhiều trang muốn xóa khỏi tài liệu. Hành động này không thể hoàn tác bằng Undo.
+      Select one or more pages to delete from the document. This action cannot be Undo.
     </div>
 
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
       <label style="display:flex;align-items:center;gap:8px;font-size:12.5px;cursor:pointer;">
-        <input type="checkbox" id="dpSelectAll"> Chọn tất cả
+        <input type="checkbox" id="dpSelectAll"> Select all
       </label>
       <span id="dpSelectedCount" style="font-size:11.5px;color:#9aa0a8;"></span>
     </div>
@@ -500,10 +500,10 @@
     <div style="display:flex;gap:8px;margin-top:6px;">
       <button type="button" id="dpCancelBtn" style="
         flex:1;padding:10px;border:1px solid #454a52;border-radius:6px;background:transparent;color:#eceff1;
-        font-weight:600;font-size:13px;cursor:pointer;">Huỷ</button>
+        font-weight:600;font-size:13px;cursor:pointer;">Cancel</button>
       <button type="button" id="dpConfirmBtn" style="
         flex:1;padding:10px;border:none;border-radius:6px;background:#e2402c;color:#fff;
-        font-weight:600;font-size:13px;cursor:pointer;">Xóa trang đã chọn</button>
+        font-weight:600;font-size:13px;cursor:pointer;">Delete selected page</button>
     </div>
   </div>
 </div>
@@ -524,13 +524,13 @@
         background:transparent;border:none;color:#9aa0a8;font-size:18px;cursor:pointer;line-height:1;">✕</button>
     </div>
     <div style="font-size:12px;color:#9aa0a8;margin-bottom:12px;">
-      Chọn một hoặc nhiều trang muốn tách ra. Các trang đã chọn sẽ được lưu thành 1 file PDF MỚI
-      (giữ nguyên mọi chỉnh sửa đã thực hiện) — tài liệu đang mở trên màn hình không bị thay đổi gì.
+      Select one or more pages to extract. The selected pages will be saved as a NEW PDF file
+      (preserving any edits made), while the document currently open on your screen remains unchanged.
     </div>
 
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
       <label style="display:flex;align-items:center;gap:8px;font-size:12.5px;cursor:pointer;">
-        <input type="checkbox" id="epSelectAll"> Chọn tất cả
+        <input type="checkbox" id="epSelectAll"> Select all
       </label>
       <span id="epSelectedCount" style="font-size:11.5px;color:#9aa0a8;"></span>
     </div>
@@ -544,10 +544,10 @@
     <div style="display:flex;gap:8px;margin-top:6px;">
       <button type="button" id="epCancelBtn" style="
         flex:1;padding:10px;border:1px solid #454a52;border-radius:6px;background:transparent;color:#eceff1;
-        font-weight:600;font-size:13px;cursor:pointer;">Huỷ</button>
+        font-weight:600;font-size:13px;cursor:pointer;">Cancel</button>
       <button type="button" id="epConfirmBtn" style="
         flex:1;padding:10px;border:none;border-radius:6px;background:#e2402c;color:#fff;
-        font-weight:600;font-size:13px;cursor:pointer;">✂️ Tách trang đã chọn</button>
+        font-weight:600;font-size:13px;cursor:pointer;">✂️ Extract selected pages</button>
     </div>
   </div>
 </div>
@@ -673,22 +673,22 @@
       <label style="display:flex;align-items:center;gap:9px;font-size:13px;cursor:pointer;
         border:1px solid #454a52;border-radius:7px;padding:10px 12px;">
         <input type="radio" name="ipPosition" id="ipPosBefore" value="before">
-        <span>⬆️ Chèn <b>trước</b> trang đang chọn</span>
+        <span>⬆️ Insert before the selected page</span>
       </label>
       <label style="display:flex;align-items:center;gap:9px;font-size:13px;cursor:pointer;
         border:1px solid #454a52;border-radius:7px;padding:10px 12px;">
         <input type="radio" name="ipPosition" id="ipPosAfter" value="after" checked>
-        <span>⬇️ Chèn <b>sau</b> trang đang chọn</span>
+        <span>⬇️ Insert after the selected page</span>
       </label>
     </div>
 
     <div style="display:flex;gap:8px;">
       <button type="button" id="ipCancelBtn" style="
         flex:1;padding:10px;border:1px solid #454a52;border-radius:6px;background:transparent;color:#eceff1;
-        font-weight:600;font-size:13px;cursor:pointer;">Huỷ</button>
+        font-weight:600;font-size:13px;cursor:pointer;">Cancel</button>
       <button type="button" id="ipChooseFileBtn" style="
         flex:1;padding:10px;border:none;border-radius:6px;background:#e2402c;color:#fff;
-        font-weight:600;font-size:13px;cursor:pointer;">Chọn file PDF...</button>
+        font-weight:600;font-size:13px;cursor:pointer;">Select PDF file...</button>
     </div>
   </div>
 </div>
@@ -1039,7 +1039,7 @@ document.getElementById('loginForm').addEventListener('submit', async function(e
     showLoginError(err.message);
   }finally{
     btn.disabled = false;
-    btn.textContent = 'Đăng nhập';
+    btn.textContent = 'Log in';
   }
 });
 
@@ -2215,7 +2215,7 @@ insertPagesModal.addEventListener('click', function(e){ if(e.target === insertPa
 
 function openInsertPagesModal(){
   if(!pages.length){ alert('Hãy mở một file PDF trước.'); return; }
-  ipCurrentPageLabel.textContent = `Trang đang chọn: trang ${currentIndex+1}/${pages.length}.`;
+  ipCurrentPageLabel.textContent = `Currently selected page: Page ${currentIndex+1}/${pages.length}.`;
   insertPagesModal.style.display = 'flex';
 }
 function closeInsertPagesModal(){ insertPagesModal.style.display = 'none'; }
@@ -2527,7 +2527,7 @@ function closeDeletePageModal(){ deletePageModal.style.display = 'none'; }
 function updateDpSelectedCount(){
   const total = dpList.querySelectorAll('.dp-checkbox').length;
   const checked = dpList.querySelectorAll('.dp-checkbox:checked').length;
-  dpSelectedCount.textContent = checked>0 ? `Đã chọn ${checked}/${total} trang` : `${total} trang`;
+  dpSelectedCount.textContent = checked>0 ? `Selected ${checked}/${total} page` : `${total} page`;
   dpSelectAll.checked = total>0 && checked===total;
   dpSelectAll.indeterminate = checked>0 && checked<total;
 }
@@ -2658,7 +2658,7 @@ function closeExtractPagesModal(){ extractPagesModal.style.display = 'none'; }
 function updateEpSelectedCount(){
   const total = epList.querySelectorAll('.dp-checkbox').length;
   const checked = epList.querySelectorAll('.dp-checkbox:checked').length;
-  epSelectedCount.textContent = checked>0 ? `Đã chọn ${checked}/${total} trang` : `${total} trang`;
+  epSelectedCount.textContent = checked>0 ? `Selected ${checked}/${total} page` : `${total} page`;
   epSelectAll.checked = total>0 && checked===total;
   epSelectAll.indeterminate = checked>0 && checked<total;
 }
