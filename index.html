@@ -170,6 +170,7 @@
   #overlayCanvas{position:absolute;top:0;left:0;cursor:default;}
   #overlayCanvas.tool-select{cursor:pointer;}
   #overlayCanvas.tool-draw,#overlayCanvas.tool-highlight,#overlayCanvas.tool-whiteout,#overlayCanvas.tool-region{cursor:crosshair;}
+  #overlayCanvas.tool-erase{cursor:cell;}
   #overlayCanvas.tool-addtext,#overlayCanvas.tool-ocr,#overlayCanvas.tool-edittext{cursor:text;}
   #dropHint{
     position:absolute;inset:0;color:var(--text-dim);text-align:center;font-size:14px;line-height:1.8;
@@ -858,6 +859,7 @@
   <button class="tbtn" id="btnSnapshot" title="Dùng công cụ 'Selection area' để kéo chọn một vùng trên trang, sau đó bấm nút này để chụp đúng vùng đó (kèm mọi chỉnh sửa đã thêm) và lưu thành file ảnh PNG"><span class="ic">📸</span>Snapshot</button>
   <button class="tbtn" data-tool="highlight" id="toolHighlight"><span class="ic">🖍️</span>Marker</button>
   <button class="tbtn" data-tool="draw" id="toolDraw"><span class="ic">✏️</span>Paint</button>
+  <button class="tbtn" data-tool="erase" id="toolErase" title="Xóa nét vẽ do Paint tạo ra — kéo chuột qua nét cần xóa"><span class="ic">🧽</span>Eraser</button>
   <button class="tbtn" data-tool="whiteout" id="toolWhiteout"><span class="ic">▭</span>Text overlay</button>
   <input type="color" id="colorSwatch" value="#e2402c" title="Màu">
   <span style="display:inline-flex;align-items:center;gap:4px;font-size:11.5px;color:var(--text-dim);margin-left:2px;">
@@ -2040,6 +2042,8 @@ let tesseractWorker = null;
 
 let drawingFreehand = false;
 let freehandPoints = [];
+let erasingFreehand = false; // đang kéo chuột với công cụ Eraser để xóa nét Paint
+const ERASE_RADIUS_SCREEN = 12; // bán kính vùng xóa tính theo pixel màn hình
 let draggingRect = false;
 let dragStart = null;
 let selectedEditIndex = -1;
@@ -3248,6 +3252,54 @@ function scrollSlotIntoView(idx){
 function toPdfSpace(px, py){ return { x: px/scale, y: py/scale }; }
 function toScreenSpace(x, y){ return { x: x*scale, y: y*scale }; }
 
+// ===== Công cụ Eraser: xóa nét vẽ do công cụ Paint (type:'draw') tạo ra =====
+// px,py: tọa độ con trỏ chuột trên canvas (screen space, cùng hệ với overlayCanvas).
+// Với mỗi nét vẽ (đường gấp khúc gồm nhiều điểm), ta duyệt qua từng điểm, quy đổi sang tọa độ
+// màn hình rồi so khoảng cách với con trỏ. Những điểm nằm trong bán kính xóa sẽ bị loại bỏ khỏi
+// đường; các đoạn điểm còn lại liền nhau (>=2 điểm) được tách thành từng nét vẽ riêng biệt, y hệt
+// cách một cục tẩy thật xóa một đoạn ở giữa nét vẽ mà không xóa toàn bộ đường.
+function eraseDrawStrokesAt(px, py){
+  const p = cur();
+  if(!p || !p.edits || !p.edits.length) return;
+  const r = ERASE_RADIUS_SCREEN;
+  let changed = false;
+  const newEdits = [];
+  for(const ed of p.edits){
+    if(ed.type !== 'draw' || !ed.points || ed.points.length < 2){
+      newEdits.push(ed);
+      continue;
+    }
+    // Tách các điểm thành từng đoạn liên tục KHÔNG bị chạm bởi vùng xóa.
+    const segments = [];
+    let currentSeg = [];
+    let touched = false;
+    for(const pt of ed.points){
+      const s = toScreenSpace(pt.x, pt.y);
+      const d = Math.hypot(s.x - px, s.y - py);
+      if(d <= r){
+        touched = true;
+        if(currentSeg.length >= 2) segments.push(currentSeg);
+        currentSeg = [];
+      } else {
+        currentSeg.push(pt);
+      }
+    }
+    if(currentSeg.length >= 2) segments.push(currentSeg);
+    if(!touched){
+      newEdits.push(ed);
+    } else {
+      changed = true;
+      for(const seg of segments){
+        newEdits.push({ type:'draw', points: seg, color: ed.color, width: ed.width });
+      }
+    }
+  }
+  if(changed){
+    p.edits = newEdits;
+    if(selectedEditIndex >= 0) selectedEditIndex = -1;
+  }
+}
+
 function redrawOverlay(){
   // 1) VẼ CHỈNH SỬA TRỰC TIẾP LÊN FILE GỐC (pdfCanvas): xuất phát lại từ bản "sạch" (baseCanvas)
   // rồi vẽ đè toàn bộ whiteout/chữ/highlight/nét vẽ của trang lên chính pdfCanvas — không còn một
@@ -3546,6 +3598,7 @@ const toolLabels = {
   ocr:'Edit Document (OCR-PDF scan) — dùng cho PDF scan/ảnh, trỏ chuột vào dòng chữ để thấy khung cam báo có thể sửa, bấm vào để sửa ngay. Mẹo: dùng "Selection area" trước để sửa nhanh cả đoạn nhiều dòng.',
   highlight:'Marker — kéo để chọn vùng',
   draw:'Paint',
+  erase:'Eraser — kéo chuột qua nét vẽ (Paint) để xóa đúng đoạn đó',
   whiteout:'Text overlay — kéo để chọn vùng, chọn màu che tùy ý ở ô "Color overlay" cạnh Font chữ'
 };
 document.querySelectorAll('.tbtn[data-tool]').forEach(btn=>{
@@ -4388,6 +4441,10 @@ overlayCanvas.addEventListener('mousedown', (e)=>{
     draggingRect = true; dragStart = {x:px, y:py};
   } else if(activeTool === 'draw'){
     drawingFreehand = true; freehandPoints = [pdfP];
+  } else if(activeTool === 'erase'){
+    pushUndo(currentIndex);
+    erasingFreehand = true;
+    eraseDrawStrokesAt(px, py);
   }
 });
 
@@ -4655,6 +4712,18 @@ overlayCanvas.addEventListener('mousemove', (e)=>{
     octx.beginPath();
     freehandPoints.forEach((pt,i)=>{ const s = toScreenSpace(pt.x,pt.y); if(i===0) octx.moveTo(s.x,s.y); else octx.lineTo(s.x,s.y); });
     octx.stroke();
+  } else if(erasingFreehand){
+    eraseDrawStrokesAt(px, py);
+    // Vòng tròn mờ theo con trỏ để người dùng thấy rõ vùng xóa đang tác động tới đâu.
+    redrawOverlay();
+    octx.save();
+    octx.strokeStyle = 'rgba(80,80,80,0.6)';
+    octx.fillStyle = 'rgba(255,255,255,0.35)';
+    octx.lineWidth = 1.5;
+    octx.beginPath();
+    octx.arc(px, py, ERASE_RADIUS_SCREEN, 0, Math.PI*2);
+    octx.fill(); octx.stroke();
+    octx.restore();
   } else if(draggingRect && dragStart){
     redrawOverlay();
     const x = Math.min(dragStart.x, px), y = Math.min(dragStart.y, py);
@@ -4753,6 +4822,10 @@ window.addEventListener('mouseup', (e)=>{
       cur().edits.push({type:'draw', points:freehandPoints, color: currentColor, width:2.5});
     }
     freehandPoints = []; redrawOverlay();
+  }
+  if(erasingFreehand){
+    erasingFreehand = false;
+    redrawOverlay();
   }
   if(draggingRect && dragStart && pages.length){
     const cxy = clientToCanvasXY_(overlayCanvas, e.clientX, e.clientY);
