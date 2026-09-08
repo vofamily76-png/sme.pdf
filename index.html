@@ -1898,6 +1898,12 @@ async function drawEditOnPdfPage(page, ed, H, font, fallbackFont, outDoc, embedC
     const [wr,wg,wb] = hexToRgbFloats(ed.bgColor || '#ffffff');
     page.drawRectangle({ x: ed.x, y: H-(ed.y+ed.h), width: ed.w, height: ed.h, color: rgb(wr,wg,wb) });
   } else if(ed.type === 'text' || ed.type === 'ocrfix' || ed.type === 'textfix'){
+    // Chốt chặn cuối cùng trước khi vẽ ra PDF: quy chuẩn hoá chữ về dạng Unicode GHÉP SẴN (NFC).
+    // Áp dụng lại ở đây (không chỉ ở normalizeEditText) để bắt luôn cả những nội dung KHÔNG đi qua
+    // normalizeEditText (vd: chỉnh sửa hàng loạt theo vùng ở buildRegionEdits) hoặc dữ liệu cũ đã
+    // lưu từ trước khi có bản sửa lỗi này — tránh sót trường hợp dấu tiếng Việt bị tách rời ra khi
+    // xuất PDF (xem giải thích chi tiết ở normalizeEditText).
+    if(ed.text) ed.text = String(ed.text).normalize('NFC');
     if(ed.bg){
       // Dùng đúng màu nền đã lấy mẫu tại vị trí này (nếu có) thay vì trắng cứng, để phần "che" đè lên
       // chữ cũ hòa lẫn với nền trang gốc (giấy trắng, giấy ngả vàng, nền màu...) thay vì hiện khối trắng lộ liễu.
@@ -4290,8 +4296,20 @@ function computeAutoBoxSize(text, fontFamily, fontSize, x){
 // OCR/PDF trích ra vô tình dính khoảng trắng thừa): gộp mọi chuỗi TỪ 2 dấu cách/tab/khoảng trắng
 // không ngắt (nbsp) liên tiếp trở lên thành ĐÚNG MỘT dấu cách trong từng dòng, trước khi lưu lại
 // thành nội dung chỉnh sửa. Không đụng tới dấu xuống dòng (\n) hay khoảng trắng đầu/cuối dòng.
+// LỖI ĐÃ SỬA (gõ chữ có dấu tiếng Việt hiển thị rõ ràng lúc sửa, nhưng khi Xuất/Save PDF thì
+// dấu bị "tách" ra khỏi chữ, ví dụ "NGHĨA" xuất ra thành "NGHĨ A" — như có 1 dấu cách chen vào
+// giữa): nguyên nhân là một số hệ điều hành/bàn phím gõ tiếng Việt (đặc biệt macOS + một số IME)
+// tạo ra ký tự có dấu ở dạng TỔ HỢP (Unicode NFD — ví dụ "Ĩ" = chữ "I" + dấu ngã rời U+0303) thay
+// vì dạng GHÉP SẴN (Unicode NFC — 1 ký tự "Ĩ" duy nhất, mã U+0128). Trình duyệt hiển thị NFD hoàn
+// toàn bình thường (tự ghép dấu vào chữ khi vẽ lên màn hình) nên lúc đang gõ nhìn không có gì sai.
+// Nhưng khi xuất PDF, pdf-lib đo & vẽ TỪNG KÝ TỰ MÃ UNICODE một theo font đã nhúng — dấu rời
+// (U+0300-U+036F) trong font không được ghép vào chữ trước nó mà bị coi như 1 ký tự riêng có
+// khoảng đệm ngang riêng, khiến chữ sau đó bị đẩy dạt ra xa như có dấu cách chen vào giữa. Cách
+// sửa triệt để là luôn quy chuẩn hoá chữ về dạng GHÉP SẴN (NFC) ngay khi lưu lại nội dung đã sửa,
+// để từ đó về sau (đo độ rộng, vẽ ra PDF...) luôn làm việc với đúng 1 ký tự duy nhất cho mỗi chữ
+// có dấu, không còn dấu rời nào lọt qua được nữa.
 function normalizeEditText(val){
-  return String(val).split('\n').map(line => line.replace(/[ \t\u00A0]{2,}/g, ' ')).join('\n');
+  return String(val).normalize('NFC').split('\n').map(line => line.replace(/[ \t\u00A0]{2,}/g, ' ')).join('\n');
 }
 function openEditInput(screenX, screenY, screenW, screenH, initialText, onCommit){
   // Nếu đang có một ô nhập khác còn mở (chưa chốt), chốt nó lại trước để không bao giờ mất
@@ -5159,6 +5177,89 @@ document.getElementById('btnDownloadTxt').onclick = ()=>{
 // trả về đối tượng outDoc để nơi gọi tự quyết định làm gì tiếp theo (lưu PDF bình thường, hoặc
 // dùng làm ĐẦU VÀO cho bước nén PDF ở dưới). Tách hàm này ra từ exportPdfAs để dùng chung, tránh
 // lặp lại (và có nguy cơ lệch nhau) toàn bộ logic ghép trang/áp dụng chỉnh sửa ở 2 nơi khác nhau.
+// ===== SỬA LỖI GỐC RỄ: chữ có dấu (vd "Nghĩa") khi Save/Print/Nén PDF bị "toác" ra một khoảng =====
+// ===== trắng lớn rồi chữ sau đè lên chữ trước (vd "Chủ Nghĩa Việt Nam" ra "Chủ Nghĩ  Việt Nam") =====
+// Đây LÀ MỘT LỖI CÓ THẬT của bản thân thư viện pdf-lib khi ghi bảng độ rộng glyph (/W) của font
+// TỰ NHÚNG (không phải lỗi ở cách người dùng gõ/lưu chữ, cũng không phải lỗi encoding NFC/NFD).
+// Với MỘT SỐ glyph "biến thể" đặc biệt mà font tiếng Việt đang dùng tự chọn ra khi ghép các chữ có
+// dấu (ví dụ chữ "ĩ" trong "Nghĩa" — font chọn ra một bản glyph phụ tên "itilde.1" thay vì glyph
+// gốc), pdf-lib BỎ SÓT không ghi độ rộng thật (rất hẹp, ~3pt ở cỡ chữ 12) của đúng glyph đó vào
+// mảng /W của font nhúng trong file PDF — dù CHÍNH pdf-lib vẫn dùng đúng độ rộng hẹp ấy để tính vị
+// trí đặt các chữ kế tiếp lúc soạn thảo trong bộ nhớ. Hậu quả: khi trình đọc PDF (Chrome, Acrobat,
+// điện thoại...) mở lại file đã lưu, nó không tìm thấy độ rộng khai báo cho glyph này nên áp dụng
+// độ rộng MẶC ĐỊNH theo đúng chuẩn PDF khi thiếu /DW — NGUYÊN 1 EM (bằng cả cỡ chữ, ví dụ 12pt) —
+// rộng gấp 3-4 lần độ rộng thật, đẩy dạt mọi chữ phía sau ra xa (và chữ đó tự đè lên chữ kế tiếp).
+//
+// Khắc phục: sau khi pdf-lib đã LƯU (save) file PDF lần đầu — đúng thời điểm nó mới thực sự "chốt"
+// (finalize) và tạo ra các đối tượng font CIDFontType2 kèm bảng /W bên trong file — ta NẠP LẠI
+// (load) chính file vừa lưu đó, tự đọc lại đầy đủ độ rộng THẬT của TỪNG glyph trong file font gốc
+// (qua chính fontkit đã có sẵn) rồi GHI ĐÈ lại toàn bộ /W của (các) font tiếng Việt đã nhúng trong
+// file vừa nạp, đảm bảo không còn glyph nào bị thiếu độ rộng — sau đó lưu lại lần 2 để ra file cuối
+// cùng. Bắt buộc phải làm qua bước "lưu rồi nạp lại" này vì các đối tượng font CIDFontType2 (và
+// mảng /W của chúng) CHƯA HỀ TỒN TẠI trong bộ nhớ của pdf-lib cho tới đúng lúc gọi save() lần đầu —
+// gọi hàm vá TRƯỚC đó (như ngay sau khi nhúng font) sẽ không tìm thấy gì để sửa.
+// Xem hàm bọc dùng chung `saveOutDocWithVietWidthFix()` — MỌI nơi lưu ra file PDF cuối cùng có
+// chứa chữ đã sửa bằng font tiếng Việt (Save PDF, In PDF, Nén PDF...) đều phải gọi qua hàm bọc đó
+// thay vì gọi thẳng `outDoc.save()`, nếu không lỗi này sẽ quay lại.
+function patchVietFontFullWidths(outDoc, vietFontKitFont){
+  if(!vietFontKitFont) return;
+  const { PDFName, PDFArray, PDFNumber, PDFDict } = PDFLib;
+  const unitsPerEm = vietFontKitFont.unitsPerEm || 1000;
+  const numGlyphs = vietFontKitFont.numGlyphs || 0;
+  if(!numGlyphs) return;
+  function buildFullWArray(){
+    const arr = PDFArray.withContext(outDoc.context);
+    for(let gid = 0; gid < numGlyphs; gid++){
+      let adv = 0;
+      try{ adv = vietFontKitFont.getGlyph(gid).advanceWidth || 0; }catch(e){ adv = 0; }
+      const w1000 = Math.max(1, Math.round(adv * 1000 / unitsPerEm));
+      arr.push(PDFNumber.of(gid));
+      const inner = PDFArray.withContext(outDoc.context);
+      inner.push(PDFNumber.of(w1000));
+      arr.push(inner);
+    }
+    return arr;
+  }
+  let patchedCount = 0;
+  for(const [, obj] of outDoc.context.enumerateIndirectObjects()){
+    if(!(obj instanceof PDFDict)) continue;
+    const subtype = obj.get(PDFName.of('Subtype'));
+    if(!subtype || subtype.toString() !== '/CIDFontType2') continue;
+    const baseFont = obj.get(PDFName.of('BaseFont'));
+    if(!baseFont || !baseFont.toString().includes('NotoSans')) continue;
+    obj.set(PDFName.of('W'), buildFullWArray());
+    // /DW: phòng hờ cho glyph 0 (.notdef) hoặc glyph nằm ngoài numGlyphs vì lý do gì đó — đặt về
+    // một giá trị GẦN với độ rộng trung bình của chữ cái thường (thay vì mặc định 1000 = nguyên 1
+    // em của chuẩn PDF), để nếu có sót thì khoảng hở cũng chỉ nhỏ, không còn bị toác rộng như trước.
+    obj.set(PDFName.of('DW'), PDFNumber.of(600));
+    patchedCount++;
+  }
+  if(patchedCount) console.info('Đã vá bảng độ rộng (/W) cho', patchedCount, 'font CID tiếng Việt trong PDF xuất ra.');
+  return patchedCount;
+}
+
+// Hàm bọc DÙNG CHUNG cho MỌI nơi cần lưu (save) ra byte PDF cuối cùng của một tài liệu có thể chứa
+// chữ đã sửa bằng font tiếng Việt tự nhúng (outDoc từ buildEditedOutDoc) — LUÔN dùng hàm này thay
+// vì gọi thẳng `outDoc.save()`, để tự động vá lỗi độ rộng glyph mô tả ở patchVietFontFullWidths()
+// bên trên. Quy trình: lưu (save) lần 1 bình thường để pdf-lib "chốt" xong toàn bộ font nhúng, nạp
+// lại (load) đúng file vừa lưu đó, vá bảng /W, rồi lưu lại lần 2 ra byte cuối cùng. Nếu vì lý do gì
+// đó bước vá gặp lỗi hoặc không tìm thấy font tiếng Việt nào cần vá, tự động trả về nguyên byte của
+// lần lưu đầu tiên — không để lỗi ở bước vá làm hỏng cả việc xuất file.
+async function saveOutDocWithVietWidthFix(outDoc){
+  const firstBytes = await outDoc.save();
+  try{
+    if(typeof fontkit === 'undefined') return firstBytes;
+    const reloaded = await PDFDocument.load(firstBytes, { ignoreEncryption: true });
+    const vietFontKitFont = fontkit.create(getVietFontBytes());
+    const patched = patchVietFontFullWidths(reloaded, vietFontKitFont);
+    if(!patched) return firstBytes;
+    return await reloaded.save();
+  }catch(patchErr){
+    console.warn('Không vá được lỗi độ rộng glyph tiếng Việt sau khi lưu PDF (bỏ qua, dùng bản gốc chưa vá — hiếm khi vẫn còn hiện tượng dấu/chữ bị tách xa nhau):', patchErr);
+    return firstBytes;
+  }
+}
+
 async function buildEditedOutDoc(indexes, spinnerLabel){
   const outDoc = await PDFDocument.create();
   const imageEmbedCache = new Map(); // cache ảnh đã nhúng (theo từng edit) trong lượt xuất file này
@@ -5288,7 +5389,7 @@ async function exportPdfAs(filename, pageIndexes){
     // trang đó theo đúng thứ tự đã chọn; mặc định (Save PDF bình thường) ghép TOÀN BỘ tài liệu.
     const indexes = (pageIndexes && pageIndexes.length) ? pageIndexes : pages.map((_,i)=>i);
     const outDoc = await buildEditedOutDoc(indexes, spinnerLabel);
-    const bytes = await outDoc.save();
+    const bytes = await saveOutDocWithVietWidthFix(outDoc);
     const blob = new Blob([bytes], {type:'application/pdf'});
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
     a.download = filename; a.click();
@@ -5326,7 +5427,7 @@ async function printPdf(){
     // (giống hệt "Save PDF"), để bản in luôn khớp 100% nội dung đang chỉnh sửa trên màn hình.
     const indexes = pages.map((_,i)=>i);
     const outDoc = await buildEditedOutDoc(indexes, spinnerLabel);
-    const bytes = await outDoc.save();
+    const bytes = await saveOutDocWithVietWidthFix(outDoc);
 
     // Bước 2: dùng pdf.js vẽ lại từng trang ra canvas ở độ phân giải đủ nét để in (~200dpi), rồi
     // xuất thành ảnh PNG (data URL) — không tạo blob URL kiểu "application/pdf" ở bất kỳ đâu.
@@ -5508,7 +5609,7 @@ async function compressPdfAndDownload(level){
     // mọi chỉnh sửa người dùng đã thực hiện, không chỉ nén mỗi bản gốc chưa sửa.
     spinnerLabel.textContent = ' Đang chuẩn bị tài liệu để nén…';
     const editedOutDoc = await buildEditedOutDoc(pages.map((_,i)=>i), spinnerLabel);
-    const editedBytes = await editedOutDoc.save();
+    const editedBytes = await saveOutDocWithVietWidthFix(editedOutDoc);
     const originalSize = editedBytes.length;
 
     // Bước 2: vẽ lại từng trang ra canvas (dùng pdf.js) rồi nén thành JPEG, sau đó nhúng ảnh đó vào
