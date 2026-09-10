@@ -1737,6 +1737,40 @@ function getVietFontBytes(){
   if(!_vietFontBytes) _vietFontBytes = base64ToUint8Array(VIET_FONT_B64);
   return _vietFontBytes;
 }
+
+// Tên font trình duyệt dùng để đo/vẽ chữ trong lúc chỉnh sửa (tô, tính khung, canvas xem trước),
+// trỏ tới ĐÚNG cùng 1 dữ liệu font (Noto Sans) sẽ được nhúng vào PDF lúc xuất file. Luôn đặt
+// TRƯỚC font hiển thị người dùng chọn (Arial/Times...) trong chuỗi font-family — nhờ đó ngay khi
+// font này tải xong, mọi phép đo độ rộng chữ (ctx.measureText/canvas) và mọi bản vẽ xem trước sẽ
+// dùng đúng width/kiểu ngắt dòng như lúc pdf-lib xuất file, không còn lệch nhau nữa. Nếu vì lý do
+// gì đó font chưa tải xong hoặc tải lỗi, trình duyệt tự động dùng font dự phòng phía sau dấu phẩy,
+// nên không bao giờ làm hỏng giao diện ngay cả khi việc tải font gặp trục trặc.
+const PDF_EXPORT_FONT_FAMILY = 'PdfExportRenderFont';
+function pdfFontFamilyStack(fallback){
+  return "'" + PDF_EXPORT_FONT_FAMILY + "', " + (fallback || 'Arial');
+}
+let _pdfExportFontLoadPromise = null;
+function ensurePdfExportFontLoaded(){
+  if(_pdfExportFontLoadPromise) return _pdfExportFontLoadPromise;
+  try{
+    const bytes = getVietFontBytes();
+    // .slice() để có ArrayBuffer riêng, tránh trình duyệt/FontFace giữ tham chiếu tới cùng buffer
+    // dùng chung với pdf-lib (pdf-lib có thể detach/ghi đè buffer gốc trong một số phiên bản).
+    const face = new FontFace(PDF_EXPORT_FONT_FAMILY, bytes.slice().buffer);
+    _pdfExportFontLoadPromise = face.load().then((loaded)=>{
+      document.fonts.add(loaded);
+      // Buộc vẽ lại canvas xem trước (nếu trang đã render) để áp dụng ngay font vừa tải xong,
+      // thay vì phải chờ người dùng tương tác tiếp mới thấy chữ/khung được đo lại đúng.
+      try{ if(typeof redrawOverlay === 'function') redrawOverlay(); }catch(e){}
+    }).catch((err)=>{
+      console.warn('Không tải được font Việt hoá cho trình duyệt (sẽ dùng font dự phòng để đo/vẽ, có thể lệch nhẹ với PDF xuất ra):', err);
+    });
+  }catch(e){
+    _pdfExportFontLoadPromise = Promise.resolve();
+  }
+  return _pdfExportFontLoadPromise;
+}
+ensurePdfExportFontLoaded();
 function hexToRgbFloats(hex){
   const h = (hex||'#000000').replace('#','');
   const r = parseInt(h.slice(0,2),16)/255, g = parseInt(h.slice(2,4),16)/255, b = parseInt(h.slice(4,6),16)/255;
@@ -1834,7 +1868,7 @@ function computeWordSpacingExtraForPdf(font, ed){
 
   let targetW;
   try{
-    targetW = measureTextWidth(firstLine, `${fontSize}px ${ed.fontFamily || 'Arial'}`);
+    targetW = measureTextWidth(firstLine, `${fontSize}px ${pdfFontFamilyStack(ed.fontFamily)}`);
   }catch(e){ return 0; }
   if(!isFinite(targetW) || targetW<=0) return 0;
   // Giới hạn an toàn: chỉ bù chênh lệch NHỎ giữa font hệ thống (xem trước) và font nhúng PDF (thường
@@ -1994,7 +2028,7 @@ let currentUnderline = false;
 let activeEditInputEl = null;
 function refreshActiveEditInputFont(){
   if(!activeEditInputEl) return;
-  activeEditInputEl.style.fontFamily = currentFontFamily;
+  activeEditInputEl.style.fontFamily = pdfFontFamilyStack(currentFontFamily);
   const fontPx = Math.max(11, currentFontSize*scale);
   activeEditInputEl.style.fontSize = fontPx+'px';
   activeEditInputEl.style.color = currentFontColor;
@@ -3440,7 +3474,7 @@ function drawEdit(ctx, e, s){
   } else if(e.type === 'text' || e.type === 'ocrfix' || e.type === 'textfix'){
     if(e.bg){ ctx.fillStyle = e.bgColor || '#ffffff'; ctx.fillRect(e.x*s, e.y*s, e.w*s, e.h*s); }
     ctx.fillStyle = e.color || '#000000';
-    ctx.font = `${e.italic?'italic ':''}${e.bold?'bold ':''}${e.fontSize*s}px ${e.fontFamily || 'Arial'}`;
+    ctx.font = `${e.italic?'italic ':''}${e.bold?'bold ':''}${e.fontSize*s}px ${pdfFontFamilyStack(e.fontFamily)}`;
     ctx.textBaseline = 'top';
     applyOriginalSpacing(ctx, e, s);
     wrapText(ctx, e.text, e.x*s+2, e.y*s+1, e.w*s-4, e.fontSize*s*1.15, e.underline);
@@ -4263,7 +4297,7 @@ function measureTextWidth(text, font){
 // (canvas) và những gì xuất ra file PDF luôn khớp nhau, không bao giờ bị "mất chữ" vì tràn trang.
 function computeAutoBoxSize(text, fontFamily, fontSize, x){
   const c = measureTextWidth._c || (measureTextWidth._c = document.createElement('canvas').getContext('2d'));
-  c.font = fontSize+'px '+(fontFamily || 'Arial');
+  c.font = fontSize+'px '+pdfFontFamilyStack(fontFamily);
   const pageW = (pages.length && pdfCanvas.width) ? (pdfCanvas.width / scale) : 800;
   // Chiều rộng tối đa cho phép: từ điểm x hiện tại tới sát mép phải trang (chừa lề nhỏ), nhưng
   // không nhỏ hơn 80pt để tránh kiểu ngắt dòng "mỗi dòng chỉ 1 chữ" khi x đã gần sát mép phải.
@@ -4328,7 +4362,7 @@ function openEditInput(screenX, screenY, screenW, screenH, initialText, onCommit
   // dùng đổi 2 ô "Font chữ"/"Cỡ chữ" trong lúc đang gõ, chữ trong ô sẽ đổi theo NGAY LẬP TỨC
   // (xem refreshActiveEditInputFont, được gọi từ sự kiện onchange của 2 ô đó).
   const fontPx = Math.max(11, currentFontSize*scale);
-  inp.style.fontFamily = currentFontFamily;
+  inp.style.fontFamily = pdfFontFamilyStack(currentFontFamily);
   inp.style.fontSize = fontPx+'px';
   inp.style.fontWeight = currentBold ? 'bold' : 'normal';
   inp.style.fontStyle = currentItalic ? 'italic' : 'normal';
@@ -4341,7 +4375,7 @@ function openEditInput(screenX, screenY, screenW, screenH, initialText, onCommit
   // cũng có thể tự kéo giãn góc dưới-phải (resize:both trong CSS) nếu muốn.
   function sizeToContent(){
     const text = inp.value || initialText || '';
-    const measureFont = `${currentItalic?'italic ':''}${currentBold?'bold ':''}${Math.max(11, currentFontSize*scale)}px ${currentFontFamily}`;
+    const measureFont = `${currentItalic?'italic ':''}${currentBold?'bold ':''}${Math.max(11, currentFontSize*scale)}px ${pdfFontFamilyStack(currentFontFamily)}`;
     const neededW = Math.min(pageMaxW, Math.max(screenW, measureTextWidth(text, measureFont) + 10));
     inp.style.width = neededW+'px';
     inp.style.height = 'auto';
@@ -4368,7 +4402,15 @@ function openEditInput(screenX, screenY, screenW, screenH, initialText, onCommit
   }
   pendingEditCommit = commit;
   inp.addEventListener('keydown', (ev)=>{
-    if(ev.key==='Enter' && !ev.shiftKey){ ev.preventDefault(); commit(); }
+    // LỖI ĐÃ SỬA (không thể Enter xuống dòng để gõ thêm chữ): trước đây phím Enter (khi không giữ
+    // Shift) bị preventDefault() rồi gọi commit() ngay lập tức -> đóng luôn ô nhập chỉ sau 1 dòng,
+    // khiến người dùng KHÔNG BAO GIỜ gõ được đoạn nhiều dòng bằng cách gõ Enter tự nhiên như mọi ô
+    // văn bản khác (phải nhớ giữ Shift mới xuống dòng được, rất phản trực giác). Từ giờ: Enter (có
+    // hay không giữ Shift) đều để trình duyệt xử lý MẶC ĐỊNH của <textarea> — tức là chỉ đơn giản
+    // xuống dòng, không làm gì thêm ở đây. Muốn CHỐT (lưu) nhanh mà không cần rời tay khỏi bàn phím,
+    // dùng Ctrl+Enter (Windows/Linux) hoặc Cmd+Enter (macOS); ngoài ra bấm ra ngoài ô nhập (blur)
+    // hoặc chuyển công cụ khác cũng tự động chốt như trước.
+    if(ev.key==='Enter' && (ev.ctrlKey || ev.metaKey)){ ev.preventDefault(); commit(); }
     else if(ev.key==='Escape'){
       ev.preventDefault();
       done = true;
