@@ -114,12 +114,12 @@
 
   .tbtn.primary:hover{background:var(--accent-dim);}
   #colorSwatch, #whiteoutColorSwatch, #fontColorSwatch{width:20px;height:20px;border-radius:4px;border:1px solid var(--border);cursor:pointer;padding:0;}
-  #fontFamilySelect, #fontSizeSelect{
+  #fontFamilySelect, #fontSizeInput{
     background:#1c1e22;color:var(--text-light);border:1px solid var(--border);
     border-radius:5px;padding:5px 6px;font-size:12px;cursor:pointer;
   }
   #fontFamilySelect{max-width:140px;}
-  #fontSizeSelect{width:56px;}
+  #fontSizeInput{width:60px;cursor:text;}
 
   /* ===== Body layout ===== */
   #body{flex:1;display:flex;min-height:0;}
@@ -875,22 +875,32 @@
     <option value="'Segoe UI',sans-serif">Segoe UI</option>
     <option value="Calibri,sans-serif">Calibri</option>
   </select>
-  <select id="fontSizeSelect" title="Cỡ chữ">
-    <option value="8">8</option>
-    <option value="9">9</option>
-    <option value="10">10</option>
-    <option value="11">11</option>
-    <option value="12">12</option>
-    <option value="14" selected>14</option>
-    <option value="16">16</option>
-    <option value="18">18</option>
-    <option value="20">20</option>
-    <option value="24">24</option>
-    <option value="28">28</option>
-    <option value="32">32</option>
-    <option value="36">36</option>
-    <option value="48">48</option>
-  </select>
+  <!-- SỬA/THÊM TÍNH NĂNG: trước đây đây là <select> chỉ cho chọn đúng 14 cỡ chữ dựng sẵn (luôn là số
+       nguyên) — không thể chọn cỡ chữ LẺ (vd 10.5, 13.25) và không thể tự gõ cỡ chữ tuỳ ý ngoài danh
+       sách. Đổi sang <input type="number"> kèm <datalist> (danh sách gợi ý các cỡ thường dùng, vẫn
+       bấm chọn nhanh như <select> cũ) — nhưng vẫn cho phép NGƯỜI DÙNG TỰ GÕ bất kỳ cỡ chữ nào, kể cả
+       số lẻ/thập phân (step="0.5", có thể gõ trực tiếp số khác không nằm trên nấc 0.5 này). -->
+  <input type="number" id="fontSizeInput" title="Cỡ chữ (có thể gõ số lẻ, ví dụ 10.5)"
+         list="fontSizeSuggestions" value="14" min="1" max="400" step="0.5"
+         style="background:#1c1e22;color:var(--text-light);border:1px solid var(--border);border-radius:5px;padding:5px 6px;font-size:12px;width:60px;">
+  <datalist id="fontSizeSuggestions">
+    <option value="8"></option>
+    <option value="9"></option>
+    <option value="10"></option>
+    <option value="10.5"></option>
+    <option value="11"></option>
+    <option value="12"></option>
+    <option value="13.5"></option>
+    <option value="14"></option>
+    <option value="16"></option>
+    <option value="18"></option>
+    <option value="20"></option>
+    <option value="24"></option>
+    <option value="28"></option>
+    <option value="32"></option>
+    <option value="36"></option>
+    <option value="48"></option>
+  </datalist>
   <span style="display:inline-flex;align-items:center;gap:4px;font-size:11.5px;color:var(--text-dim);margin-left:2px;">
     <input type="color" id="fontColorSwatch" value="#000000" title="Chọn màu chữ (font) khi thêm/sửa văn bản">Color text
   </span>
@@ -1885,13 +1895,24 @@ function computeWordSpacingExtraForPdf(font, ed){
 // pdf-lib không có thuộc tính tương đương để giao cho nó tự làm.
 // Trả về tổng độ rộng đã vẽ (startX -> điểm kết thúc từ cuối cùng, KHÔNG tính khoảng trắng thừa sau
 // từ cuối) — dùng để vẽ đúng độ dài đường gạch chân (Underline) khi cần.
-function drawLineWithWordSpacing(page, line, startX, y, fontSize, font, color, fallbackFont, extra, bold, xSkew){
+//
+// LƯU Ý (liên quan tới sửa lỗi trang có /Rotate — xem giải thích đầy đủ ở drawEditOnPdfPage): x,y
+// nhận vào đây LUÔN LÀ TOẠ ĐỘ HỆ HIỂN THỊ (giống hệt hệ toạ độ dùng khi rot=0 trước đây), KHÔNG phải
+// toạ độ thật của trang. Việc cộng dồn "x += độ rộng từ" vẫn thực hiện hoàn toàn trong hệ hiển thị
+// này (đúng chiều đọc trái->phải tự nhiên trên màn hình, không phụ thuộc trang có xoay hay không) —
+// chỉ tới đúng lúc vẽ TỪNG TỪ mới quy đổi điểm neo của từ đó sang hệ toạ độ thật của trang qua
+// rotInfo.toRaw(), kèm rotate=rot để chữ luôn đọc đúng chiều sau khi trình xem PDF áp dụng /Rotate.
+function drawLineWithWordSpacing(page, line, startX, y, fontSize, font, color, fallbackFont, extra, bold, xSkew, rotInfo){
   const words = String(line).split(' ');
   let x = startX;
   let lastWordEndX = startX;
+  const rotDeg = rotInfo && rotInfo.rot ? degrees(rotInfo.rot) : undefined;
   for(let i=0;i<words.length;i++){
     const w = words[i];
-    if(w){ drawStyledText(page, w, { x, y, size: fontSize, font, color, xSkew }, fallbackFont, bold); }
+    if(w){
+      const pivot = rotInfo ? rotInfo.toRaw(x, y) : { x, y };
+      drawStyledText(page, w, { x: pivot.x, y: pivot.y, size: fontSize, font, color, xSkew, rotate: rotDeg }, fallbackFont, bold);
+    }
     let ww, sw;
     try{ ww = font.widthOfTextAtSize(w, fontSize); }catch(e){ ww = w.length*fontSize*0.55; }
     try{ sw = font.widthOfTextAtSize(' ', fontSize); }catch(e){ sw = fontSize*0.28; }
@@ -1921,16 +1942,76 @@ async function embedImageForEdit_(outDoc, ed, embedCache){
   return embedded;
 }
 
-async function drawEditOnPdfPage(page, ed, H, font, fallbackFont, outDoc, embedCache){
+// SỬA LỖI "chữ vừa sửa hiện SAI HẲN VỊ TRÍ (bị xoay dọc/lệch sang một góc của trang) sau khi Lưu
+// PDF": xảy ra với các trang PDF gốc vốn đã có cờ /Rotate khác 0 (rất phổ biến với PDF quét/scan
+// từ điện thoại nằm ngang rồi được đánh dấu xoay 90°/180°/270° để hiển thị đứng — file mẫu đính
+// kèm của người dùng chính là kiểu này: /Rotate 90).
+//
+// GỐC RỄ: toạ độ ed.x/ed.y của mọi chỉnh sửa được ghi lại trong hệ toạ độ HIỂN THỊ — tức đúng như
+// người dùng THẤY và BẤM CHUỘT lên trên màn hình (canvas dựng bởi pdf.js qua getViewport({scale}),
+// vốn TỰ ĐỘNG áp dụng /Rotate của trang — xem toPdfSpace()). Nhưng khi xuất file, code CŨ lại đem
+// thẳng các toạ độ "hệ hiển thị" đó vào page.drawText/drawRectangle/... của pdf-lib — mà pdf-lib
+// luôn vẽ vào hệ toạ độ GỐC/THẬT của trang (hệ toạ độ TRƯỚC khi áp dụng /Rotate, hoàn toàn không
+// tự xoay theo /Rotate). Với trang KHÔNG có /Rotate (rot=0, trường hợp phổ biến nhất) thì 2 hệ toạ
+// độ này trùng nhau (chỉ khác chiều trục y) nên trước giờ không phát hiện ra lỗi; nhưng với trang
+// CÓ /Rotate=90/180/270, hai hệ toạ độ này lệch hẳn nhau (thậm chí tráo cả chiều ngang/dọc), nên
+// chữ/khung che vẽ ra bị lệch vị trí và trông như bị xoay so với những gì thấy lúc đang sửa.
+//
+// CÁCH SỬA: getPageRotationTransform_() tính sẵn phép quy đổi 1-1 giữa hệ hiển thị và hệ gốc/thật
+// của trang (toRaw), dựa đúng vào góc /Rotate hiện có của trang đó (đọc từ chính pdf-lib, luôn đúng
+// bằng góc /Rotate đã áp dụng khi pdf.js dựng canvas, vì đọc từ cùng 1 file PDF). Mọi toạ độ trước
+// khi đưa vào lệnh vẽ của pdf-lib đều được đi qua toRaw() để quy đổi đúng; RIÊNG với nội dung có
+// "chiều" (chữ, ảnh — khác với khung/đường thẳng vốn không có khái niệm chiều), còn cần vẽ với
+// rotate=rot để bù lại đúng góc xoay đó, giữ chữ/ảnh đọc đúng chiều sau khi trình xem PDF áp dụng
+// /Rotate của trang khi hiển thị (xem giải thích chi tiết ngay trong hàm bên dưới).
+function getPageRotationTransform_(pageObj){
+  const rawW = pageObj.getWidth(), rawH = pageObj.getHeight();
+  const rot = normalizeRotation_((pageObj.getRotation && pageObj.getRotation().angle) || 0);
+  const dispW = (rot===90 || rot===270) ? rawH : rawW;
+  const dispH = (rot===90 || rot===270) ? rawW : rawH;
+  let toRaw;
+  if(rot === 90){
+    toRaw = (dx,dy) => ({ x: dy, y: dx });
+  } else if(rot === 180){
+    toRaw = (dx,dy) => ({ x: dispW - dx, y: dy });
+  } else if(rot === 270){
+    toRaw = (dx,dy) => ({ x: dispH - dy, y: dispW - dx });
+  } else {
+    toRaw = (dx,dy) => ({ x: dx, y: rawH - dy });
+  }
+  return { rot, rawW, rawH, dispW, dispH, toRaw };
+}
+
+// Quy đổi 1 HÌNH CHỮ NHẬT trong hệ hiển thị (dx,dy = góc trên-trái, dw/dh = rộng/cao, trục y hướng
+// xuống) sang hình chữ nhật tương ứng trong hệ gốc/thật của trang. Dùng cho khung/nền che (không có
+// khái niệm "chiều" — xoay 90/180/270° vẫn luôn ra một hình chữ nhật khác, không cần thêm rotate).
+function rawRectFromDisplay_(rotInfo, dx, dy, dw, dh){
+  const p1 = rotInfo.toRaw(dx, dy);
+  const p2 = rotInfo.toRaw(dx+dw, dy+dh);
+  return {
+    x: Math.min(p1.x, p2.x),
+    y: Math.min(p1.y, p2.y),
+    width: Math.abs(p2.x - p1.x),
+    height: Math.abs(p2.y - p1.y)
+  };
+}
+
+async function drawEditOnPdfPage(page, ed, rotInfo, font, fallbackFont, outDoc, embedCache){
+  const rotDeg = rotInfo.rot ? degrees(rotInfo.rot) : undefined;
   if(ed.type === 'image'){
     const embedded = await embedImageForEdit_(outDoc, ed, embedCache);
-    page.drawImage(embedded, { x: ed.x, y: H-(ed.y+ed.h), width: ed.w, height: ed.h });
+    // Ảnh có "chiều" (không được để bị xoay lệch) -> dùng góc dưới-trái (hệ hiển thị) làm điểm neo,
+    // giữ nguyên width/height gốc (không tráo) và vẽ với rotate=rot để bù lại đúng góc /Rotate.
+    const pivot = rotInfo.toRaw(ed.x, ed.y + ed.h);
+    page.drawImage(embedded, { x: pivot.x, y: pivot.y, width: ed.w, height: ed.h, rotate: rotDeg });
   } else if(ed.type === 'highlight'){
     const [r,g,b] = hexToRgbFloats(ed.color);
-    page.drawRectangle({ x: ed.x, y: H-(ed.y+ed.h), width: ed.w, height: ed.h, color: rgb(r,g,b), opacity: 0.35 });
+    const rr = rawRectFromDisplay_(rotInfo, ed.x, ed.y, ed.w, ed.h);
+    page.drawRectangle({ x: rr.x, y: rr.y, width: rr.width, height: rr.height, color: rgb(r,g,b), opacity: 0.35 });
   } else if(ed.type === 'whiteout'){
     const [wr,wg,wb] = hexToRgbFloats(ed.bgColor || '#ffffff');
-    page.drawRectangle({ x: ed.x, y: H-(ed.y+ed.h), width: ed.w, height: ed.h, color: rgb(wr,wg,wb) });
+    const rr = rawRectFromDisplay_(rotInfo, ed.x, ed.y, ed.w, ed.h);
+    page.drawRectangle({ x: rr.x, y: rr.y, width: rr.width, height: rr.height, color: rgb(wr,wg,wb) });
   } else if(ed.type === 'text' || ed.type === 'ocrfix' || ed.type === 'textfix'){
     // Chốt chặn cuối cùng trước khi vẽ ra PDF: quy chuẩn hoá chữ về dạng Unicode GHÉP SẴN (NFC).
     // Áp dụng lại ở đây (không chỉ ở normalizeEditText) để bắt luôn cả những nội dung KHÔNG đi qua
@@ -1942,7 +2023,8 @@ async function drawEditOnPdfPage(page, ed, H, font, fallbackFont, outDoc, embedC
       // Dùng đúng màu nền đã lấy mẫu tại vị trí này (nếu có) thay vì trắng cứng, để phần "che" đè lên
       // chữ cũ hòa lẫn với nền trang gốc (giấy trắng, giấy ngả vàng, nền màu...) thay vì hiện khối trắng lộ liễu.
       const [br,bg2,bb] = hexToRgbFloats(ed.bgColor || '#ffffff');
-      page.drawRectangle({ x: ed.x, y: H-(ed.y+ed.h), width: ed.w, height: ed.h, color: rgb(br,bg2,bb) });
+      const rr = rawRectFromDisplay_(rotInfo, ed.x, ed.y, ed.w, ed.h);
+      page.drawRectangle({ x: rr.x, y: rr.y, width: rr.width, height: rr.height, color: rgb(br,bg2,bb) });
     }
     const [r,g,b] = hexToRgbFloats(ed.color || '#000000');
     const fontSize = ed.fontSize || 12;
@@ -1951,34 +2033,47 @@ async function drawEditOnPdfPage(page, ed, H, font, fallbackFont, outDoc, embedC
     // In nghiêng: dùng thẳng tham số xSkew có sẵn của pdf-lib (nghiêng trục X của chữ ~12 độ, mô
     // phỏng đúng kiểu "oblique" thường thấy) — không cần font Italic riêng. In đậm: xem drawStyledText.
     const italicSkew = ed.italic ? degrees(12) : undefined;
-    let baseY = H - ed.y - fontSize*0.85;
+    // Toàn bộ phần tính toán vị trí từng dòng/gạch chân bên dưới CỐ TÌNH làm việc trong hệ toạ độ
+    // HIỂN THỊ (giống hệt logic cũ khi rot=0: trục y hướng xuống, gốc (0,0) ở góc trên-trái trang) —
+    // chỉ quy đổi sang hệ gốc/thật của trang (rotInfo.toRaw) ngay tại đúng thời điểm vẽ ra pdf-lib.
+    // Nhờ vậy công thức xuống dòng (baseYDisp -= fontSize*1.15) và mọi phép đo bề rộng chữ giữ
+    // nguyên như cũ, không phải viết lại logic bọc dòng/canh chữ — chỉ thêm đúng 1 bước quy đổi toạ
+    // độ + 1 tham số rotate ở mỗi lệnh vẽ.
+    let baseYDisp = ed.y + fontSize*0.85;
     for(const line of lines){
       let lineWidth = 0;
       if(wordExtra){
-        lineWidth = drawLineWithWordSpacing(page, line, ed.x+2, baseY, fontSize, font, rgb(r,g,b), fallbackFont, wordExtra, ed.bold, italicSkew);
+        lineWidth = drawLineWithWordSpacing(page, line, ed.x+2, baseYDisp, fontSize, font, rgb(r,g,b), fallbackFont, wordExtra, ed.bold, italicSkew, rotInfo);
       } else {
-        drawStyledText(page, line, { x: ed.x+2, y: baseY, size: fontSize, font, color: rgb(r,g,b), xSkew: italicSkew }, fallbackFont, ed.bold);
+        const pivot = rotInfo.toRaw(ed.x+2, baseYDisp);
+        drawStyledText(page, line, { x: pivot.x, y: pivot.y, size: fontSize, font, color: rgb(r,g,b), xSkew: italicSkew, rotate: rotDeg }, fallbackFont, ed.bold);
         try{ lineWidth = font.widthOfTextAtSize(line, fontSize); }catch(e){ lineWidth = line.length*fontSize*0.55; }
       }
       // Gạch chân: vẽ 1 đường thẳng ngay dưới dòng chữ vừa vẽ, dài đúng bằng độ rộng dòng đó.
+      // drawLine chỉ nhận 2 điểm đầu/cuối (không có tham số rotate) -> quy đổi TỪNG điểm qua toRaw
+      // là đủ đúng cho mọi góc xoay (một đoạn thẳng luôn được xác định trọn vẹn bởi 2 điểm đầu-cuối).
       if(ed.underline && line.trim()){
-        const underlineY = baseY - fontSize*0.12;
+        const underlineYDisp = baseYDisp - fontSize*0.12;
+        const p1 = rotInfo.toRaw(ed.x+2, underlineYDisp);
+        const p2 = rotInfo.toRaw(ed.x+2+lineWidth, underlineYDisp);
         page.drawLine({
-          start: { x: ed.x+2, y: underlineY },
-          end: { x: ed.x+2+lineWidth, y: underlineY },
+          start: { x: p1.x, y: p1.y },
+          end: { x: p2.x, y: p2.y },
           thickness: Math.max(0.6, fontSize*0.055),
           color: rgb(r,g,b)
         });
       }
-      baseY -= fontSize*1.15;
+      baseYDisp += fontSize*1.15;
     }
   } else if(ed.type === 'draw'){
     const [r,g,b] = hexToRgbFloats(ed.color);
     const pts = ed.points;
     for(let k=0;k<pts.length-1;k++){
+      const p1 = rotInfo.toRaw(pts[k].x, pts[k].y);
+      const p2 = rotInfo.toRaw(pts[k+1].x, pts[k+1].y);
       page.drawLine({
-        start: { x: pts[k].x, y: H-pts[k].y },
-        end: { x: pts[k+1].x, y: H-pts[k+1].y },
+        start: { x: p1.x, y: p1.y },
+        end: { x: p2.x, y: p2.y },
         thickness: ed.width||2.5,
         color: rgb(r,g,b)
       });
@@ -2017,6 +2112,15 @@ let currentWhiteoutColor = '#ffffff';
 let currentFontColor = '#000000';
 let currentFontFamily = 'Arial';
 let currentFontSize = 14;
+// THÊM TÍNH NĂNG "cỡ chữ lẻ": cỡ chữ giờ có thể là số thập phân (ví dụ 10.5) chứ không bắt buộc là số
+// nguyên nữa. Hàm dùng chung này chuẩn hoá 1 giá trị cỡ chữ bất kỳ về đúng 2 chữ số thập phân (đủ
+// mịn cho mọi nhu cầu, đồng thời tránh những số lẻ vô nghĩa do sai số dấu phẩy động khi tính toán,
+// ví dụ 13.999999999998) — dùng thống nhất ở MỌI nơi đọc/ghi/so sánh cỡ chữ, để không còn tình trạng
+// chỗ thì làm tròn về số nguyên (Math.round cũ) chỗ thì giữ nguyên số lẻ, gây so sánh sai/lệch cỡ chữ.
+function roundFontSize_(v){
+  const n = Number(v);
+  return (isFinite(n) && n>0) ? Math.round(n*100)/100 : 14;
+}
 // Trạng thái In đậm / In nghiêng / Gạch chân đang bật trên thanh công cụ — áp dụng cho chữ MỚI sắp
 // gõ, và được đồng bộ (syncFontControlsToSelection) theo đúng định dạng của khối chữ đang được chọn.
 let currentBold = false;
@@ -2051,7 +2155,13 @@ function refreshStyleToggleButtons(){
 // để: (1) người dùng biết đang sửa với font/cỡ nào, (2) nếu họ đổi trong lúc gõ thì áp dụng đúng.
 function setActiveEditFont(fontFamily, fontSize, fontColor, bold, italic, underline){
   currentFontFamily = fontFamily || 'Arial';
-  currentFontSize = Math.round(fontSize) || 14;
+  // SỬA LỖI/THÊM TÍNH NĂNG "cỡ chữ lẻ": trước đây luôn Math.round() cỡ chữ về số nguyên rồi ép chọn
+  // đúng 1 trong 14 cỡ dựng sẵn gần nhất (mất hẳn phần thập phân nếu chữ gốc có cỡ lẻ, ví dụ PDF gốc
+  // dùng cỡ 10.5 thì sau khi mở lại để sửa sẽ tự động bị làm tròn về 10 hoặc 11). Giờ đây giữ NGUYÊN
+  // đúng giá trị cỡ chữ (có thể là số lẻ/thập phân), chỉ làm tròn nhẹ tới 2 chữ số thập phân để tránh
+  // hiển thị những số lẻ vô nghĩa do sai số dấu phẩy động (ví dụ 13.999999999998).
+  const parsedSize = Number(fontSize);
+  currentFontSize = (isFinite(parsedSize) && parsedSize>0) ? roundFontSize_(parsedSize) : 14;
   currentFontColor = fontColor || currentFontColor || '#000000';
   // Chỉ ghi đè trạng thái Đậm/Nghiêng/Gạch chân khi được truyền RÕ RÀNG (đang mở lại một khối chữ
   // có sẵn để sửa tiếp) — nếu gọi không kèm 3 tham số này (ví dụ khi bắt đầu gõ chữ MỚI hoàn toàn),
@@ -2062,19 +2172,13 @@ function setActiveEditFont(fontFamily, fontSize, fontColor, bold, italic, underl
   if(underline !== undefined) currentUnderline = !!underline;
   refreshStyleToggleButtons();
   const famSel = document.getElementById('fontFamilySelect');
-  const sizeSel = document.getElementById('fontSizeSelect');
+  const sizeInp = document.getElementById('fontSizeInput');
   const colorSel = document.getElementById('fontColorSwatch');
   famSel.value = currentFontFamily;
   if(famSel.value !== currentFontFamily){ famSel.value = 'Arial'; currentFontFamily = 'Arial'; }
-  const rounded = String(currentFontSize);
-  sizeSel.value = rounded;
-  if(sizeSel.value !== rounded){
-    // Cỡ chữ gốc không khớp option có sẵn -> chọn option gần nhất thay vì luôn rơi về 14
-    const opts = Array.from(sizeSel.options).map(o=>Number(o.value));
-    const nearest = opts.reduce((a,b)=> Math.abs(b-currentFontSize)<Math.abs(a-currentFontSize) ? b : a);
-    sizeSel.value = String(nearest);
-    currentFontSize = nearest;
-  }
+  // Là ô nhập tự do (không còn là <select> chỉ có sẵn 14 lựa chọn) -> gán thẳng đúng giá trị, không
+  // cần tìm "lựa chọn gần nhất" nữa vì MỌI giá trị đều hợp lệ.
+  sizeInp.value = String(currentFontSize);
   if(colorSel) colorSel.value = currentFontColor;
 }
 let originalFileName = 'document.pdf';
@@ -3751,8 +3855,30 @@ document.getElementById('fontFamilySelect').onchange = (e)=>{
   }
   refreshActiveEditInputFont();
 };
-document.getElementById('fontSizeSelect').onchange = (e)=>{
-  currentFontSize = Number(e.target.value) || 14;
+// THÊM TÍNH NĂNG "tự gõ cỡ chữ theo ý mình": dùng "input" (bắn liên tục ngay khi gõ/chỉnh số, kể cả
+// bằng 2 nút mũi tên tăng/giảm của ô number) thay vì chỉ "change" (chỉ bắn khi rời khỏi ô) — để cỡ
+// chữ của khối đang chọn cập nhật NGAY khi người dùng gõ, không cần phải click ra ngoài mới thấy đổi.
+document.getElementById('fontSizeInput').oninput = (e)=>{
+  // Cho phép gõ số LẺ/thập phân bất kỳ (không giới hạn trong danh sách gợi ý của <datalist>) — chỉ
+  // cần là một số hợp lệ, lớn hơn 0. Trong lúc người dùng đang gõ dở (ví dụ mới gõ "1" của "12.5",
+  // hoặc vừa gõ xong dấu "."), giá trị có thể tạm thời rỗng/chưa hợp lệ -> bỏ qua, không áp dụng vội,
+  // đợi người dùng gõ tiếp thay vì ép về 14 giữa chừng gây khó chịu.
+  const raw = Number(e.target.value);
+  if(!isFinite(raw) || raw<=0) return;
+  currentFontSize = roundFontSize_(raw);
+  if(pages.length && selectedEditIndex>=0){
+    const ed = cur().edits[selectedEditIndex];
+    if(isTextEdit(ed)){ pushUndo(currentIndex); ed.fontSize = currentFontSize; redrawOverlay(); }
+  }
+  refreshActiveEditInputFont();
+};
+// Khi rời khỏi ô (blur) hoặc bấm Enter: nếu người dùng lỡ để trống/gõ giá trị không hợp lệ, tự khôi
+// phục lại đúng cỡ chữ đang áp dụng thay vì để ô trống trông như đang lỗi.
+document.getElementById('fontSizeInput').onchange = (e)=>{
+  const raw = Number(e.target.value);
+  if(!isFinite(raw) || raw<=0){ e.target.value = String(currentFontSize); return; }
+  currentFontSize = roundFontSize_(raw);
+  e.target.value = String(currentFontSize);
   if(pages.length && selectedEditIndex>=0){
     const ed = cur().edits[selectedEditIndex];
     if(isTextEdit(ed)){ pushUndo(currentIndex); ed.fontSize = currentFontSize; redrawOverlay(); }
@@ -3802,16 +3928,16 @@ function syncFontControlsToSelection(){
   }
   if(!isTextEdit(ed)) return;
   const famSel = document.getElementById('fontFamilySelect');
-  const sizeSel = document.getElementById('fontSizeSelect');
+  const sizeInp = document.getElementById('fontSizeInput');
   const colorSel = document.getElementById('fontColorSwatch');
   if(ed.fontFamily){
     famSel.value = ed.fontFamily;
     if(famSel.value !== ed.fontFamily) famSel.value = 'Arial';
   }
   if(ed.fontSize){
-    const rounded = String(Math.round(ed.fontSize));
-    sizeSel.value = rounded;
-    if(sizeSel.value !== rounded) sizeSel.value = '14';
+    // Là ô nhập tự do -> hiển thị ĐÚNG cỡ chữ thật của khối đang chọn (kể cả số lẻ), không làm tròn
+    // về số nguyên rồi ép về option "14" gần nhất như trước nữa.
+    sizeInp.value = String(roundFontSize_(ed.fontSize));
   }
   if(ed.color){
     colorSel.value = ed.color;
@@ -4003,6 +4129,23 @@ function computePageLines(items){
   const segments = [];
   for(const group of groups){
     const byX = [...group].sort((a,b)=> a.x0-b.x0);
+    // NGƯỠNG TÁCH CỘT THÍCH ỨNG (bổ sung): với các bảng nhiều cột hẹp (vd bảng "TT | Tên bệnh,
+    // tật | Có | Không" trong mẫu giấy khám sức khỏe), ngưỡng cố định (1.4x cỡ chữ, tối thiểu
+    // 14pt) ở dưới đôi khi KHÔNG đủ để tách các ô rất ngắn (chỉ 1-2 ký tự như "Có"/"Không"/số thứ
+    // tự) ra khỏi cột liền kề. Bổ sung thêm một ngưỡng "tương đối" theo khoảng cách TRUNG VỊ
+    // (median) giữa các item ngay trong CHÍNH hàng đang xét: nếu một khoảng trắng nào đó lớn hơn
+    // hẳn (>2.2 lần) khoảng trắng thông thường giữa các chữ trong cùng hàng, gần như chắc chắn đó
+    // là ranh giới cột chứ không phải khoảng cách giữa 2 từ bình thường. Chỉ áp dụng khi hàng có
+    // đủ nhiều item (>=5) để median ổn định, tránh làm hỏng các dòng câu văn ngắn bình thường.
+    let gaps = [];
+    for(let i=1;i<byX.length;i++){
+      const g = byX[i].x0 - byX[i-1].x1;
+      if(g>0) gaps.push(g);
+    }
+    gaps.sort((a,b)=>a-b);
+    const medianGap = gaps.length ? gaps[Math.floor(gaps.length/2)] : 0;
+    const adaptiveThreshold = (byX.length>=5 && medianGap>0) ? medianGap*2.2 : Infinity;
+
     let seg = [byX[0]];
     for(let i=1;i<byX.length;i++){
       const prev = byX[i-1], it = byX[i];
@@ -4011,7 +4154,7 @@ function computePageLines(items){
       // Khoảng cách giữa 2 từ liền kề trong cùng câu thường nhỏ hơn ~0.4x cỡ chữ; đặt ngưỡng
       // rộng rãi hơn hẳn (1.4x cỡ chữ, tối thiểu 14pt) để chỉ tách khi thực sự là khoảng cách
       // giữa các cột/ô trong bảng, không tách nhầm các từ bình thường trong một câu.
-      if(gap > Math.max(fs*1.4, 14)){
+      if(gap > Math.max(fs*1.4, 14) || gap > adaptiveThreshold){
         segments.push(seg);
         seg = [];
       }
@@ -4325,6 +4468,40 @@ function computeAutoBoxSize(text, fontFamily, fontSize, x){
   return { w, h };
 }
 
+// SỬA LỖI "khung/nền che (canvas) của chữ sau khi sửa chiếm khoảng trống nhiều hơn hẳn so với chữ
+// thực tế": trước đây, mỗi lần sửa lại một chữ ĐÃ TỪNG được sửa trước đó, khung mới luôn được tính
+// bằng Math.max(khung HIỆN TẠI, khung vừa đủ cho nội dung mới) — nghĩa là khung chỉ có thể NỚI RỘNG
+// thêm, không bao giờ được phép THU NHỎ LẠI, kể cả khi nội dung mới ngắn/thấp hơn hẳn nội dung cũ
+// (ví dụ: sửa "DÙNG CHO NGƯỜI TỪ ĐỦ 18 TUỔI TRỞ LÊN" dài thành một chữ ngắn hơn nhiều). Hậu quả:
+// (1) khung xanh/nền che hiển thị trên canvas ngày càng phình to, không còn khớp với chữ thực tế
+// nữa; (2) khung phình to đó dễ LẤN SANG vùng của các chữ/checkbox khác ở gần (đặc biệt với các
+// mẫu đơn nhiều dòng/checkbox sát nhau như giấy khám sức khoẻ), khiến lần sửa TIẾP THEO ở gần đó vô
+// tình xoá mất chỉnh sửa này qua removeOverlappingTextEdits() (xoá do chồng lấn >30%) — đây chính là
+// nguyên nhân khiến khi Lưu PDF, một số chỉnh sửa trước đó "biến mất", file xuất ra chỉ còn hiện
+// đúng y như nội dung gốc dù đã sửa trên giao diện.
+//
+// Hàm này tính khung NHỎ NHẤT bắt buộc phải giữ để chữ GỐC (đã được che bằng nền) không bao giờ lộ
+// ra lại, dựa trên toạ độ THẬT của dòng chữ gốc lúc mới bắt đầu sửa (ed.srcX0/srcY0/srcX1/srcY1 —
+// cố định, không đổi dù khung hiển thị có phình to/thu nhỏ thế nào) cộng thêm phần đệm (pad) đã
+// dùng lúc che nền ban đầu. Nhờ vậy, ở mỗi lần sửa lại, khung mới = Math.max(khung-che-tối-thiểu-này,
+// khung-vừa-đủ-cho-nội-dung-mới) — luôn đủ để giấu chữ cũ, luôn đủ để hiện chữ mới, nhưng KHÔNG còn
+// giữ lại phần "thừa" từ những lần sửa trước có nội dung dài/cao hơn.
+function computeMinCoverSize(ed){
+  if(!ed || typeof ed.srcX0 !== 'number' || typeof ed.srcY0 !== 'number' ||
+     typeof ed.srcX1 !== 'number' || typeof ed.srcY1 !== 'number'){
+    // Chỉnh sửa cũ (được tạo trước khi có trường srcX0..srcY1) -> không có cách nào biết chắc
+    // phạm vi chữ gốc cần che, đành giữ nguyên hành vi cũ (chỉ nới rộng) để an toàn.
+    return { w: (ed && ed.w) || 0, h: (ed && ed.h) || 0 };
+  }
+  const fontSize = ed.fontSize || 12;
+  const padY = Math.max(3, fontSize*0.35), padX = Math.max(2, fontSize*0.1);
+  const neededX1 = ed.srcX1 + padX, neededY1 = ed.srcY1 + padY;
+  return {
+    w: Math.max(24, neededX1 - ed.x),
+    h: Math.max(fontSize*1.3, neededY1 - ed.y)
+  };
+}
+
 // LỚP BẢO VỆ BỔ SUNG (phòng khoảng cách chữ bị giãn bất thường do chính NỘI DUNG chữ có sẵn nhiều
 // dấu cách liên tiếp — ví dụ dán vào từ nguồn có canh chữ dãn cách/letter-spacing, hoặc dữ liệu
 // OCR/PDF trích ra vô tình dính khoảng trắng thừa): gộp mọi chuỗi TỪ 2 dấu cách/tab/khoảng trắng
@@ -4553,9 +4730,17 @@ function editLineAt(px, py, editType, customLines){
           // nếu đã có nền che (bg) thì không thu hẹp lại, chỉ nới rộng thêm khi cần, để không lộ
           // lại chữ cũ ở phần đã che trước đó.
           const auto = computeAutoBoxSize(val, ed.fontFamily, ed.fontSize, ed.x);
-          ed.w = ed.bg ? Math.max(ed.w, auto.w) : auto.w;
-          ed.h = ed.bg ? Math.max(ed.h, auto.h) : auto.h;
-          // Dọn mọi chỉnh sửa khác chồng lấn lên vùng vừa nới rộng, để không có 2 lớp chữ đè nhau.
+          if(ed.bg){
+            // Khung mới = vừa đủ để (a) vẫn che kín chữ gốc (minCover) và (b) chứa hết nội dung mới
+            // (auto) — không còn giữ nguyên phần "thừa" nếu nội dung mới ngắn/thấp hơn trước.
+            const minCover = computeMinCoverSize(ed);
+            ed.w = Math.max(minCover.w, auto.w);
+            ed.h = Math.max(minCover.h, auto.h);
+          } else {
+            ed.w = auto.w;
+            ed.h = auto.h;
+          }
+          // Dọn mọi chỉnh sửa khác chồng lấn lên vùng vừa cập nhật, để không có 2 lớp chữ đè nhau.
           removeOverlappingTextEdits(p, ed.x, ed.y, ed.x+ed.w, ed.y+ed.h, ed);
         }
         else { p.edits.splice(hitIdx,1); selectedEditIndex = -1; }
@@ -4615,7 +4800,7 @@ function editLineAt(px, py, editType, customLines){
   openEditInput(sx, sy, sw, sh, initialText, (val)=>{
     val = normalizeEditText(val);
     if(val === initialText && currentFontFamily === (existing ? existing.edit.fontFamily : 'Arial')
-       && currentFontSize === Math.round(existing ? existing.edit.fontSize : (line.fontSize||12))
+       && currentFontSize === roundFontSize_(existing ? existing.edit.fontSize : (line.fontSize||12))
        && currentFontColor === (existing ? (existing.edit.color || '#000000') : currentFontColor)
        && currentBold === !!(existing && existing.edit.bold)
        && currentItalic === !!(existing && existing.edit.italic)
@@ -4652,8 +4837,12 @@ function editLineAt(px, py, editType, customLines){
         // dung MỚI (có thể dài hơn khung của dòng chữ gốc rất nhiều) — chỉ nới rộng ra, không thu
         // hẹp lại, để phần nền che vẫn tiếp tục che đúng chỗ chữ cũ. Xem computeAutoBoxSize.
         const auto = computeAutoBoxSize(val, existing.edit.fontFamily, existing.edit.fontSize, existing.edit.x);
-        existing.edit.w = Math.max(existing.edit.w, auto.w);
-        existing.edit.h = Math.max(existing.edit.h, auto.h);
+        // Khung mới = vừa đủ để vẫn che kín chữ gốc (minCover, tính từ srcX0..srcY1 KHÔNG đổi) VÀ
+        // chứa hết nội dung mới (auto) — không còn cộng dồn/giữ mãi phần khung thừa từ các lần sửa
+        // trước có nội dung dài/cao hơn (xem computeMinCoverSize để biết lý do đầy đủ).
+        const minCover = computeMinCoverSize(existing.edit);
+        existing.edit.w = Math.max(minCover.w, auto.w);
+        existing.edit.h = Math.max(minCover.h, auto.h);
         // Dọn mọi chỉnh sửa khác chồng lấn lên vùng vừa nới rộng, để không có 2 lớp chữ đè nhau.
         removeOverlappingTextEdits(p, existing.edit.x, existing.edit.y, existing.edit.x+existing.edit.w, existing.edit.y+existing.edit.h, existing.edit);
       } else {
@@ -4734,9 +4923,15 @@ overlayCanvas.addEventListener('dblclick', (e)=>{
         // Nới khung vừa đủ chứa hết nội dung mới, không bao giờ hẹp hơn nội dung thực tế
         // (xem computeAutoBoxSize) — tránh chữ bị tràn ra ngoài trang khi xuất PDF.
         const auto = computeAutoBoxSize(val, ed.fontFamily || 'Arial', ed.fontSize || 12, ed.x);
-        ed.w = ed.bg ? Math.max(ed.w, auto.w) : auto.w;
-        ed.h = ed.bg ? Math.max(ed.h, auto.h) : auto.h;
-        // Dọn mọi chỉnh sửa khác chồng lấn lên vùng vừa nới rộng, để không có 2 lớp chữ đè nhau.
+        if(ed.bg){
+          const minCover = computeMinCoverSize(ed);
+          ed.w = Math.max(minCover.w, auto.w);
+          ed.h = Math.max(minCover.h, auto.h);
+        } else {
+          ed.w = auto.w;
+          ed.h = auto.h;
+        }
+        // Dọn mọi chỉnh sửa khác chồng lấn lên vùng vừa cập nhật, để không có 2 lớp chữ đè nhau.
         removeOverlappingTextEdits(cur(), ed.x, ed.y, ed.x+ed.w, ed.y+ed.h, ed);
       }
       else { edits.splice(idx,1); selectedEditIndex = -1; }
@@ -5170,13 +5365,19 @@ async function runOcrForPage(idx, forEditing){
   const spinner = document.getElementById('spinner');
   spinner.classList.add('show');
   try{
-    const tmp = await renderPageToCanvas(idx, 2);
+    // Tăng độ phân giải render trước khi đưa vào Tesseract (2x -> 3x): các mẫu đơn dày đặc
+    // (giấy khám sức khỏe, biểu mẫu hành chính...) thường có cỡ chữ rất nhỏ (8-9pt) và nhiều ô
+    // bảng sát nhau; ở 2x, chữ nhỏ dễ bị vỡ nét khiến OCR nhận sai/nhận thiếu, đặc biệt với dấu
+    // tiếng Việt. 3x giúp nhận diện chính xác hơn mà vẫn đủ nhanh cho một trang.
+    const tmp = await renderPageToCanvas(idx, 3);
     const worker = await getWorker();
     const { data } = await worker.recognize(tmp);
     const p = pages[idx];
     p.ocrText = data.text;
+    // Chia lại toạ độ theo ĐÚNG hệ số render (3x, xem renderPageToCanvas(idx, 3) ở trên) để quy
+    // đổi bbox pixel của Tesseract về lại đúng hệ toạ độ điểm (points) của trang PDF.
     p.ocrWords = (data.words||[]).map(w=>({
-      text: w.text, x0: w.bbox.x0/2, y0: w.bbox.y0/2, x1: w.bbox.x1/2, y1: w.bbox.y1/2
+      text: w.text, x0: w.bbox.x0/3, y0: w.bbox.y0/3, x1: w.bbox.x1/3, y1: w.bbox.y1/3
     }));
     p.ocrLines = computePageLines(p.ocrWords);
     if(!forEditing){
@@ -5348,7 +5549,7 @@ async function buildEditedOutDoc(indexes, spinnerLabel){
     const i = indexes[k];
     if(spinnerLabel) spinnerLabel.textContent = ` Đang ghép trang ${k+1}/${indexes.length}…`;
     const p = pages[i];
-    let pageObj, H;
+    let pageObj;
     if(p.type==='pdf'){
       if(!p.srcBuf){
         throw new Error('Thiếu dữ liệu gốc của trang '+(i+1)+'. Hãy mở lại file PDF rồi thử lại.');
@@ -5357,7 +5558,6 @@ async function buildEditedOutDoc(indexes, spinnerLabel){
       const [copiedPage] = await outDoc.copyPages(srcDoc, [p.srcPage-1]);
       outDoc.addPage(copiedPage);
       pageObj = copiedPage;
-      H = pageObj.getHeight();
 
       // ---- NativeTextEngine: thử SỬA THẬT trực tiếp trên content stream gốc ----
       // Chỉ những chỉnh sửa bắt nguồn từ chữ PDF thật (có nativeItemIdxs, xem editLineAt)
@@ -5394,11 +5594,17 @@ async function buildEditedOutDoc(indexes, spinnerLabel){
       }
     } else {
       pageObj = outDoc.addPage([p.width, p.height]);
-      H = p.height;
     }
+    // Tính sẵn phép quy đổi hệ toạ độ hiển thị <-> hệ toạ độ thật của trang (xem
+    // getPageRotationTransform_) — bắt buộc phải tính SAU khi đã có pageObj thật sự (trang vừa copy
+    // từ file gốc, mang đúng cờ /Rotate của file gốc nếu có) và TRƯỚC khi trang bị xoay thêm bởi
+    // tính năng "Rotate pages" ở dưới (extraRotation), để luôn khớp đúng với hệ toạ độ mà pdf.js đã
+    // dùng lúc dựng canvas cho người dùng chỉnh sửa (chỉ phụ thuộc /Rotate GỐC của file, không phụ
+    // thuộc góc xoay thêm mà người dùng chọn qua "Rotate pages" — hai việc hoàn toàn độc lập nhau).
+    const rotInfo = getPageRotationTransform_(pageObj);
     for(const ed of p.edits){
       if(ed._nativeApplied) continue; // đã sửa thật trực tiếp trên content stream, không vẽ đè nữa
-      await drawEditOnPdfPage(pageObj, ed, H, editFont, fallbackFont, outDoc, imageEmbedCache);
+      await drawEditOnPdfPage(pageObj, ed, rotInfo, editFont, fallbackFont, outDoc, imageEmbedCache);
     }
 
     // ---- Áp dụng góc xoay trang (tính năng "Rotate pages") ----
