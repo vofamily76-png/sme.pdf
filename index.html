@@ -6315,6 +6315,93 @@ async function extractTableLinesForWord(idx){
   return { segments, lineWidth };
 }
 
+// ---------- Dò và trích xuất ẢNH NHÚNG (logo, con dấu, chữ ký...) để giữ lại khi xuất Word ----------
+// Rất nhiều mẫu văn bản (bảng báo giá, công văn...) có LOGO công ty ở đầu trang và/hoặc CON DẤU/
+// CHỮ KÝ dạng ảnh ở cuối trang. Đây là các đối tượng ẢNH thực sự trong PDF (không phải chữ, cũng
+// không phải đường kẻ vector) nên cách xuất Word trước đây (chỉ trích xuất CHỮ + ĐƯỜNG KẺ BẢNG)
+// bỏ sót hoàn toàn các ảnh này, khiến file Word xuất ra THIẾU hẳn logo/con dấu so với bản PDF gốc
+// — đúng như lỗi "nội dung không giống PDF gốc" đã gặp phải. Hàm dưới đây:
+//  1) Đọc operator list của trang (giống cách dò đường kẻ bảng ở trên) để tìm mọi lệnh vẽ ảnh
+//     (paintImageXObject/paintJpegXObject/paintImageMaskXObject) và tính đúng HỘP BAO (vị trí +
+//     kích thước thật trên trang) bằng cách áp ma trận biến đổi hiện hành (CTM) lên 4 góc của
+//     hình vuông đơn vị [0,0]-[1,1] mà PDF luôn dùng để vẽ ảnh.
+//  2) RENDER TOÀN TRANG ra canvas (dùng chính pdf.js, giống lúc hiển thị trang cho người dùng)
+//     rồi CẮT đúng vùng ảnh đó ra thành PNG riêng — cách này cho kết quả giống hệt những gì đang
+//     hiển thị trên trang mà không cần tự giải mã từng định dạng ảnh gốc (JPEG/CMYK/ảnh có mặt
+//     nạ trong suốt...), tránh rủi ro hiển thị sai màu hay bị vỡ ảnh.
+async function extractPageImagesForWord(idx, H){
+  const p = pages[idx];
+  const images = [];
+  if(p.type !== 'pdf') return images;
+  let page, opList;
+  try{
+    page = await p.doc.getPage(p.srcPage);
+    opList = await page.getOperatorList();
+  }catch(err){
+    console.warn('Không đọc được operator list để dò ảnh (trang '+(idx+1)+'):', err);
+    return images;
+  }
+  const OPS = pdfjsLib.OPS;
+  const { fnArray, argsArray } = opList;
+  let ctm = [1,0,0,1,0,0];
+  const stack = [];
+  const boxes = [];
+  for(let i=0;i<fnArray.length;i++){
+    const op = fnArray[i], args = argsArray[i];
+    if(op === OPS.save){ stack.push(ctm.slice()); continue; }
+    if(op === OPS.restore){ if(stack.length) ctm = stack.pop(); continue; }
+    if(op === OPS.transform){ ctm = mat3Mul_(ctm, args); continue; }
+    if(op === OPS.paintImageXObject || op === OPS.paintJpegXObject || op === OPS.paintImageMaskXObject){
+      // Ảnh trong PDF luôn được vẽ khít vào hình vuông đơn vị [0,0]-[1,1] rồi dùng CTM biến đổi
+      // ra đúng vị trí/kích thước thật trên trang -> áp CTM lên 4 góc hình vuông đó để lấy hộp bao
+      // (toạ độ PDF gốc, gốc dưới-trái) — làm đúng như cách dò đường kẻ bảng ở hàm phía trên.
+      const c0 = mat3Apply_(ctm,0,0), c1 = mat3Apply_(ctm,1,0), c2 = mat3Apply_(ctm,0,1), c3 = mat3Apply_(ctm,1,1);
+      const xs = [c0.x,c1.x,c2.x,c3.x], ys = [c0.y,c1.y,c2.y,c3.y];
+      const x0 = Math.min(...xs), x1 = Math.max(...xs);
+      const y0pdf = Math.min(...ys), y1pdf = Math.max(...ys);
+      if((x1-x0) < 3 || (y1pdf-y0pdf) < 3) continue; // bỏ ảnh quá nhỏ (thường là hoạ tiết/nét trang trí)
+      boxes.push({ x0, x1, y0pdf, y1pdf });
+    }
+  }
+  if(!boxes.length) return images;
+
+  // Render toàn trang ở độ phân giải cao (scale=3) để cắt ảnh cho sắc nét, không bị vỡ hạt khi
+  // chèn vào Word. viewport mặc định của pdf.js có gốc toạ độ TRÊN-TRÁI, đúng hệ đang dùng cho
+  // chữ (Edit Text) nên chỉ cần quy đổi y theo công thức H - y (H = chiều cao trang, đơn vị point).
+  const scale = 3;
+  let viewport, canvas, ctx;
+  try{
+    viewport = page.getViewport({ scale });
+    canvas = document.createElement('canvas');
+    canvas.width = Math.ceil(viewport.width);
+    canvas.height = Math.ceil(viewport.height);
+    ctx = canvas.getContext('2d');
+    await page.render({ canvasContext: ctx, viewport }).promise;
+  }catch(err){
+    console.warn('Không render được trang để cắt ảnh (trang '+(idx+1)+'):', err);
+    return images;
+  }
+
+  for(const b of boxes){
+    const yTop = H - b.y1pdf, yBottom = H - b.y0pdf; // quy đổi sang hệ Y-trên-trái (điểm/point)
+    const sx = Math.max(0, Math.round(b.x0*scale));
+    const sy = Math.max(0, Math.round(yTop*scale));
+    const cropW = Math.min(Math.round((b.x1-b.x0)*scale), canvas.width - sx);
+    const cropH = Math.min(Math.round((yBottom-yTop)*scale), canvas.height - sy);
+    if(sx >= canvas.width || sy >= canvas.height || cropW < 2 || cropH < 2) continue;
+    const crop = document.createElement('canvas');
+    crop.width = cropW; crop.height = cropH;
+    crop.getContext('2d').drawImage(canvas, sx, sy, cropW, cropH, 0, 0, cropW, cropH);
+    let dataUrl;
+    try{ dataUrl = crop.toDataURL('image/png'); }
+    catch(err){ console.warn('Không cắt được ảnh (trang '+(idx+1)+'):', err); continue; }
+    // isImage=true để các hàm dựng HTML (renderSingleLineRow_/renderMultiColumnRow_) nhận biết
+    // đây là một "dòng" đặc biệt cần vẽ bằng <img> thay vì <p>chữ</p>.
+    images.push({ x0: b.x0, x1: b.x1, y0: yTop, y1: yBottom, dataUrl, isImage: true });
+  }
+  return images;
+}
+
 // Trả về danh sách "dòng đang hiển thị" của một trang, kèm toạ độ (điểm/point,
 // gốc góc trên-trái trang — giống hệ toạ độ đã dùng cho Edit Text) + cỡ chữ +
 // màu chữ. Danh sách này GỘP CẢ: (1) chữ PDF thật / chữ OCR còn nguyên (chưa bị
@@ -6632,10 +6719,35 @@ function groupLinesIntoRows_(arr){
   return rows;
 }
 
+// Dựng HTML cho MỘT hàng chỉ chứa MỘT ẢNH (logo, con dấu, chữ ký...) đã được trích xuất bởi
+// extractPageImagesForWord — giữ đúng kích thước thật (theo point, giống kích thước trên PDF
+// gốc) và tự nhận diện canh trái/giữa/phải dựa trên vị trí ảnh so với chiều rộng trang, cùng
+// logic với dòng chữ để bố cục tổng thể (logo canh trái, con dấu canh phải...) vẫn tương đồng
+// bản gốc dù Word không tôn trọng position:absolute.
+function renderImageRow_(l, W, marginTop){
+  const mt = Math.max(0, marginTop).toFixed(2);
+  const imgW = Math.max(1, l.x1 - l.x0), imgH = Math.max(1, l.y1 - l.y0);
+  const centerX = l.x0 + imgW/2;
+  const rightGap = W - l.x1;
+  let alignStyle;
+  if(Math.abs(centerX - W/2) < W*0.08){
+    alignStyle = 'text-align:center;';
+  } else if(rightGap < l.x0*0.55 && l.x0 > W*0.35){
+    alignStyle = `text-align:right;margin-right:${Math.max(0,rightGap).toFixed(2)}pt;`;
+  } else {
+    alignStyle = `text-align:left;margin-left:${Math.max(0,l.x0).toFixed(2)}pt;`;
+  }
+  const html = `<p style="margin:${mt}pt 0 0 0;padding:0;line-height:0;${alignStyle}">`+
+    `<img src="${l.dataUrl}" style="width:${imgW.toFixed(2)}pt;height:${imgH.toFixed(2)}pt;" `+
+    `width="${Math.round(imgW)}" height="${Math.round(imgH)}"></p>\n`;
+  return { html, bottom: l.y0 + imgH };
+}
+
 // Dựng HTML cho MỘT hàng chỉ có 1 dòng chữ (trường hợp phổ biến nhất) — canh trái/giữa/phải
 // tự nhận diện dựa trên vị trí so với chiều rộng trang W, giữ khoảng cách dọc qua marginTop.
 function renderSingleLineRow_(l, W, marginTop){
   const mt = Math.max(0, marginTop).toFixed(2);
+  if(l.isImage) return renderImageRow_(l, W, marginTop);
   const fs = Math.max(6, l.fontSize).toFixed(2);
   const lh = Math.max(6, l.fontSize) * 1.22;
   const x1 = (l.x1 != null && l.x1 > l.x0) ? l.x1 : (l.x0 + String(l.text).length*(l.fontSize||12)*0.5);
@@ -6706,6 +6818,13 @@ function renderMultiColumnRow_(row, W, marginTop){
     let align = 'left';
     if(rightGap < leftGap*0.6) align = 'right';
     else if(leftGap>8 && rightGap>8 && Math.abs(leftGap-rightGap) < Math.max(leftGap,rightGap)*0.35) align = 'center';
+    if(l.isImage){
+      const imgW = Math.max(1, l.x1-l.x0), imgH = Math.max(1, l.y1-l.y0);
+      html += `<td style="width:${colW.toFixed(2)}pt;vertical-align:top;border:none;padding:0;" width="${Math.round(colW)}">`+
+                `<div style="text-align:${align};"><img src="${l.dataUrl}" style="width:${imgW.toFixed(2)}pt;height:${imgH.toFixed(2)}pt;" width="${Math.round(imgW)}" height="${Math.round(imgH)}"></div></td>`;
+      bottom = Math.max(bottom, l.y0 + imgH);
+      continue;
+    }
     const fs = Math.max(6, l.fontSize).toFixed(2);
     const text = String(l.text).split('\n').map(s=>escapeHtml(s)).join('<br>');
     // SỬA LỖI: trước đây căn trái/phải luôn ép chữ sát mép cột (colLeft/colRight), làm mất khoảng
@@ -6733,7 +6852,7 @@ function renderMultiColumnRow_(row, W, marginTop){
 // nơi gọi tiếp tục nối thêm nội dung phía sau (ví dụ bảng, hoặc đoạn chữ tiếp theo) đúng khoảng
 // cách dọc như bản gốc.
 function renderFlowRows_(arr, W, startBottom){
-  const rows = groupLinesIntoRows_(arr.filter(l=>l.text && l.text.trim()));
+  const rows = groupLinesIntoRows_(arr.filter(l=>l.isImage || (l.text && l.text.trim())));
   let html = '';
   let bottom = startBottom || 0;
   for(const row of rows){
@@ -6755,30 +6874,38 @@ async function buildWordPageHtml(idx){
   let tableLines = { segments: [], lineWidth: 1 };
   try{ tableLines = await extractTableLinesForWord(idx); }
   catch(err){ console.warn('Không dò được đường kẻ bảng trang '+(idx+1)+':', err); }
+  // Trích xuất ảnh nhúng (logo đầu trang, con dấu/chữ ký cuối trang...) — xem chú thích chi tiết
+  // tại hàm extractPageImagesForWord phía trên. Đây là phần nội dung TRƯỚC ĐÂY BỊ BỎ SÓT hoàn
+  // toàn khi xuất Word, khiến file Word trông "không giống với file PDF gốc".
+  let images = [];
+  try{ images = await extractPageImagesForWord(idx, H); }
+  catch(err){ console.warn('Không trích được ảnh trang '+(idx+1)+':', err); }
 
   let inner = '';
   const grid = buildTableFromSegments_(tableLines, lines, H);
 
   if(grid){
-    // Có bảng thật: in phần chữ phía TRÊN bảng, rồi bảng, rồi phần chữ phía DƯỚI bảng — đúng
-    // thứ tự xuất hiện trên trang gốc. Khoảng cách dọc (bottom) được nối liền qua cả 3 phần để
-    // tổng thể vẫn giữ đúng nhịp cách dòng/cách đoạn như bản gốc dù không dùng position nữa.
-    const before = grid.outside.filter(l => l.y0 < grid.top);
-    const after = grid.outside.filter(l => l.y0 >= grid.top);
+    // Có bảng thật: in phần chữ (+ ảnh) phía TRÊN bảng, rồi bảng, rồi phần chữ (+ ảnh) phía DƯỚI
+    // bảng — đúng thứ tự xuất hiện trên trang gốc. Ảnh được ghép chung với chữ theo đúng vị trí
+    // dọc (y0) để ví dụ logo (thường nằm trên bảng) và con dấu/chữ ký (thường nằm dưới bảng) rơi
+    // đúng vào nhóm trước/sau bảng tương ứng. Khoảng cách dọc (bottom) được nối liền qua cả 3
+    // phần để tổng thể vẫn giữ đúng nhịp cách dòng/cách đoạn như bản gốc dù không dùng position.
+    const before = grid.outside.filter(l => l.y0 < grid.top).concat(images.filter(im => im.y0 < grid.top));
+    const after = grid.outside.filter(l => l.y0 >= grid.top).concat(images.filter(im => im.y0 >= grid.top));
     const beforeR = renderFlowRows_(before, W, 0);
     const tableMarginTop = Math.max(0, grid.top - beforeR.bottom);
     const tableHtml = grid.html.replace('__TOPMARGIN__', tableMarginTop.toFixed(2));
     const afterR = renderFlowRows_(after, W, grid.bottom);
     inner += beforeR.html + tableHtml + afterR.html;
-  } else if(lines.length){
+  } else if(lines.length || images.length){
     // Không đủ đường kẻ để ghép thành bảng thật (trang không có bảng, hoặc bảng vẽ theo kiểu
-    // đặc biệt không dò được) -> chỉ dựng lại phần chữ theo luồng bình thường. (Các đường kẻ dò
-    // được trong trường hợp này KHÔNG được vẽ nữa vì trước đây dùng <div position:absolute>,
+    // đặc biệt không dò được) -> chỉ dựng lại phần chữ + ảnh theo luồng bình thường. (Các đường
+    // kẻ dò được trong trường hợp này KHÔNG được vẽ nữa vì trước đây dùng <div position:absolute>,
     // vốn bị Word bỏ qua hoàn toàn nên chưa từng hiển thị được trong file Word xuất ra.)
-    inner += renderFlowRows_(lines, W, 0).html;
+    inner += renderFlowRows_(lines.concat(images), W, 0).html;
   }
 
-  if(!lines.length && !tableLines.segments.length){
+  if(!lines.length && !tableLines.segments.length && !images.length){
     return `<div style="width:${W.toFixed(2)}pt;margin:0 auto;background:#fff;">`+
            `<p style="margin:0;color:#9aa0a8;font-style:italic;">[Trang không có văn bản]</p></div>`;
   }
