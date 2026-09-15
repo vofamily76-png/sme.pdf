@@ -554,6 +554,94 @@
   </div>
 </div>
 
+<!-- ===================== MODAL: INSERT IMAGE (chọn trang để chèn ảnh) ===================== -->
+<div id="insertImageModal" style="
+  position:fixed;inset:0;z-index:1100;display:none;
+  background:rgba(0,0,0,.55);
+  align-items:center;justify-content:center;
+  font-family:'Segoe UI',Roboto,Arial,sans-serif;color:#eceff1;">
+  <div style="
+    background:#25282e;border:1px solid #454a52;border-radius:10px;
+    padding:22px 24px;width:660px;max-width:94vw;max-height:88vh;overflow:auto;
+    box-shadow:0 10px 40px rgba(0,0,0,.5);">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+      <div style="font-weight:600;font-size:15px;">🖼️ Insert Image — chọn trang cần chèn</div>
+      <button type="button" id="iiCloseBtn" style="
+        background:transparent;border:none;color:#9aa0a8;font-size:18px;cursor:pointer;line-height:1;">✕</button>
+    </div>
+    <div style="font-size:12px;color:#9aa0a8;margin-bottom:12px;">
+      Chọn một hoặc nhiều trang để chèn ảnh vào. Ảnh sẽ được đặt vào từng trang đã chọn theo đúng
+      vị trí và tỉ lệ bên dưới (tính riêng theo kích thước thật của mỗi trang). Sau khi chèn, bạn vẫn
+      có thể kéo để di chuyển hoặc kéo 4 góc để đổi kích thước trên từng trang, và bấm Undo để hoàn tác.
+    </div>
+
+    <!-- Xem trước ảnh + tuỳ chọn vị trí / kích thước -->
+    <div style="display:flex;gap:14px;align-items:flex-start;background:#1f2228;border:1px solid #3a3f47;
+      border-radius:8px;padding:12px;margin-bottom:12px;flex-wrap:wrap;">
+      <div style="width:104px;height:104px;flex:none;background:#14161a;border:1px solid #3a3f47;border-radius:6px;
+        display:flex;align-items:center;justify-content:center;overflow:hidden;">
+        <img id="iiPreview" alt="" style="max-width:100%;max-height:100%;object-fit:contain;display:block;">
+      </div>
+      <div style="flex:1;min-width:250px;">
+        <div id="iiFileInfo" style="font-size:12px;color:#9aa0a8;margin-bottom:10px;word-break:break-all;"></div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;">
+          <label style="font-size:12px;color:#9aa0a8;display:flex;flex-direction:column;gap:4px;flex:1;min-width:150px;">
+            Vị trí đặt ảnh trong trang
+            <select id="iiPosition" style="background:#2c3037;color:#eceff1;border:1px solid #454a52;
+              border-radius:6px;padding:7px 8px;font-size:12.5px;">
+              <option value="center" selected>Giữa trang</option>
+              <option value="top-left">Trên — trái</option>
+              <option value="top-center">Trên — giữa</option>
+              <option value="top-right">Trên — phải</option>
+              <option value="middle-left">Giữa — trái</option>
+              <option value="middle-right">Giữa — phải</option>
+              <option value="bottom-left">Dưới — trái</option>
+              <option value="bottom-center">Dưới — giữa</option>
+              <option value="bottom-right">Dưới — phải</option>
+            </select>
+          </label>
+          <label style="font-size:12px;color:#9aa0a8;display:flex;flex-direction:column;gap:4px;width:150px;">
+            Bề rộng ảnh (% bề rộng trang)
+            <input type="number" id="iiWidthPct" min="5" max="100" step="1" value="50" style="background:#2c3037;
+              color:#eceff1;border:1px solid #454a52;border-radius:6px;padding:7px 8px;font-size:12.5px;">
+          </label>
+        </div>
+        <div style="font-size:11.5px;color:#6f7680;margin-top:8px;">
+          Ảnh luôn giữ nguyên tỉ lệ khung hình gốc; nếu quá cao so với trang sẽ tự thu nhỏ cho vừa.
+        </div>
+      </div>
+    </div>
+
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;gap:10px;flex-wrap:wrap;">
+      <label style="display:flex;align-items:center;gap:8px;font-size:12.5px;cursor:pointer;">
+        <input type="checkbox" id="iiSelectAll"> Chọn tất cả các trang
+      </label>
+      <div style="display:flex;align-items:center;gap:6px;">
+        <input type="text" id="iiRangeInput" placeholder="vd: 1,3,5-8" style="background:#2c3037;color:#eceff1;
+          border:1px solid #454a52;border-radius:6px;padding:6px 8px;font-size:12px;width:130px;">
+        <button type="button" id="iiRangeApply" style="padding:6px 10px;border:1px solid #454a52;border-radius:6px;
+          background:transparent;color:#eceff1;font-size:12px;cursor:pointer;">Chọn theo số trang</button>
+      </div>
+      <span id="iiSelectedCount" style="font-size:11.5px;color:#9aa0a8;"></span>
+    </div>
+
+    <div id="iiList" style="
+      display:grid;grid-template-columns:repeat(auto-fill,minmax(86px,1fr));gap:10px;
+      margin-bottom:14px;max-height:320px;overflow:auto;padding:2px;"></div>
+
+    <div id="iiError" style="min-height:18px;color:#ff8a80;font-size:12px;margin-bottom:4px;"></div>
+
+    <div style="display:flex;gap:8px;margin-top:6px;">
+      <button type="button" id="iiCancelBtn" style="
+        flex:1;padding:10px;border:1px solid #454a52;border-radius:6px;background:transparent;color:#eceff1;
+        font-weight:600;font-size:13px;cursor:pointer;">Cancel</button>
+      <button type="button" id="iiConfirmBtn" style="
+        flex:1;padding:10px;border:none;border-radius:6px;background:#e2402c;color:#fff;
+        font-weight:600;font-size:13px;cursor:pointer;">🖼️ Chèn ảnh vào trang đã chọn</button>
+    </div>
+  </div>
+</div>
+
 <!-- ===================== MODAL: ROTATE PAGES (chọn trang để xoay 90°/180°) ===================== -->
 <div id="rotatePagesModal" style="
   position:fixed;inset:0;z-index:1100;display:none;
@@ -898,7 +986,7 @@
 
   <button class="tbtn" data-tool="select" id="toolSelect"><span class="ic">🖱️</span>Select</button>
   <button class="tbtn" data-tool="textselect" id="toolTextSelect" title="Bôi đen văn bản trong PDF để copy (Ctrl+C). Có thể là chữ PDF thật hoặc chữ OCR từ ảnh/scan. Sau khi bôi đen, bấm nút 'Đánh dấu' nổi lên để tô sáng đúng đoạn đã chọn."><span class="ic">🔤</span>Select text to copy</button>
-  <button class="tbtn" id="btnInsertImage" title="Chèn ảnh (PNG/JPG) vào trang đang xem — sau khi chèn có thể kéo để di chuyển, kéo 4 góc để đổi kích thước"><span class="ic">🖼️</span>Insert Image</button>
+  <button class="tbtn" id="btnInsertImage" title="Chèn ảnh (PNG/JPG) — sau khi chọn ảnh, bạn CHỌN TRANG cần chèn (một hoặc nhiều trang), chỉnh vị trí/kích thước rồi bấm Chèn; ảnh chèn xong có thể kéo để di chuyển, kéo 4 góc để đổi kích thước"><span class="ic">🖼️</span>Insert Image</button>
   <input type="file" id="insertImageInput" accept="image/png,image/jpeg,image/jpg,image/webp,image/gif,image/bmp" style="display:none">
   <button class="tbtn" id="btnCopyImage" title="Copy ảnh đang chọn (Ctrl+C) — dùng được để dán lại trong chính PDF này, và dán sang cả ứng dụng khác (Word, Paint...) nếu trình duyệt hỗ trợ"><span class="ic">📋</span>Copy</button>
   <button class="tbtn" id="btnPasteImage" title="Dán ảnh (Ctrl+V) — ưu tiên ảnh vừa copy từ ứng dụng khác (vd: công cụ chụp màn hình, trình duyệt), nếu không có sẽ dán ảnh vừa Copy trong chính PDF này"><span class="ic">📌</span>Paste</button>
@@ -2784,7 +2872,9 @@ async function insertImageFile(file){
     reader.readAsDataURL(file);
   });
   const { pngDataUrl, w, h } = await normalizeImageToPng_(dataUrl);
-  await insertImageDataUrl_(pngDataUrl, w, h);
+  // Không chèn thẳng vào trang đang xem nữa: mở hộp thoại để NGƯỜI DÙNG CHỌN TRANG cần chèn
+  // (một hoặc nhiều trang), kèm tuỳ chọn vị trí đặt ảnh và bề rộng ảnh theo % bề rộng trang.
+  openInsertImageModal_(pngDataUrl, w, h, file.name, file.size);
 }
 
 // Vẽ lại 1 ảnh (từ data URL bất kỳ: PNG/JPG/WEBP/GIF/BMP...) qua <canvas> rồi xuất lại thành PNG —
@@ -2810,26 +2900,302 @@ async function normalizeImageToPng_(dataUrl){
 // lần liên tiếp không bị các ảnh đè khít lên nhau, giống hành vi Paste quen thuộc của Word/PowerPoint).
 async function insertImageDataUrl_(pngDataUrl, naturalW, naturalH, opts){
   opts = opts || {};
-  const pageW = pdfCanvas.width/scale || 595;
-  const pageH = pdfCanvas.height/scale || 842;
-  const maxW = pageW * 0.5, maxH = pageH * 0.5;
-  let w = naturalW, h = naturalH;
-  const shrink = Math.min(maxW/w, maxH/h, 1);
-  w *= shrink; h *= shrink;
-  const MIN_DIM = 60;
+  const idx = (typeof opts.pageIndex === 'number' && pages[opts.pageIndex]) ? opts.pageIndex : currentIndex;
+  const editIdx = await addImageEditToPage_(idx, pngDataUrl, naturalW, naturalH, opts);
+  await focusInsertedImage_(idx, editIdx);
+  return editIdx;
+}
+
+// Lấy kích thước THẬT (đơn vị point của PDF, tức toạ độ chưa nhân scale hiển thị) của MỘT trang bất
+// kỳ theo chỉ số idx — không phụ thuộc trang nào đang được xem trên màn hình. Đây là mảnh còn thiếu
+// khiến trước đây chỉ chèn ảnh được vào đúng trang đang xem: code cũ suy ra kích thước trang từ
+// pdfCanvas (canvas của trang ĐANG hiển thị), nên với trang khác — nhất là tài liệu có các trang
+// khổ giấy/hướng giấy khác nhau — ảnh sẽ bị đặt sai vị trí, thậm chí nằm ngoài mép trang.
+async function getPageSizePt_(idx){
+  const p = pages[idx];
+  if(!p) return { w: 595, h: 842 };
+  if(p.type === 'pdf'){
+    try{
+      const page = await p.doc.getPage(p.srcPage);
+      const vp = page.getViewport({ scale: 1 }); // scale 1 = đúng hệ toạ độ đang dùng cho edits
+      return { w: vp.width, h: vp.height };
+    }catch(err){
+      console.warn('Không đọc được kích thước trang', idx+1, err);
+    }
+  }
+  return { w: p.width || 595, h: p.height || 842 };
+}
+
+// Tính khung (x, y, w, h) đặt ảnh trong một trang có kích thước pageW x pageH.
+//  - widthPct (nếu có): bề rộng ảnh = widthPct% bề rộng trang; nếu không có thì giữ hành vi cũ
+//    (tối đa 50% mỗi chiều của trang).
+//  - Luôn giữ nguyên tỉ lệ khung hình gốc và tự thu nhỏ thêm nếu ảnh cao quá khổ trang.
+//  - position: center | top-left | top-center | top-right | middle-left | middle-right |
+//    bottom-left | bottom-center | bottom-right (mặc định center).
+//  - offset: dịch chéo thêm vài point (dùng cho Paste nhiều lần liên tiếp để các ảnh không đè khít).
+function computeImagePlacement_(pageW, pageH, naturalW, naturalH, opts){
+  opts = opts || {};
+  const ratio = (naturalH > 0 && naturalW > 0) ? (naturalH / naturalW) : 1;
+  let w, h;
+  if(opts.widthPct){
+    const pct = Math.min(100, Math.max(1, Number(opts.widthPct) || 50));
+    w = pageW * pct / 100;
+    h = w * ratio;
+  } else {
+    w = naturalW; h = naturalH;
+    const shrink = Math.min((pageW*0.5)/w, (pageH*0.5)/h, 1);
+    w *= shrink; h *= shrink;
+  }
+  // Không để ảnh vượt quá khổ trang (95% để còn chút lề nhìn cho thoáng).
+  const fit = Math.min((pageW*0.98)/w, (pageH*0.95)/h, 1);
+  w *= fit; h *= fit;
+  const MIN_DIM = 24;
   if(Math.max(w,h) < MIN_DIM){
     const grow = MIN_DIM / Math.max(w,h);
     w *= grow; h *= grow;
   }
-  let x = (pageW - w)/2, y = (pageH - h)/2;
-  if(opts.offset){ x += opts.offset; y += opts.offset; }
 
-  pushUndo(currentIndex);
-  cur().edits.push({ type:'image', x, y, w, h, imageDataUrl: pngDataUrl });
+  const margin = Math.min(24, pageW*0.04, pageH*0.04);
+  const pos = opts.position || 'center';
+  let x, y;
+  if(pos.indexOf('left') >= 0)        x = margin;
+  else if(pos.indexOf('right') >= 0)  x = pageW - w - margin;
+  else                                x = (pageW - w)/2;
+  if(pos.indexOf('top') >= 0)         y = margin;
+  else if(pos.indexOf('bottom') >= 0) y = pageH - h - margin;
+  else                                y = (pageH - h)/2;
+
+  if(opts.offset){ x += opts.offset; y += opts.offset; }
+  // Kẹp lại trong trang để ảnh không bao giờ rơi ra ngoài mép (vd khi cộng dồn offset lúc paste nhiều lần).
+  x = Math.max(0, Math.min(x, Math.max(0, pageW - w)));
+  y = Math.max(0, Math.min(y, Math.max(0, pageH - h)));
+  return { x, y, w, h };
+}
+
+// Thêm một "edit" ảnh vào ĐÚNG trang idx (bất kể trang đó có đang hiển thị hay không) và trả về chỉ
+// số của edit vừa thêm trong pages[idx].edits. Không tự chuyển trang/không tự vẽ lại — việc đó do
+// nơi gọi quyết định (chèn hàng loạt nhiều trang thì chỉ cần làm mới hiển thị đúng một lần ở cuối).
+async function addImageEditToPage_(idx, pngDataUrl, naturalW, naturalH, opts){
+  const p = pages[idx];
+  if(!p) throw new Error('Trang ' + (idx+1) + ' không tồn tại.');
+  const size = await getPageSizePt_(idx);
+  const box = computeImagePlacement_(size.w, size.h, naturalW, naturalH, opts);
+  pushUndo(idx);
+  p.edits.push({ type:'image', x: box.x, y: box.y, w: box.w, h: box.h, imageDataUrl: pngDataUrl });
+  return p.edits.length - 1;
+}
+
+// Chuyển tới trang idx (nếu chưa ở đó), bật công cụ Select và chọn sẵn ảnh vừa chèn để người dùng
+// kéo di chuyển / kéo 4 góc đổi kích thước được ngay.
+async function focusInsertedImage_(idx, editIdx){
+  if(idx !== currentIndex){
+    await renderPage(idx); // renderPage đặt lại selectedEditIndex = -1 nên phải chọn ảnh SAU khi gọi
+  }
   document.getElementById('toolSelect').click(); // chuyển sang công cụ Select (cũng vẽ lại overlay)
-  selectedEditIndex = cur().edits.length - 1;     // rồi tự chọn luôn ảnh vừa chèn
+  if(typeof editIdx === 'number' && editIdx >= 0) selectedEditIndex = editIdx;
   redrawOverlay();
 }
+
+// ---------- Hộp thoại chọn trang để chèn ảnh (Insert Image) ----------
+// Luồng đầy đủ: bấm "Insert Image" -> chọn file ảnh -> ảnh được chuẩn hoá về PNG -> MỞ hộp thoại này
+// để chọn trang (mặc định chọn sẵn trang đang xem), chọn vị trí đặt ảnh và bề rộng ảnh -> bấm "Chèn
+// ảnh vào trang đã chọn" -> ảnh được thêm vào từng trang đã chọn, rồi nhảy tới trang đầu tiên trong
+// số đó và chọn sẵn ảnh vừa chèn.
+const insertImageModal = document.getElementById('insertImageModal');
+const iiList = document.getElementById('iiList');
+const iiSelectAll = document.getElementById('iiSelectAll');
+const iiSelectedCount = document.getElementById('iiSelectedCount');
+const iiError = document.getElementById('iiError');
+const iiPreview = document.getElementById('iiPreview');
+const iiFileInfo = document.getElementById('iiFileInfo');
+const iiPosition = document.getElementById('iiPosition');
+const iiWidthPct = document.getElementById('iiWidthPct');
+const iiConfirmBtn = document.getElementById('iiConfirmBtn');
+
+// Ảnh đang chờ được chèn (đã chuẩn hoá PNG) — giữ ở đây trong lúc hộp thoại đang mở.
+let pendingInsertImage = null; // { dataUrl, w, h, name }
+
+document.getElementById('iiCancelBtn').addEventListener('click', closeInsertImageModal);
+document.getElementById('iiCloseBtn').addEventListener('click', closeInsertImageModal);
+insertImageModal.addEventListener('click', (e) => { if(e.target === insertImageModal) closeInsertImageModal(); });
+
+function closeInsertImageModal(){
+  insertImageModal.style.display = 'none';
+  pendingInsertImage = null;
+  iiList.innerHTML = '';
+  iiPreview.removeAttribute('src');
+}
+
+function updateIiSelectedCount(){
+  const total = iiList.querySelectorAll('.ii-checkbox').length;
+  const checked = iiList.querySelectorAll('.ii-checkbox:checked').length;
+  iiSelectedCount.textContent = checked>0 ? `Đã chọn ${checked}/${total} trang` : `${total} trang`;
+  iiSelectAll.checked = total>0 && checked===total;
+  iiSelectAll.indeterminate = checked>0 && checked<total;
+}
+
+function setIiChecked_(indexSet){
+  iiList.querySelectorAll('.ii-checkbox').forEach(cb => {
+    cb.checked = indexSet.has(Number(cb.dataset.idx));
+    cb.closest('.dp-item').classList.toggle('selected', cb.checked);
+  });
+  updateIiSelectedCount();
+}
+
+// Đọc chuỗi kiểu "1,3,5-8" thành tập chỉ số trang 0-based. Ném lỗi nếu có phần không hiểu được.
+function parsePageRangeText_(text, total){
+  const out = new Set();
+  const raw = String(text || '').trim();
+  if(!raw) return out;
+  for(const part of raw.split(/[,;\s]+/)){
+    const s = part.trim();
+    if(!s) continue;
+    const m = s.match(/^(\d+)\s*[-–—]\s*(\d+)$/);
+    if(m){
+      let a = parseInt(m[1],10), b = parseInt(m[2],10);
+      if(a > b){ const t=a; a=b; b=t; }
+      for(let i=a;i<=b;i++) if(i>=1 && i<=total) out.add(i-1);
+    } else if(/^\d+$/.test(s)){
+      const n = parseInt(s,10);
+      if(n>=1 && n<=total) out.add(n-1);
+    } else {
+      throw new Error('Không hiểu phần "' + s + '" — hãy nhập dạng: 1,3,5-8');
+    }
+  }
+  return out;
+}
+
+async function openInsertImageModal_(pngDataUrl, naturalW, naturalH, fileName, fileSize){
+  if(!pages.length){ alert('Hãy mở một file PDF trước.'); return; }
+  pendingInsertImage = { dataUrl: pngDataUrl, w: naturalW, h: naturalH, name: fileName || 'image.png' };
+  iiError.textContent = '';
+  iiPreview.src = pngDataUrl;
+  const sizeTxt = fileSize ? (fileSize > 1024*1024
+      ? (fileSize/1024/1024).toFixed(1) + ' MB'
+      : Math.max(1, Math.round(fileSize/1024)) + ' KB')
+    : '';
+  iiFileInfo.textContent = (fileName ? fileName + ' — ' : '') + naturalW + ' × ' + naturalH + ' px'
+    + (sizeTxt ? ' — ' + sizeTxt : '');
+  iiList.innerHTML = '';
+  insertImageModal.style.display = 'flex';
+
+  // Dựng lưới trang trước (khung rỗng), rồi vẽ ảnh thu nhỏ dần dần để mở hộp thoại ngay lập tức.
+  const items = [];
+  for(let i=0;i<pages.length;i++){
+    const item = document.createElement('label');
+    item.className = 'dp-item';
+    item.dataset.idx = i;
+
+    const wrap = document.createElement('div');
+    wrap.className = 'dp-thumb-wrap';
+    const c = document.createElement('canvas');
+    wrap.appendChild(c);
+
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.className = 'dp-checkbox ii-checkbox';
+    cb.dataset.idx = i;
+    if(i === currentIndex) cb.checked = true; // mặc định chọn sẵn trang đang xem
+    cb.addEventListener('change', () => {
+      item.classList.toggle('selected', cb.checked);
+      updateIiSelectedCount();
+    });
+    wrap.appendChild(cb);
+
+    const pnum = document.createElement('div');
+    pnum.className = 'dp-pnum';
+    pnum.textContent = 'Trang ' + (i+1);
+
+    item.appendChild(wrap);
+    item.appendChild(pnum);
+    if(cb.checked) item.classList.add('selected');
+    iiList.appendChild(item);
+    items.push({ idx:i, canvas:c });
+  }
+  updateIiSelectedCount();
+
+  // Vẽ ảnh thu nhỏ từng trang (dùng chung renderDpThumb() với modal Delete page / Extract pages).
+  for(const { idx, canvas } of items){
+    if(!insertImageModal.style.display || insertImageModal.style.display === 'none') return; // đã đóng giữa chừng
+    try{
+      await renderDpThumb(idx, canvas);
+      applyCanvasRotation_(canvas, getPageRotation_(pages[idx]));
+    }catch(err){ console.warn('Không vẽ được ảnh thu nhỏ trang', idx+1, err); }
+  }
+}
+
+iiSelectAll.addEventListener('change', (e) => {
+  iiList.querySelectorAll('.ii-checkbox').forEach(cb => {
+    cb.checked = e.target.checked;
+    cb.closest('.dp-item').classList.toggle('selected', cb.checked);
+  });
+  updateIiSelectedCount();
+});
+
+document.getElementById('iiRangeApply').addEventListener('click', () => {
+  try{
+    const set = parsePageRangeText_(document.getElementById('iiRangeInput').value, pages.length);
+    if(!set.size){
+      iiError.textContent = 'Không có số trang hợp lệ nào trong ô nhập (tài liệu có ' + pages.length + ' trang).';
+      return;
+    }
+    iiError.textContent = '';
+    setIiChecked_(set);
+  }catch(err){
+    iiError.textContent = err.message;
+  }
+});
+
+iiConfirmBtn.addEventListener('click', async () => {
+  if(!pendingInsertImage){
+    iiError.textContent = 'Chưa có ảnh nào đang chờ chèn — hãy bấm "Insert Image" và chọn lại file ảnh.';
+    return;
+  }
+  const selected = Array.from(iiList.querySelectorAll('.ii-checkbox:checked'))
+    .map(cb => Number(cb.dataset.idx))
+    .sort((a,b)=>a-b);
+  if(selected.length === 0){
+    iiError.textContent = 'Hãy chọn ít nhất 1 trang để chèn ảnh.';
+    return;
+  }
+  const pct = Number(iiWidthPct.value);
+  if(!isFinite(pct) || pct < 5 || pct > 100){
+    iiError.textContent = 'Bề rộng ảnh phải nằm trong khoảng 5% – 100% bề rộng trang.';
+    return;
+  }
+
+  const img = pendingInsertImage;
+  const opts = { position: iiPosition.value, widthPct: pct };
+  iiError.textContent = '';
+  iiConfirmBtn.disabled = true;
+  iiConfirmBtn.textContent = 'Đang chèn ảnh…';
+  try{
+    const firstIdx = selected[0];
+    let firstEditIdx = -1;
+    for(const idx of selected){
+      const editIdx = await addImageEditToPage_(idx, img.dataUrl, img.w, img.h, opts);
+      if(idx === firstIdx) firstEditIdx = editIdx;
+    }
+    closeInsertImageModal();
+    // Nhảy tới trang đầu tiên vừa chèn và chọn sẵn ảnh ở đó để chỉnh ngay nếu muốn.
+    await focusInsertedImage_(firstIdx, firstEditIdx);
+    // Các trang còn lại đang hiển thị dưới dạng xem trước TĨNH -> vẽ lại để thấy ngay ảnh vừa chèn.
+    for(const idx of selected){
+      if(idx !== currentIndex && pageSlots[idx]){
+        renderStaticPreview(idx).catch(err => console.warn('Không vẽ lại được xem trước trang', idx+1, err));
+      }
+    }
+    showToast_(selected.length === 1
+      ? '🖼️ Đã chèn ảnh vào trang ' + (selected[0]+1) + '.'
+      : '🖼️ Đã chèn ảnh vào ' + selected.length + ' trang: ' + selected.map(i=>i+1).join(', ') + '.');
+  }catch(err){
+    console.error('Lỗi khi chèn ảnh vào các trang đã chọn:', err);
+    iiError.textContent = 'Không chèn được ảnh: ' + (err && err.message ? err.message : err);
+  }finally{
+    iiConfirmBtn.disabled = false;
+    iiConfirmBtn.textContent = '🖼️ Chèn ảnh vào trang đã chọn';
+  }
+});
 
 // ---------- Copy / Paste ảnh ----------
 // "Clipboard" nội bộ trong app — luôn được ghi khi bấm Copy, dùng làm phương án dự phòng lúc Paste
