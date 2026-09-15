@@ -7099,15 +7099,112 @@ document.getElementById('ewConfirmBtn').addEventListener('click', async () => {
 // Cách tiếp cận: dựng lại đầy đủ tài liệu PDF của các trang được chọn — đã áp dụng MỌI chỉnh sửa
 // hiện có trong bộ nhớ, dùng CHUNG buildEditedOutDoc()/saveOutDocWithVietWidthFix() với "Save PDF"/
 // "In PDF" phía trên để đảm bảo nội dung xuất ra luôn khớp 100% với những gì đang hiển thị/đã
-// chỉnh sửa trên màn hình. Sau đó với MỖI TRANG, ta tách làm 2 lớp:
-//   (1) LỚP CHỮ THẬT: dùng chính pdf.js renderTextLayer() (API pdf.js đang dùng cho tính năng
-//       "Chọn văn bản" ở trên) để lấy đúng vị trí (x/y), cỡ chữ và phông của từng đoạn chữ trên
-//       trang, rồi tạo lại thành các textbox THẬT trong PowerPoint bằng slide.addText() — gõ, sửa,
-//       bôi đậm/nghiêng, đổi cỡ chữ... được trực tiếp trong PowerPoint, không phải ảnh.
-//   (2) LỚP NỀN ĐỒ HỌA: vẽ lại trang bằng canvas như cũ để giữ khung/đường kẻ/màu nền/logo/sơ đồ
-//       tổ chức... nhưng VÔ HIỆU HOÁ lệnh vẽ chữ (fillText/strokeText) khi vẽ để chữ không bị vẽ 2
-//       lần chồng lên nhau (vì chữ thật đã có textbox riêng ở lớp (1) rồi).
-// Nhờ vậy PowerPoint xuất ra vẫn giữ đúng bố cục/màu sắc như bản gốc mà chữ vẫn CHỈNH SỬA được.
+// chỉnh sửa trên màn hình. Sau đó với MỖI TRANG, ta tách làm 3 lớp CÓ THỂ CHỈNH SỬA RIÊNG BIỆT:
+//   (1) LỚP CHỮ THẬT: tính vị trí/cỡ/đậm-nghiêng/màu từng đoạn chữ bằng chính ma trận của pdf.js
+//       (Util.transform) + tên font nhúng thật (page.commonObjs), rồi tạo lại thành textbox THẬT
+//       bằng slide.addText() — gõ, sửa, bôi đậm/nghiêng, đổi cỡ chữ... trực tiếp trong PowerPoint.
+//   (2) LỚP HÌNH KHỐI VECTOR: bóc tách các hình chữ nhật (khung/ô bảng/thẻ màu...) được VẼ THẬT
+//       bằng lệnh vector trong PDF (không phải nằm trong ảnh) qua page.getOperatorList(), rồi tạo
+//       lại thành shape PowerPoint thật bằng slide.addShape() — di chuyển, đổi màu nền/viền, đổi
+//       kích thước RIÊNG TỪNG Ô được, tách biệt hẳn với các ô khác (không còn dính liền nhau).
+//   (3) LỚP NỀN ĐỒ HỌA (ảnh): phần còn lại (logo, hoạ tiết, ảnh minh hoạ nhúng sẵn trong PDF, các
+//       hình phức tạp như oval/đường cong) vẫn giữ dạng ảnh nền — sau khi đã "xoá" đúng vùng chữ
+//       (lớp 1) và vùng hình khối vector (lớp 2) khỏi ảnh này (tô lại đúng màu nền cục bộ tại đó)
+//       để không bị vẽ chồng/trùng lặp với 2 lớp thật ở trên.
+// Nhờ vậy PowerPoint xuất ra vẫn giữ đúng bố cục/màu sắc như bản gốc mà chữ VÀ các khung/ô đều
+// chỉnh sửa, di chuyển, tách rời riêng biệt được — không phải toàn bộ là 1 ảnh phẳng nữa.
+
+// Bóc tách các HÌNH CHỮ NHẬT được vẽ thật bằng lệnh vector trong PDF (khung, ô bảng, thẻ màu...) —
+// KHÔNG phải những hình nằm sẵn trong ảnh nhúng (logo, hoạ tiết, oval/đường cong phức tạp — những
+// thứ đó vẫn giữ nguyên trong ảnh nền, không tách). Đọc qua page.getOperatorList() — danh sách lệnh
+// vẽ gốc của PDF — và tự mô phỏng lại trạng thái đồ hoạ (CTM, màu tô/viền, độ dày nét, độ trong
+// suốt, nét đứt) theo đúng ngữ nghĩa save/restore của PDF để xác định đúng từng hình chữ nhật đã
+// được TÔ và/hay VIỀN (bỏ qua các hình chỉ dùng để clip, không thực sự vẽ ra màn hình).
+async function extractVectorRects(page, vp1){
+  const opList = await page.getOperatorList();
+  const OPS = pdfjsLib.OPS;
+  const fnArray = opList.fnArray, argsArray = opList.argsArray;
+  // QUAN TRỌNG: fillColor/strokeColor/lineWidth/fillAlpha/strokeAlpha/dash đều là một phần của
+  // "trạng thái đồ hoạ" (graphics state) trong PDF — phải lưu/khôi phục CÙNG với CTM theo từng cặp
+  // save/restore, nếu không giá trị (vd fillAlpha=0 của một hình trong suốt) sẽ bị "dính" nhầm
+  // sang các hình vẽ SAU đó không liên quan, gây sai màu/độ trong suốt/tô nhầm hàng loạt.
+  let gs = { ctm: [1,0,0,1,0,0], fillColor: [0,0,0], strokeColor: [0,0,0], lineWidth: 1, fillAlpha: 1, strokeAlpha: 1, dash: [] };
+  let gsStack = [];
+  const shapes = [];
+  const shapeByKey = new Map();
+  const keyOf = (x,y,w,h) => x.toFixed(2)+'_'+y.toFixed(2)+'_'+w.toFixed(2)+'_'+h.toFixed(2);
+
+  for(let i=0;i<fnArray.length;i++){
+    const fn = fnArray[i], args = argsArray[i];
+    if(fn===OPS.save){ gsStack.push({ ...gs }); }
+    else if(fn===OPS.restore){ gs = gsStack.pop() || gs; }
+    else if(fn===OPS.transform){ gs.ctm = pdfjsLib.Util.transform(gs.ctm, args); }
+    else if(fn===OPS.setFillRGBColor){ gs.fillColor = [args[0], args[1], args[2]]; }
+    else if(fn===OPS.setStrokeRGBColor){ gs.strokeColor = [args[0], args[1], args[2]]; }
+    else if(fn===OPS.setLineWidth){ gs.lineWidth = args[0]; }
+    else if(fn===OPS.setDash){ gs.dash = (args[0] && args[0].length) ? args[0] : []; }
+    else if(fn===OPS.setGState){
+      if(Array.isArray(args[0])){
+        for(const kv of args[0]){
+          if(kv[0]==='ca') gs.fillAlpha = kv[1];
+          if(kv[0]==='CA') gs.strokeAlpha = kv[1];
+        }
+      }
+    }else if(fn===OPS.constructPath){
+      const ops = args[0], coords = args[1];
+      // Chỉ lấy các path là ĐÚNG 1 hình chữ nhật đơn (op "rectangle" duy nhất) — bỏ qua path phức
+      // tạp (oval/đường cong/logo...) vì khó tái tạo chính xác thành shape PowerPoint đơn giản,
+      // những hình đó vẫn giữ nguyên trong lớp ảnh nền như trước.
+      if(ops && ops.length===1 && ops[0]===OPS.rectangle){
+        const x=coords[0], y=coords[1], w=coords[2], h=coords[3];
+        if(Math.abs(w) < 0.01 || Math.abs(h) < 0.01) continue;
+        let j=i+1, didFill=false, didStroke=false;
+        while(j<fnArray.length){
+          const nfn = fnArray[j];
+          if(nfn===OPS.fill || nfn===OPS.eoFill){ didFill=true; j++; continue; }
+          if(nfn===OPS.stroke){ didStroke=true; j++; continue; }
+          break;
+        }
+        // Bỏ qua phần tô/viền gần như trong suốt (alpha≈0) — không phải lỗi, mà là hình vẽ CHỦ Ý
+        // vô hình trong PDF gốc (vd hotspot/placeholder) -> giữ nguyên ảnh nền tại đó, không tách.
+        if(didFill && gs.fillAlpha < 0.03) didFill = false;
+        if(didStroke && gs.strokeAlpha < 0.03) didStroke = false;
+        if(didFill || didStroke){
+          const key = keyOf(x,y,w,h);
+          let shape = shapeByKey.get(key);
+          if(!shape){
+            shape = { x, y, w, h, ctm: gs.ctm.slice() };
+            shapeByKey.set(key, shape);
+            shapes.push(shape);
+          }
+          if(didFill) shape.fill = { color: gs.fillColor.slice(), alpha: gs.fillAlpha };
+          if(didStroke) shape.stroke = { color: gs.strokeColor.slice(), alpha: gs.strokeAlpha, lineWidth: gs.lineWidth, dashed: gs.dash.length > 0 };
+        }
+      }
+    }
+  }
+
+  // Quy đổi sang hệ toạ độ trang (vp1, point) bằng đúng CTM tại thời điểm vẽ hình đó.
+  const pageWidthPt = vp1.width, pageHeightPt = vp1.height;
+  const out = [];
+  for(const s of shapes){
+    const combined = pdfjsLib.Util.transform(vp1.transform, s.ctm);
+    const corners = [[s.x,s.y],[s.x+s.w,s.y],[s.x,s.y+s.h],[s.x+s.w,s.y+s.h]]
+      .map(p => pdfjsLib.Util.applyTransform(p, combined));
+    const xs = corners.map(p=>p[0]), ys = corners.map(p=>p[1]);
+    const leftPt = Math.min(...xs), topPt = Math.min(...ys);
+    const widthPt = Math.max(...xs) - leftPt, heightPt = Math.max(...ys) - topPt;
+    // Bỏ qua các hình chữ nhật gần bằng khổ cả trang (thường chỉ là lớp nền/khung clip nền tảng,
+    // bị chính ảnh minh hoạ chính vẽ đè lên sau — KHÔNG phải một "shape" UI thật sự cần tách ra;
+    // nếu tách+xoá nhầm sẽ xoá mất luôn phần ảnh nền vẽ sau nó trên canvas đã render phẳng).
+    if(widthPt > pageWidthPt*0.92 && heightPt > pageHeightPt*0.92) continue;
+    out.push({ leftPt, topPt, widthPt, heightPt, fill: s.fill, stroke: s.stroke });
+  }
+  return out;
+}
+
+function rgbToHex_(rgb){ return rgb.map(v => Math.max(0,Math.min(255,Math.round(v))).toString(16).padStart(2,'0')).join('').toUpperCase(); }
+
 async function exportPptxSelected(indices){
   if(!indices || !indices.length){ alert('Hãy chọn ít nhất một trang để xuất.'); return; }
   if(typeof PptxGenJS === 'undefined'){
@@ -7149,6 +7246,12 @@ async function exportPptxSelected(indices){
       await page.render({ canvasContext: fullCtx, viewport: vp }).promise;
       let fullImgData = null;
       try{ fullImgData = fullCtx.getImageData(0, 0, fullCanvas.width, fullCanvas.height); }catch(e){ fullImgData = null; }
+
+      // Bóc tách các hình chữ nhật vector THẬT (khung/ô bảng/thẻ màu...) để tạo lại thành shape
+      // PowerPoint tách biệt, di chuyển/đổi màu riêng từng ô được — xem giải thích ở đầu file.
+      let vectorRects = [];
+      try{ vectorRects = await extractVectorRects(page, vp1); }
+      catch(err){ console.warn('Không bóc tách được hình khối vector trang', i+1, ':', err); vectorRects = []; }
 
       // QUAN TRỌNG: tính vị trí/cỡ chữ TRỰC TIẾP bằng ma trận của pdf.js (Util.transform), KHÔNG
       // dựng DOM rồi đọc span.style/getComputedStyle. Lý do: pdf.js chỉ định vị đúng các <span>
@@ -7251,9 +7354,32 @@ async function exportPptxSelected(indices){
           fullCtx.fillStyle = `rgb(${bg[0]},${bg[1]},${bg[2]})`;
           fullCtx.fillRect(ex, ey, ew, eh);
         }
+
+        // Xoá các hình chữ nhật vector khỏi ảnh nền (đã tách thành shape PowerPoint thật ở dưới)
+        // để không bị vẽ trùng 2 lần. QUAN TRỌNG: nếu hình KHÔNG có tô nền (chỉ có viền, như khung
+        // dashed bao quanh từng khối) thì CHỈ xoá dải viền mỏng đó (dùng strokeRect) — giữ nguyên
+        // phần ảnh nền bên trong khung (hoạ tiết chấm, gradient...). Nếu xoá cả vùng bên trong sẽ
+        // biến khung viền thành một khối đặc màu loang, mất hết chi tiết ảnh nền phía trong.
+        for(const r of vectorRects){
+          const bg = sampleBgColor_(fullImgData, r.leftPt, r.topPt, r.widthPt, r.heightPt, PPTX_SCALE);
+          fullCtx.fillStyle = `rgb(${bg[0]},${bg[1]},${bg[2]})`;
+          if(r.fill){
+            const pad = Math.max(2, (r.stroke ? r.stroke.lineWidth : 0)) * PPTX_SCALE;
+            const ex = Math.floor(r.leftPt*PPTX_SCALE - pad);
+            const ey = Math.floor(r.topPt*PPTX_SCALE - pad);
+            const ew = Math.ceil(r.widthPt*PPTX_SCALE + pad*2);
+            const eh = Math.ceil(r.heightPt*PPTX_SCALE + pad*2);
+            fullCtx.fillRect(ex, ey, ew, eh);
+          }else if(r.stroke){
+            const lw = Math.max(1.5, r.stroke.lineWidth*PPTX_SCALE) + 2;
+            fullCtx.strokeStyle = `rgb(${bg[0]},${bg[1]},${bg[2]})`;
+            fullCtx.lineWidth = lw;
+            fullCtx.strokeRect(r.leftPt*PPTX_SCALE, r.topPt*PPTX_SCALE, r.widthPt*PPTX_SCALE, r.heightPt*PPTX_SCALE);
+          }
+        }
       }
 
-      slideData.push({ dataUrl: fullCanvas.toDataURL('image/jpeg', 0.92), widthIn: vp1.width/72, heightIn: vp1.height/72, textRuns });
+      slideData.push({ dataUrl: fullCanvas.toDataURL('image/jpeg', 0.92), widthIn: vp1.width/72, heightIn: vp1.height/72, textRuns, vectorRects });
     }
 
     // Bước 3: dựng file .pptx bằng PptxGenJS — khổ slide lấy theo TRANG ĐẦU TIÊN được chọn (mọi
@@ -7273,6 +7399,24 @@ async function exportPptxSelected(indices){
       const w = sd.widthIn*scaleFit, h = sd.heightIn*scaleFit;
       const x = (layoutW-w)/2, y = (layoutH-h)/2;
       slide.addImage({ data: sd.dataUrl, x, y, w, h });
+
+      // Các khung/ô hình chữ nhật thật — di chuyển, đổi màu nền/viền, đổi kích thước RIÊNG TỪNG
+      // Ô được trong PowerPoint, tách biệt hẳn với các ô khác (không còn dính liền nhau nữa).
+      for(const r of (sd.vectorRects||[])){
+        const opts = {
+          x: x + (r.leftPt/72)*scaleFit,
+          y: y + (r.topPt/72)*scaleFit,
+          w: Math.max((r.widthPt/72)*scaleFit, 0.02),
+          h: Math.max((r.heightPt/72)*scaleFit, 0.02)
+        };
+        opts.fill = r.fill
+          ? { color: rgbToHex_(r.fill.color), transparency: Math.round((1-(r.fill.alpha??1))*100) }
+          : { type: 'none' };
+        opts.line = r.stroke
+          ? { color: rgbToHex_(r.stroke.color), width: Math.max(0.25, r.stroke.lineWidth*scaleFit), transparency: Math.round((1-(r.stroke.alpha??1))*100), dashType: r.stroke.dashed ? 'dash' : 'solid' }
+          : { type: 'none' };
+        slide.addShape(pptx.ShapeType.rect, opts);
+      }
 
       // Chữ thật — sửa/gõ trực tiếp được trong PowerPoint, không phải ảnh.
       for(const run of sd.textRuns){
