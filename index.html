@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <title>PDF EDITOR</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/2.1.4/tesseract.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@pdf-lib/fontkit@1.1.1/dist/fontkit.umd.min.js"></script>
@@ -653,6 +654,52 @@
   </div>
 </div>
 
+<!-- ===================== MODAL: EXPORT POWERPOINT (chọn trang cần xuất) ===================== -->
+<div id="exportPptxModal" style="
+  position:fixed;inset:0;z-index:1100;display:none;
+  background:rgba(0,0,0,.55);
+  align-items:center;justify-content:center;
+  font-family:'Segoe UI',Roboto,Arial,sans-serif;color:#eceff1;">
+  <div style="
+    background:#25282e;border:1px solid #454a52;border-radius:10px;
+    padding:22px 24px;width:560px;max-width:92vw;max-height:86vh;overflow:auto;
+    box-shadow:0 10px 40px rgba(0,0,0,.5);">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+      <div style="font-weight:600;font-size:15px;">📊 Export PowerPoint</div>
+      <button type="button" id="ppCloseBtn" style="
+        background:transparent;border:none;color:#9aa0a8;font-size:18px;cursor:pointer;line-height:1;">✕</button>
+    </div>
+    <div style="font-size:12px;color:#9aa0a8;margin-bottom:12px;">
+      Chọn các trang muốn xuất sang PowerPoint (mặc định: tất cả các trang). Mỗi trang sẽ trở thành
+      MỘT slide, giữ nguyên hình ảnh/bố cục như trong bản PDF gốc (bao gồm cả những chỉnh sửa bạn đã
+      thực hiện) — phù hợp khi cần trình chiếu hoặc chỉnh sửa tiếp trong PowerPoint dưới dạng ảnh nền.
+    </div>
+
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+      <label style="display:flex;align-items:center;gap:8px;font-size:12.5px;cursor:pointer;">
+        <input type="checkbox" id="ppSelectAll"> Chọn tất cả (Xuất tất cả các trang)
+      </label>
+      <span id="ppSelectedCount" style="font-size:11.5px;color:#9aa0a8;"></span>
+    </div>
+
+    <div id="ppList" style="
+      display:grid;grid-template-columns:repeat(auto-fill,minmax(86px,1fr));gap:10px;
+      margin-bottom:14px;max-height:380px;overflow:auto;padding:2px;"></div>
+
+    <div id="ppError" style="min-height:18px;color:#ff8a80;font-size:12px;margin-bottom:4px;"></div>
+
+    <div style="display:flex;gap:8px;margin-top:6px;">
+      <button type="button" id="ppCancelBtn" style="
+        flex:1;padding:10px;border:1px solid #454a52;border-radius:6px;background:transparent;color:#eceff1;
+        font-weight:600;font-size:13px;cursor:pointer;">Huỷ</button>
+      <button type="button" id="ppConfirmBtn" style="
+        flex:1;padding:10px;border:none;border-radius:6px;background:#e2402c;color:#fff;
+        font-weight:600;font-size:13px;cursor:pointer;">📊 Xuất PowerPoint</button>
+    </div>
+  </div>
+</div>
+
+
 <!-- ===================== MODAL: INSERT PAGES (chèn trước/sau trang hiện tại) ===================== -->
 <div id="insertPagesModal" style="
   position:fixed;inset:0;z-index:1100;display:none;
@@ -917,6 +964,7 @@
   <div class="sep"></div>
 
   <button class="tbtn" id="btnExportWord"><span class="ic">📝</span>Export Word Document</button>
+  <button class="tbtn" id="btnExportPptx" title="Xuất các trang đã chọn thành file PowerPoint (.pptx), mỗi trang là 1 slide, giữ đúng hình ảnh/bố cục như bản gốc (bao gồm cả những chỉnh sửa bạn đã thực hiện)"><span class="ic">📊</span>Export PowerPoint</button>
   <div class="sep"></div>
 
   <button class="tbtn" id="zoomOut"><span class="ic">−</span></button>
@@ -7046,6 +7094,365 @@ document.getElementById('ewConfirmBtn').addEventListener('click', async () => {
   closeExportWordModal();
   await exportWordSelected(selected);
 });
+
+// ---------- Xuất sang PowerPoint (.pptx) — mỗi trang PDF thành 1 slide CÓ THỂ CHỈNH SỬA ----------
+// Cách tiếp cận: dựng lại đầy đủ tài liệu PDF của các trang được chọn — đã áp dụng MỌI chỉnh sửa
+// hiện có trong bộ nhớ, dùng CHUNG buildEditedOutDoc()/saveOutDocWithVietWidthFix() với "Save PDF"/
+// "In PDF" phía trên để đảm bảo nội dung xuất ra luôn khớp 100% với những gì đang hiển thị/đã
+// chỉnh sửa trên màn hình. Sau đó với MỖI TRANG, ta tách làm 2 lớp:
+//   (1) LỚP CHỮ THẬT: dùng chính pdf.js renderTextLayer() (API pdf.js đang dùng cho tính năng
+//       "Chọn văn bản" ở trên) để lấy đúng vị trí (x/y), cỡ chữ và phông của từng đoạn chữ trên
+//       trang, rồi tạo lại thành các textbox THẬT trong PowerPoint bằng slide.addText() — gõ, sửa,
+//       bôi đậm/nghiêng, đổi cỡ chữ... được trực tiếp trong PowerPoint, không phải ảnh.
+//   (2) LỚP NỀN ĐỒ HỌA: vẽ lại trang bằng canvas như cũ để giữ khung/đường kẻ/màu nền/logo/sơ đồ
+//       tổ chức... nhưng VÔ HIỆU HOÁ lệnh vẽ chữ (fillText/strokeText) khi vẽ để chữ không bị vẽ 2
+//       lần chồng lên nhau (vì chữ thật đã có textbox riêng ở lớp (1) rồi).
+// Nhờ vậy PowerPoint xuất ra vẫn giữ đúng bố cục/màu sắc như bản gốc mà chữ vẫn CHỈNH SỬA được.
+async function exportPptxSelected(indices){
+  if(!indices || !indices.length){ alert('Hãy chọn ít nhất một trang để xuất.'); return; }
+  if(typeof PptxGenJS === 'undefined'){
+    alert('Không tải được thư viện xuất PowerPoint (PptxGenJS). Hãy kiểm tra kết nối Internet rồi thử lại.');
+    return;
+  }
+  flushPendingEdit(); // chốt chỉnh sửa dang dở trước khi đọc nội dung để xuất PowerPoint
+  const spinner = document.getElementById('spinner');
+  const spinnerLabel = spinner.lastChild;
+  spinner.classList.add('show');
+  try{
+    spinnerLabel.textContent = ' Đang áp dụng chỉnh sửa để xuất PowerPoint…';
+    // Bước 1: ghép đúng các trang đã chọn (theo đúng thứ tự) + mọi chỉnh sửa hiện có thành 1 file
+    // PDF hoàn chỉnh trong bộ nhớ — giống hệt cơ chế "Save PDF"/"In PDF" ở trên.
+    const outDoc = await buildEditedOutDoc(indices, spinnerLabel);
+    const bytes = await saveOutDocWithVietWidthFix(outDoc);
+
+    // Bước 2: với mỗi trang — bóc tách từng đoạn chữ thật (đúng vị trí/cỡ/đậm-nghiêng/màu) rồi
+    // "xoá" đúng vùng đó khỏi ảnh nền (tô lại bằng màu nền cục bộ) để ghép cùng textbox thật,
+    // không bị chồng/lem 2 lớp chữ.
+    const docJs = await pdfjsLib.getDocument({ data: bytes }).promise;
+    const PPTX_SCALE = 2; // 1 point = 1/72 inch -> scale 2 tương đương ~144dpi cho ảnh nền
+    const slideData = [];
+
+    for(let i=0;i<docJs.numPages;i++){
+      spinnerLabel.textContent = ` Đang bóc tách chữ & dựng slide ${i+1}/${docJs.numPages}…`;
+      const page = await docJs.getPage(i+1);
+      const vp1 = page.getViewport({ scale: 1 }); // dùng làm hệ quy chiếu chung: 1 đơn vị = 1 point = 1/72 inch
+      const vp = page.getViewport({ scale: PPTX_SCALE });
+
+      // Vẽ trang ĐẦY ĐỦ (có chữ) — dùng vừa để soi màu chữ thật, vừa làm ảnh nền sau khi đã
+      // "xoá" đúng vùng chữ (xem bước xoá bên dưới). Chỉ cần vẽ trang 1 LẦN DUY NHẤT.
+      const fullCanvas = document.createElement('canvas');
+      fullCanvas.width = Math.max(1, Math.round(vp.width));
+      fullCanvas.height = Math.max(1, Math.round(vp.height));
+      const fullCtx = fullCanvas.getContext('2d');
+      fullCtx.fillStyle = '#fff';
+      fullCtx.fillRect(0, 0, fullCanvas.width, fullCanvas.height);
+      await page.render({ canvasContext: fullCtx, viewport: vp }).promise;
+      let fullImgData = null;
+      try{ fullImgData = fullCtx.getImageData(0, 0, fullCanvas.width, fullCanvas.height); }catch(e){ fullImgData = null; }
+
+      // QUAN TRỌNG: tính vị trí/cỡ chữ TRỰC TIẾP bằng ma trận của pdf.js (Util.transform), KHÔNG
+      // dựng DOM rồi đọc span.style/getComputedStyle. Lý do: pdf.js chỉ định vị đúng các <span>
+      // của renderTextLayer() khi trang có sẵn CSS ".textLayer span{position:absolute;...}" (lấy từ
+      // text_layer_builder.css gốc của pdf.js) — nếu thiếu CSS này (như file hiện tại), span bị
+      // position:static, toạ độ đọc ra sai/NaN -> chữ dồn hết về góc trang, chồng lấn, không nằm
+      // đúng trong khung. Tính bằng ma trận (đúng công thức lõi mà chính pdf.js dùng để định vị
+      // text layer) thì không phụ thuộc CSS/DOM, luôn cho toạ độ chính xác.
+      const textRuns = [];
+      try{
+        const textContent = await page.getTextContent();
+        const styles = textContent.styles || {};
+        // Lấy TÊN FONT THẬT đã nhúng trong PDF (vd "TimesNewRomanPS-BoldMT") để nhận diện đậm/
+        // nghiêng CHÍNH XÁC — đáng tin cậy hơn nhiều so với đoán qua fontFamily chung chung
+        // ("sans-serif"/"serif") mà textContent.styles trả về.
+        const fontInfoCache = {};
+        const getFontInfo = (fontName, style) => {
+          if(fontInfoCache[fontName]) return fontInfoCache[fontName];
+          let psName = '';
+          try{
+            const obj = page.commonObjs.get(fontName);
+            psName = (obj && (obj.name || obj.fallbackName)) || '';
+          }catch(e){ psName = ''; }
+          psName = String(psName).replace(/^[A-Z]{6}\+/, '');
+          const lower = (psName || style.fontFamily || 'arial').toLowerCase();
+          const bold = /bold|black|heavy|semibold/.test(lower);
+          const italic = /italic|oblique/.test(lower);
+          let fontFamily;
+          if(lower.includes('courier') || lower.includes('mono')) fontFamily = 'Courier New';
+          else if(lower.includes('times') || (lower.includes('serif') && !lower.includes('sans'))) fontFamily = 'Times New Roman';
+          else fontFamily = 'Arial';
+          const info = { bold, italic, fontFamily };
+          fontInfoCache[fontName] = info;
+          return info;
+        };
+
+        let lastConfidentColor = null, lastConfidentTopPt = -9999;
+        for(const item of (textContent.items||[])){
+          const text = item.str;
+          if(!text || !text.trim()) continue;
+          const style = styles[item.fontName] || {};
+          // Ma trận kết hợp: từ hệ toạ độ chữ (item.transform) sang hệ toạ độ trang (vp1, scale=1
+          // => 1 đơn vị = 1 point = 1/72 inch) — đây chính là công thức pdf.js dùng nội bộ.
+          const tx = pdfjsLib.Util.transform(vp1.transform, item.transform);
+          const angle = Math.atan2(tx[1], tx[0]);
+          const fontHeightPt = Math.hypot(tx[2], tx[3]) || Math.hypot(tx[0], tx[1]) || 10;
+          const ascentRatio = (typeof style.ascent === 'number' && style.ascent > 0 && style.ascent < 1.5) ? style.ascent : 0.8;
+          const fontAscentPt = fontHeightPt * ascentRatio;
+          let leftPt, topPt;
+          if(Math.abs(angle) < 0.01){
+            leftPt = tx[4];
+            topPt = tx[5] - fontAscentPt;
+          }else{
+            leftPt = tx[4] + fontAscentPt*Math.sin(angle);
+            topPt = tx[5] - fontAscentPt*Math.cos(angle);
+          }
+          // item.width đã ở đúng đơn vị point tại scale=1 (chính là công thức pdf.js dùng để co
+          // giãn div sao cho khớp bề rộng chữ thật), nên dùng thẳng làm bề rộng khung — không cần
+          // đo lại bằng canvas.measureText (vốn dễ sai lệch do không có đúng font nhúng gốc).
+          const widthPt = Math.max(item.width || 0, fontHeightPt*0.3*text.length*0.5, 1);
+          const { bold, italic, fontFamily } = getFontInfo(item.fontName, style);
+
+          // Soi màu chữ thật: quét lưới điểm ảnh dày trong khung chữ (ở lớp CÓ chữ) và chọn điểm
+          // khác biệt nhiều nhất so với màu nền cục bộ quanh khung -> đó là màu chữ thật. Với
+          // khung quá nhỏ/mảnh (dấu "-", dấu chấm...) khó soi chắc chắn -> kế thừa màu của đoạn
+          // chữ liền trước trên cùng dòng thay vì mặc định nhầm thành đen/nền.
+          const sampled = sampleTextColor_(fullImgData, leftPt, topPt, widthPt, fontHeightPt, PPTX_SCALE);
+          let color = sampled.color;
+          if(!sampled.confident && lastConfidentColor && Math.abs(topPt - lastConfidentTopPt) < fontHeightPt*0.6){
+            color = lastConfidentColor;
+          }
+          if(sampled.confident){ lastConfidentColor = sampled.color; lastConfidentTopPt = topPt; }
+
+          textRuns.push({
+            text,
+            xIn: leftPt/72, yIn: topPt/72,
+            wIn: Math.max(widthPt/72, 0.08), hIn: Math.max(fontHeightPt*1.25/72, 0.09),
+            fontSizePt: Math.max(6, fontHeightPt*0.98),
+            fontFamily, bold, italic, color,
+            rotate: Math.abs(angle) < 0.01 ? 0 : Math.round(-angle*180/Math.PI),
+            _leftPt: leftPt, _topPt: topPt, _widthPt: widthPt, _fontHeightPt: fontHeightPt
+          });
+        }
+      }catch(err){
+        console.warn('Không bóc tách được lớp chữ trang', i+1, '- sẽ dùng ảnh nền có sẵn chữ:', err);
+      }
+
+      // "Xoá" đúng từng vùng chữ khỏi ảnh nền bằng cách tô lại đúng màu nền cục bộ tại đó (không
+      // phải luôn tô trắng — vd chữ trắng trên nền xanh/đỏ thì phải tô lại màu xanh/đỏ). Cách này
+      // hoạt động đúng bất kể pdf.js vẽ chữ bằng fillText hay bằng đường path glyph (không thể
+      // "vô hiệu hoá" lệnh vẽ chữ một cách đáng tin cậy vì pdf.js không phải lúc nào cũng gọi
+      // fillText/strokeText — với font nhúng dạng path thì việc ghi đè 2 hàm đó không có tác dụng).
+      if(fullImgData){
+        for(const run of textRuns){
+          const bg = sampleBgColor_(fullImgData, run._leftPt, run._topPt, run._widthPt, run._fontHeightPt, PPTX_SCALE);
+          const ex = Math.floor(run._leftPt*PPTX_SCALE) - 1;
+          const ey = Math.floor((run._topPt - run._fontHeightPt*0.15)*PPTX_SCALE);
+          const ew = Math.ceil(run._widthPt*PPTX_SCALE) + 2;
+          const eh = Math.ceil(run._fontHeightPt*1.35*PPTX_SCALE);
+          fullCtx.fillStyle = `rgb(${bg[0]},${bg[1]},${bg[2]})`;
+          fullCtx.fillRect(ex, ey, ew, eh);
+        }
+      }
+
+      slideData.push({ dataUrl: fullCanvas.toDataURL('image/jpeg', 0.92), widthIn: vp1.width/72, heightIn: vp1.height/72, textRuns });
+    }
+
+    // Bước 3: dựng file .pptx bằng PptxGenJS — khổ slide lấy theo TRANG ĐẦU TIÊN được chọn (mọi
+    // trang PDF trong cùng 1 tài liệu hầu như luôn cùng khổ giấy). Những trang lỡ có khổ khác sẽ
+    // được co vừa khít bên trong khổ slide chung (giữ nguyên tỉ lệ khung hình gốc, không bị kéo
+    // méo) và canh giữa cả theo chiều ngang lẫn dọc, nền trắng lấp phần dư ra (nếu có).
+    spinnerLabel.textContent = ' Đang đóng gói file PowerPoint…';
+    const pptx = new PptxGenJS();
+    const layoutW = slideData[0].widthIn, layoutH = slideData[0].heightIn;
+    pptx.defineLayout({ name: 'PDF_LAYOUT', width: layoutW, height: layoutH });
+    pptx.layout = 'PDF_LAYOUT';
+
+    for(const sd of slideData){
+      const slide = pptx.addSlide();
+      slide.background = { color: 'FFFFFF' };
+      const scaleFit = Math.min(layoutW/sd.widthIn, layoutH/sd.heightIn);
+      const w = sd.widthIn*scaleFit, h = sd.heightIn*scaleFit;
+      const x = (layoutW-w)/2, y = (layoutH-h)/2;
+      slide.addImage({ data: sd.dataUrl, x, y, w, h });
+
+      // Chữ thật — sửa/gõ trực tiếp được trong PowerPoint, không phải ảnh.
+      for(const run of sd.textRuns){
+        slide.addText(run.text, {
+          x: x + run.xIn*scaleFit,
+          y: y + run.yIn*scaleFit,
+          w: Math.max(run.wIn*scaleFit, 0.1),
+          h: Math.max(run.hIn*scaleFit, 0.09),
+          fontSize: Math.max(6, Math.round(run.fontSizePt*scaleFit*10)/10),
+          fontFace: run.fontFamily,
+          bold: run.bold,
+          italic: run.italic,
+          color: run.color,
+          align: 'left',
+          valign: 'top',
+          margin: 0,
+          wrap: false,
+          rotate: run.rotate || 0,
+          fill: { type: 'none' },
+          line: { type: 'none' }
+        });
+      }
+    }
+
+    const base = originalFileName.replace(/\.pdf$/i,'').replace(/-edited$/,'');
+    const fname = indices.length===pages.length ? base+'.pptx' : base+'-trang-'+indices.map(i=>i+1).join('_')+'.pptx';
+    await pptx.writeFile({ fileName: fname });
+  }catch(err){
+    console.error('Lỗi khi xuất PowerPoint:', err);
+    alert('Lỗi khi xuất PowerPoint: '+err.message);
+  }finally{
+    spinner.classList.remove('show');
+    spinnerLabel.textContent = ' Đang xử lý OCR…';
+  }
+}
+
+// Soi MÀU NỀN cục bộ quanh khung chữ (dùng để: (1) làm mốc so sánh khi soi màu chữ thật, và
+// (2) tô lại đúng chỗ đó khi "xoá" chữ khỏi ảnh nền) — lấy mẫu ở vài điểm quanh MÉP khung (thường
+// là khoảng trống ngoài nét chữ) rồi chọn màu xuất hiện nhiều nhất trong số đó (bỏ qua các điểm lỡ
+// trúng nét chữ hàng xóm) để đáng tin cậy hơn việc chỉ soi đúng 1 điểm.
+function sampleBgColor_(imgData, leftPt, topPt, widthPt, heightPt, scale){
+  const W = imgData.width, H = imgData.height, data = imgData.data;
+  const getPixel = (x,y) => { x=Math.max(0,Math.min(W-1,x|0)); y=Math.max(0,Math.min(H-1,y|0)); const i=(y*W+x)*4; return [data[i],data[i+1],data[i+2]]; };
+  const x0=leftPt*scale, y0=topPt*scale, x1=(leftPt+widthPt)*scale, y1=(topPt+heightPt)*scale;
+  const pts=[getPixel(x0,y0-1),getPixel(x1-1,y0-1),getPixel(x0,y1),getPixel(x1-1,y1),getPixel(x0-1,(y0+y1)/2),getPixel(x1,(y0+y1)/2)];
+  let best=pts[0], bestCount=-1;
+  for(const p of pts){
+    let count=0;
+    for(const q of pts){ if(Math.abs(p[0]-q[0])+Math.abs(p[1]-q[1])+Math.abs(p[2]-q[2])<30) count++; }
+    if(count>bestCount){ bestCount=count; best=p; }
+  }
+  return best;
+}
+
+// Soi màu chữ thật từ ảnh trang ĐÃ vẽ (còn chữ): quét lưới điểm dày trong khung chữ (theo toạ độ
+// point, quy đổi sang pixel theo `scale`) và chọn điểm khác biệt nhiều nhất so với màu nền cục bộ
+// quanh khung -> đó là màu chữ. Trả về thêm `confident`: false khi khung quá nhỏ/mảnh (dấu "-",
+// dấu chấm...) nên độ khác biệt tìm được thấp, không đủ tin cậy — nơi gọi nên kế thừa màu của
+// đoạn chữ liền trước cùng dòng thay vì dùng giá trị này.
+function sampleTextColor_(imgData, leftPt, topPt, widthPt, heightPt, scale){
+  if(!imgData) return { color: '000000', confident: false };
+  try{
+    const W = imgData.width, H = imgData.height, data = imgData.data;
+    const getPixel = (x,y) => {
+      x = Math.max(0, Math.min(W-1, x|0)); y = Math.max(0, Math.min(H-1, y|0));
+      const idx = (y*W+x)*4;
+      return [data[idx], data[idx+1], data[idx+2]];
+    };
+    const px = Math.round(leftPt*scale), py = Math.round(topPt*scale);
+    const pw = Math.max(1, Math.round(widthPt*scale)), ph = Math.max(1, Math.round(heightPt*scale));
+    const bg = sampleBgColor_(imgData, leftPt, topPt, widthPt, heightPt, scale);
+    let best = null, bestDist = -1;
+    // Lưới quét dày hơn cho khung nhỏ/mảnh để không bỏ lỡ nét mực mảnh (như dấu "-").
+    const stepsX = Math.min(20, Math.max(5, Math.round(pw/2)));
+    const stepsY = Math.min(14, Math.max(4, Math.round(ph/2)));
+    for(let sx=0; sx<stepsX; sx++){
+      for(let sy=0; sy<stepsY; sy++){
+        const x = px + Math.round(pw*(sx+0.5)/stepsX);
+        const y = py + Math.round(ph*(sy+0.5)/stepsY);
+        const d = getPixel(x, y);
+        const dist = Math.abs(d[0]-bg[0]) + Math.abs(d[1]-bg[1]) + Math.abs(d[2]-bg[2]);
+        if(dist > bestDist){ bestDist = dist; best = d; }
+      }
+    }
+    const confident = !!best && bestDist >= 40;
+    if(!best) best = [0,0,0]; // gần như không khác biệt -> mặc định chữ đen
+    const hex = best.map(v => v.toString(16).padStart(2,'0')).join('').toUpperCase();
+    return { color: hex, confident };
+  }catch(err){
+    return { color: '000000', confident: false };
+  }
+}
+
+
+// ---------- Modal chọn trang để xuất PowerPoint (giống hệt cơ chế modal Export Word ở trên) ----------
+const exportPptxModal = document.getElementById('exportPptxModal');
+const ppList = document.getElementById('ppList');
+const ppSelectAll = document.getElementById('ppSelectAll');
+const ppSelectedCount = document.getElementById('ppSelectedCount');
+const ppError = document.getElementById('ppError');
+
+document.getElementById('btnExportPptx').onclick = openExportPptxModal;
+document.getElementById('ppCancelBtn').addEventListener('click', closeExportPptxModal);
+document.getElementById('ppCloseBtn').addEventListener('click', closeExportPptxModal);
+exportPptxModal.addEventListener('click', function(e){ if(e.target === exportPptxModal) closeExportPptxModal(); });
+
+function closeExportPptxModal(){ exportPptxModal.style.display = 'none'; }
+
+function updatePpSelectedCount(){
+  const total = ppList.querySelectorAll('.dp-checkbox').length;
+  const checked = ppList.querySelectorAll('.dp-checkbox:checked').length;
+  ppSelectedCount.textContent = checked>0 ? `Đã chọn ${checked}/${total} trang` : `${total} trang`;
+  ppSelectAll.checked = total>0 && checked===total;
+  ppSelectAll.indeterminate = checked>0 && checked<total;
+}
+
+async function openExportPptxModal(){
+  ppError.textContent = '';
+  if(!pages.length){ alert('Hãy mở một file PDF trước.'); return; }
+  ppList.innerHTML = '';
+  exportPptxModal.style.display = 'flex';
+
+  // Dựng lưới trang trước (khung rỗng, MẶC ĐỊNH CHỌN TẤT CẢ = "Xuất tất cả"), rồi vẽ ảnh thu nhỏ
+  // dần dần, để mở modal ngay lập tức thay vì phải đợi render hết mọi trang.
+  const items = [];
+  for(let i=0;i<pages.length;i++){
+    const item = document.createElement('label');
+    item.className = 'dp-item selected';
+    item.dataset.idx = i;
+
+    const wrap = document.createElement('div');
+    wrap.className = 'dp-thumb-wrap';
+    const c = document.createElement('canvas');
+    wrap.appendChild(c);
+
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.className = 'dp-checkbox';
+    cb.dataset.idx = i;
+    cb.checked = true; // mặc định: xuất TẤT CẢ các trang
+    cb.addEventListener('change', () => {
+      item.classList.toggle('selected', cb.checked);
+      updatePpSelectedCount();
+    });
+    wrap.appendChild(cb);
+
+    const pnum = document.createElement('div');
+    pnum.className = 'dp-pnum';
+    pnum.textContent = 'Trang ' + (i+1);
+
+    item.appendChild(wrap);
+    item.appendChild(pnum);
+    ppList.appendChild(item);
+    items.push({idx:i, canvas:c});
+  }
+  updatePpSelectedCount();
+
+  for(const {idx, canvas} of items){
+    try{ await renderDpThumb(idx, canvas); }
+    catch(err){ console.warn('Không vẽ được ảnh thu nhỏ trang', idx+1, err); }
+  }
+}
+
+ppSelectAll.addEventListener('change', (e) => {
+  ppList.querySelectorAll('.dp-checkbox').forEach(cb => {
+    cb.checked = e.target.checked;
+    cb.closest('.dp-item').classList.toggle('selected', cb.checked);
+  });
+  updatePpSelectedCount();
+});
+
+document.getElementById('ppConfirmBtn').addEventListener('click', async () => {
+  const selected = Array.from(ppList.querySelectorAll('.dp-checkbox:checked'))
+    .map(cb => parseInt(cb.dataset.idx, 10)).sort((a,b)=>a-b);
+  if(!selected.length){ ppError.textContent = 'Hãy chọn ít nhất một trang.'; return; }
+  ppError.textContent = '';
+  closeExportPptxModal();
+  await exportPptxSelected(selected);
+});
+
 </script>
 </body>
 </html>
