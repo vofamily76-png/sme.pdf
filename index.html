@@ -900,6 +900,8 @@
   <button class="tbtn" data-tool="textselect" id="toolTextSelect" title="Bôi đen văn bản trong PDF để copy (Ctrl+C). Có thể là chữ PDF thật hoặc chữ OCR từ ảnh/scan. Sau khi bôi đen, bấm nút 'Đánh dấu' nổi lên để tô sáng đúng đoạn đã chọn."><span class="ic">🔤</span>Select text to copy</button>
   <button class="tbtn" id="btnInsertImage" title="Chèn ảnh (PNG/JPG) vào trang đang xem — sau khi chèn có thể kéo để di chuyển, kéo 4 góc để đổi kích thước"><span class="ic">🖼️</span>Insert Image</button>
   <input type="file" id="insertImageInput" accept="image/png,image/jpeg,image/jpg,image/webp,image/gif,image/bmp" style="display:none">
+  <button class="tbtn" id="btnCopyImage" title="Copy ảnh đang chọn (Ctrl+C) — dùng được để dán lại trong chính PDF này, và dán sang cả ứng dụng khác (Word, Paint...) nếu trình duyệt hỗ trợ"><span class="ic">📋</span>Copy</button>
+  <button class="tbtn" id="btnPasteImage" title="Dán ảnh (Ctrl+V) — ưu tiên ảnh vừa copy từ ứng dụng khác (vd: công cụ chụp màn hình, trình duyệt), nếu không có sẽ dán ảnh vừa Copy trong chính PDF này"><span class="ic">📌</span>Paste</button>
   <div class="sep"></div>
   <button class="tbtn" data-tool="region" id="toolRegion" title="Kéo chọn một vùng trên trang, sau đó bấm 'Edit Text' hoặc 'Sửa văn bản (OCR)' để sửa nhanh cả vùng"><span class="ic">🔲</span>Selection area</button>
   <button class="tbtn" id="btnClearRegion" title="Bỏ chọn vùng hiện tại"><span class="ic">✕</span>Deselect</button>
@@ -2761,24 +2763,37 @@ async function insertImageFile(file){
     reader.onerror = () => reject(new Error('Không đọc được file ảnh.'));
     reader.readAsDataURL(file);
   });
+  const { pngDataUrl, w, h } = await normalizeImageToPng_(dataUrl);
+  await insertImageDataUrl_(pngDataUrl, w, h);
+}
+
+// Vẽ lại 1 ảnh (từ data URL bất kỳ: PNG/JPG/WEBP/GIF/BMP...) qua <canvas> rồi xuất lại thành PNG —
+// dùng chung cho cả "Insert Image" (đọc từ file) lẫn "Paste" (đọc từ clipboard), đảm bảo LUÔN nhúng
+// được vào PDF (pdf-lib chỉ hỗ trợ PNG/JPEG) và giữ được kênh alpha nếu ảnh gốc có.
+async function normalizeImageToPng_(dataUrl){
   const img = await new Promise((resolve, reject) => {
     const im = new Image();
     im.onload = () => resolve(im);
-    im.onerror = () => reject(new Error('File không phải ảnh hợp lệ hoặc bị hỏng.'));
+    im.onerror = () => reject(new Error('Dữ liệu không phải ảnh hợp lệ hoặc bị hỏng.'));
     im.src = dataUrl;
   });
   const off = document.createElement('canvas');
   off.width = img.naturalWidth; off.height = img.naturalHeight;
   off.getContext('2d').drawImage(img, 0, 0);
-  const pngDataUrl = off.toDataURL('image/png');
+  return { pngDataUrl: off.toDataURL('image/png'), w: img.naturalWidth, h: img.naturalHeight };
+}
 
-  // Kích thước chèn ban đầu: giữ nguyên tỉ lệ khung hình gốc, co lại nếu quá lớn so với trang
-  // (tối đa 50% chiều rộng/chiều cao trang), phóng lên nếu ảnh quá nhỏ (tối thiểu 60pt ở cạnh dài
-  // nhất) để không bị chèn vào một chấm bé xíu khó thấy. Chèn vào giữa trang đang xem.
+// Thêm 1 ảnh (đã ở dạng PNG data URL) vào trang đang xem dưới dạng 1 "edit" ảnh — dùng chung cho cả
+// Insert Image và Paste Image. Kích thước chèn ban đầu: giữ nguyên tỉ lệ khung hình gốc, co lại nếu
+// quá lớn so với trang (tối đa 50% chiều rộng/chiều cao trang), phóng lên nếu ảnh quá nhỏ (tối thiểu
+// 60pt ở cạnh dài nhất). Chèn vào giữa trang đang xem (lệch thêm opts.offset nếu có, để dán nhiều
+// lần liên tiếp không bị các ảnh đè khít lên nhau, giống hành vi Paste quen thuộc của Word/PowerPoint).
+async function insertImageDataUrl_(pngDataUrl, naturalW, naturalH, opts){
+  opts = opts || {};
   const pageW = pdfCanvas.width/scale || 595;
   const pageH = pdfCanvas.height/scale || 842;
   const maxW = pageW * 0.5, maxH = pageH * 0.5;
-  let w = img.naturalWidth, h = img.naturalHeight;
+  let w = naturalW, h = naturalH;
   const shrink = Math.min(maxW/w, maxH/h, 1);
   w *= shrink; h *= shrink;
   const MIN_DIM = 60;
@@ -2786,7 +2801,8 @@ async function insertImageFile(file){
     const grow = MIN_DIM / Math.max(w,h);
     w *= grow; h *= grow;
   }
-  const x = (pageW - w)/2, y = (pageH - h)/2;
+  let x = (pageW - w)/2, y = (pageH - h)/2;
+  if(opts.offset){ x += opts.offset; y += opts.offset; }
 
   pushUndo(currentIndex);
   cur().edits.push({ type:'image', x, y, w, h, imageDataUrl: pngDataUrl });
@@ -2794,6 +2810,123 @@ async function insertImageFile(file){
   selectedEditIndex = cur().edits.length - 1;     // rồi tự chọn luôn ảnh vừa chèn
   redrawOverlay();
 }
+
+// ---------- Copy / Paste ảnh ----------
+// "Clipboard" nội bộ trong app — luôn được ghi khi bấm Copy, dùng làm phương án dự phòng lúc Paste
+// nếu trình duyệt không cho phép đọc clipboard hệ thống (thiếu quyền, không phải ngữ cảnh an toàn
+// HTTPS, hoặc đang chạy trong iframe/sandbox hạn chế — trường hợp khá phổ biến với file HTML mở
+// trực tiếp từ đĩa). Nhờ vậy Copy/Paste LUÔN hoạt động được bên trong chính app này, bất kể trình
+// duyệt có hỗ trợ Clipboard API đầy đủ hay không; chỉ riêng việc dán ảnh SANG ứng dụng khác (Word,
+// Paint...) mới cần trình duyệt hỗ trợ.
+let appImageClipboard = null; // { dataUrl, w, h }
+
+// Hiện một thông báo nhỏ, tự biến mất sau ít giây — dùng để xác nhận Copy/Paste thành công mà
+// không cần alert() gây gián đoạn thao tác (alert() chặn cả trang, không phù hợp cho việc phản hồi
+// nhanh mỗi lần bấm Copy).
+function showToast_(msg){
+  let el = document.getElementById('appToast_');
+  if(!el){
+    el = document.createElement('div');
+    el.id = 'appToast_';
+    el.style.cssText = 'position:fixed;left:50%;bottom:28px;transform:translateX(-50%) translateY(10px);'
+      + 'background:#1f2937;color:#fff;padding:9px 16px;border-radius:8px;font-size:13px;'
+      + 'box-shadow:0 4px 14px rgba(0,0,0,.25);z-index:99999;opacity:0;transition:opacity .18s,transform .18s;'
+      + 'pointer-events:none;max-width:80vw;text-align:center;';
+    document.body.appendChild(el);
+  }
+  el.textContent = msg;
+  clearTimeout(el._hideTimer);
+  requestAnimationFrame(() => { el.style.opacity = '1'; el.style.transform = 'translateX(-50%) translateY(0)'; });
+  el._hideTimer = setTimeout(() => {
+    el.style.opacity = '0'; el.style.transform = 'translateX(-50%) translateY(10px)';
+  }, 2200);
+}
+
+// Copy ảnh đang chọn trên trang (edit type:'image') vào cả clipboard nội bộ (luôn thành công) và
+// clipboard HỆ THỐNG (nếu trình duyệt hỗ trợ + được cấp quyền) để có thể dán sang ứng dụng khác.
+async function copySelectedImage(){
+  if(!pages.length || selectedEditIndex < 0){
+    alert('Hãy dùng công cụ Select rồi bấm chọn một ảnh trên trang trước khi Copy.');
+    return;
+  }
+  const ed = cur().edits[selectedEditIndex];
+  if(!ed || ed.type !== 'image'){
+    alert('Chỉ Copy được ảnh — hãy chọn một ảnh đã chèn trên trang (không phải chữ/nét vẽ khác).');
+    return;
+  }
+
+  appImageClipboard = { dataUrl: ed.imageDataUrl, w: ed.w, h: ed.h };
+
+  try{
+    if(navigator.clipboard && window.ClipboardItem){
+      const res = await fetch(ed.imageDataUrl);
+      const blob = await res.blob();
+      await navigator.clipboard.write([ new ClipboardItem({ [blob.type || 'image/png']: blob }) ]);
+      showToast_('📋 Đã copy ảnh — dán được trong PDF này lẫn ứng dụng khác.');
+      return;
+    }
+  }catch(err){
+    console.warn('Không copy được vào clipboard hệ thống (vẫn copy được trong app):', err);
+  }
+  showToast_('📋 Đã copy ảnh (trong PDF này) — trình duyệt không hỗ trợ dán sang ứng dụng khác.');
+}
+
+// Đọc 1 Blob ảnh (từ clipboard) rồi chuẩn hoá về PNG giống hệt insertImageFile.
+async function loadImageBlobAsPng_(blob){
+  const dataUrl = await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error('Không đọc được dữ liệu ảnh từ clipboard.'));
+    reader.readAsDataURL(blob);
+  });
+  return normalizeImageToPng_(dataUrl);
+}
+
+// Dán ảnh vào trang đang xem — ƯU TIÊN ảnh đang có trên clipboard HỆ THỐNG (vd: vừa copy từ công cụ
+// chụp màn hình, trình duyệt, ứng dụng khác...); nếu không đọc được (thiếu quyền/trình duyệt không
+// hỗ trợ/không có ảnh nào trên đó) thì dùng ảnh vừa Copy TRONG CHÍNH app này làm phương án dự phòng.
+async function pasteImage(){
+  if(!pages.length){ alert('Hãy mở một file PDF trước.'); return; }
+  try{
+    if(navigator.clipboard && navigator.clipboard.read){
+      try{
+        const items = await navigator.clipboard.read();
+        for(const item of items){
+          const imgType = item.types.find(t => t.startsWith('image/'));
+          if(imgType){
+            const blob = await item.getType(imgType);
+            const { pngDataUrl, w, h } = await loadImageBlobAsPng_(blob);
+            await insertImageDataUrl_(pngDataUrl, w, h);
+            showToast_('📌 Đã dán ảnh từ clipboard.');
+            return;
+          }
+        }
+        // Đọc được clipboard nhưng không có mục nào là ảnh (vd chỉ có chữ) -> rơi xuống dùng
+        // clipboard nội bộ trong app bên dưới.
+      }catch(err){
+        // Thường do bị từ chối quyền truy cập clipboard, hoặc trình duyệt/ngữ cảnh không hỗ trợ
+        // navigator.clipboard.read() (ví dụ mở file HTML trực tiếp từ đĩa thay vì qua HTTPS).
+        console.warn('Không đọc được clipboard hệ thống, thử dùng clipboard trong app:', err);
+      }
+    }
+
+    if(appImageClipboard){
+      await insertImageDataUrl_(appImageClipboard.dataUrl, appImageClipboard.w, appImageClipboard.h, { offset: 14 });
+      showToast_('📌 Đã dán ảnh (từ clipboard trong PDF này).');
+      return;
+    }
+
+    alert('Chưa có ảnh nào trong clipboard để dán. Hãy Copy một ảnh trước (trong app này hoặc từ ứng dụng khác), hoặc dùng "Insert Image" để chèn ảnh từ file.');
+  }catch(err){
+    console.error('Lỗi khi dán ảnh:', err);
+    alert('Không dán được ảnh: ' + err.message);
+  }
+}
+
+document.getElementById('btnCopyImage').onclick = copySelectedImage;
+document.getElementById('btnPasteImage').onclick = pasteImage;
+
+
 
 // ---------- Chèn trang trắng ----------
 document.getElementById('btnInsertBlank').onclick = async () => {
@@ -5187,6 +5320,18 @@ window.addEventListener('keydown', (e)=>{
     selectedEditIndex = -1;
     redrawOverlay();
   }
+  // Ctrl/Cmd+C: chỉ bắt khi đang chọn MỘT ẢNH bằng công cụ Select (không đụng tới Ctrl+C mặc định
+  // của trình duyệt khi người dùng đang bôi đen văn bản bằng công cụ "Select text to copy").
+  if((e.ctrlKey || e.metaKey) && e.key.toLowerCase()==='c' && activeTool==='select' && selectedEditIndex>=0 && pages.length){
+    const ed = cur().edits[selectedEditIndex];
+    if(ed && ed.type==='image'){ e.preventDefault(); copySelectedImage(); }
+  }
+  // Ctrl/Cmd+V: dán ảnh — bỏ qua nếu người dùng đang bấm Ctrl+V vào một ô nhập liệu/contenteditable
+  // khác (đã lọc INPUT/TEXTAREA ở trên; còn lại kiểm tra thêm contenteditable cho các ô soạn chữ).
+  if((e.ctrlKey || e.metaKey) && e.key.toLowerCase()==='v' && pages.length){
+    const ce = document.activeElement && document.activeElement.isContentEditable;
+    if(!ce){ e.preventDefault(); pasteImage(); }
+  }
 });
 
 overlayCanvas.addEventListener('mousemove', (e)=>{
@@ -6059,6 +6204,16 @@ document.getElementById('btnPrint').onclick = printPdf;
 // động giảm tiếp chất lượng/độ phân giải và nén lại (tối đa vài lần) cho tới khi đạt mức giảm mong
 // muốn, hoặc dùng phương án tốt nhất tìm được nếu không thể đạt đúng khoảng mục tiêu. Nhờ vậy, mọi
 // loại file (kể cả file toàn chữ) đều được đảm bảo nhỏ hơn đáng kể so với file gốc (khoảng 20%-50%).
+// VẤN ĐỀ ĐÃ SỬA (lần 2 — lỗi cốt lõi): với PDF chủ yếu là CHỮ VECTOR (chữ dạng văn bản thật, gần
+// như không có ảnh), việc "vẽ lại" (rasterize) cả trang thành ảnh JPEG — dù đã giảm chất lượng/độ
+// phân giải tới mức thấp nhất — vẫn có thể NẶNG HƠN chính nội dung chữ vector gốc (chữ vector nén
+// cực nhỏ, trong khi ảnh JPEG luôn tốn dung lượng vì các cạnh chữ bị mờ/nhiễu khi nén). Thuật toán
+// "thích ứng" trước đây chỉ cố giảm chất lượng dần chứ KHÔNG có phương án dự phòng khi rasterize
+// luôn thua vector gốc — nên vẫn trả về bản rasterize dù nó to hơn, khiến "nén" ra file NẶNG HƠN.
+// Cách sửa: luôn coi bản PDF CHƯA rasterize (chỉ lưu lại qua pdf-lib — bản thân bước này đã tối ưu
+// hoá stream/loại bỏ object thừa nên thường NHỎ HƠN file gốc, xem hàm compressPdfAndDownload) là
+// MỘT ỨNG VIÊN ngay từ đầu trong vòng lặp so sánh; chỉ thay bằng bản rasterize khi nó thực sự nhỏ
+// hơn. Nhờ vậy file "đã nén" được ĐẢM BẢO toán học sẽ không bao giờ nặng hơn bản trước khi nén.
 const COMPRESS_LEVELS = {
   // Nén tiêu chuẩn: nhắm tới mức giảm 20%-40%, vẫn giữ chất lượng hiển thị tốt
   standard: { maxSide: 1400, quality: 0.60, targetMin: 0.20, targetMax: 0.40 },
@@ -6140,9 +6295,19 @@ async function compressPdfAndDownload(level){
     // tế so với file gốc; nếu chưa đạt khoảng mục tiêu (targetMin–targetMax), tự động chỉnh lại
     // chất lượng/độ phân giải và nén lại — lặp tối đa COMPRESS_MAX_ATTEMPTS lần. Luôn giữ lại kết
     // quả nén nhỏ nhất từng đạt được (bestBytes) để đảm bảo file cuối cùng luôn nhỏ hơn file gốc.
+    // Bước 3 (THÍCH ỨNG + CÓ BẢO HIỂM): bắt đầu với chính bản ĐÃ LƯU QUA PDF-LIB nhưng CHƯA rasterize
+    // (editedBytes) làm ứng viên "an toàn" đầu tiên — bước lưu này bản thân nó thường đã nhỏ hơn file
+    // gốc (loại bỏ object/metadata thừa) mà KHÔNG làm mất chữ vector chọn/copy được. Sau đó thử nén
+    // bằng rasterize (JPEG) với cấu hình ban đầu của mức đã chọn, đo mức giảm dung lượng thực tế; nếu
+    // chưa đạt khoảng mục tiêu (targetMin–targetMax), tự động chỉnh lại chất lượng/độ phân giải và
+    // nén lại — lặp tối đa COMPRESS_MAX_ATTEMPTS lần. CHỈ thay ứng viên tốt nhất (bestBytes) khi một
+    // lượt rasterize cho ra kết quả THỰC SỰ NHỎ HƠN ứng viên hiện có — nhờ vậy, với các PDF chủ yếu
+    // là chữ vector (rasterize luôn thua vector gốc dù đã nén cực mạnh), kết quả cuối cùng sẽ tự động
+    // rơi về đúng bản chưa-rasterize này, ĐẢM BẢO file "đã nén" không bao giờ nặng hơn trước khi nén.
     let cfg = { maxSide: baseCfg.maxSide, quality: baseCfg.quality };
-    let bestBytes = null;
-    let bestReduction = -Infinity; // tỉ lệ giảm dung lượng tốt nhất tìm được (có thể âm nếu nén ra to hơn)
+    let bestBytes = editedBytes;       // ứng viên an toàn ban đầu: chưa rasterize, chữ vẫn là vector
+    let bestReduction = 0;             // so với chính editedBytes -> 0% (chưa nén thêm gì)
+    let usedRasterize = false;         // đã từng có 1 lượt rasterize thắng được bản vector chưa
     let finalReduction = 0;
 
     for(let attempt=0; attempt<COMPRESS_MAX_ATTEMPTS; attempt++){
@@ -6150,22 +6315,22 @@ async function compressPdfAndDownload(level){
       const candidateBytes = await renderCompressedDoc_(editedDocJs, cfg, spinnerLabel, attemptInfo);
       const reduction = originalSize > 0 ? (1 - candidateBytes.length / originalSize) : 0;
 
-      if(reduction > bestReduction){
+      if(candidateBytes.length < bestBytes.length){
         bestReduction = reduction;
         bestBytes = candidateBytes;
+        usedRasterize = true;
       }
 
-      // Đã đạt khoảng mục tiêu mong muốn -> dừng lại, dùng luôn kết quả này.
-      if(reduction >= baseCfg.targetMin && reduction <= baseCfg.targetMax){
+      // Đã đạt khoảng mục tiêu mong muốn (và bản rasterize này đang là ứng viên tốt nhất) -> dừng.
+      if(reduction >= baseCfg.targetMin && reduction <= baseCfg.targetMax && usedRasterize && bestBytes===candidateBytes){
         finalReduction = reduction;
-        bestBytes = candidateBytes;
         break;
       }
 
       finalReduction = bestReduction;
 
       if(reduction < baseCfg.targetMin){
-        // Giảm chưa đủ (hoặc file nén ra còn to hơn gốc) -> nén mạnh tay hơn ở lượt sau.
+        // Giảm chưa đủ (hoặc file rasterize ra còn to hơn cả bản vector) -> nén mạnh tay hơn ở lượt sau.
         cfg = {
           quality: Math.max(COMPRESS_QUALITY_FLOOR, +(cfg.quality * 0.65).toFixed(2)),
           maxSide: Math.max(COMPRESS_MAXSIDE_FLOOR, Math.round(cfg.maxSide * 0.80))
@@ -6189,9 +6354,9 @@ async function compressPdfAndDownload(level){
     a.download = base + (level==='extreme' ? '-sieu-nen.pdf' : '-nen.pdf');
     a.click();
 
-    cprResult.textContent = percent > 0
+    cprResult.textContent = percent > 0 && usedRasterize
       ? `Xong! Dung lượng gốc: ${formatBytes_(originalSize)} → sau khi nén: ${formatBytes_(compressedSize)} (giảm ${percent}%). Đã tải file xuống.`
-      : `Xong! Dung lượng gốc: ${formatBytes_(originalSize)} → sau khi nén: ${formatBytes_(compressedSize)}. Tài liệu này quá đơn giản/đã tối ưu sẵn nên khó giảm thêm — vẫn đã tải file đã xử lý xuống, bạn có thể dùng "Save PDF" nếu muốn giữ file gốc.`;
+      : `Tài liệu này chủ yếu là CHỮ VECTOR (chọn/copy được) nên nén thành ảnh không giúp giảm thêm dung lượng — đã tự động giữ nguyên dạng vector gốc (${formatBytes_(originalSize)}) để đảm bảo file tải xuống KHÔNG bị nặng hơn, đồng thời vẫn giữ được chữ chọn/copy được. Nếu muốn giảm dung lượng hơn nữa cho tài liệu dạng này, cân nhắc giảm số trang hoặc ảnh chèn kèm thay vì nén toàn trang.`;
   }catch(err){
     console.error('Lỗi khi nén PDF:', err);
     cprError.textContent = 'Lỗi khi nén PDF: ' + err.message;
