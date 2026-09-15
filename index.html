@@ -2334,6 +2334,19 @@ function setActiveEditFont(fontFamily, fontSize, fontColor, bold, italic, underl
   if(colorSel) colorSel.value = currentFontColor;
 }
 let originalFileName = 'document.pdf';
+// NEW (sửa lỗi Compress PDF ra file lớn hơn file gốc): lưu lại ArrayBuffer + kích thước byte THỰC
+// của chính file PDF vừa mở lên (fileInput), tách biệt hẳn với "editedBytes" (bản đã được pdf-lib
+// dựng/lưu lại ở bước nén — bản dựng lại này có thể tự nó đã NẶNG HƠN file gốc do pdf-lib nhúng lại
+// font/ảnh, không giữ nguyên y hệt cách nén stream của phần mềm tạo ra file gốc). Trước đây hàm nén
+// lấy "originalSize" = kích thước của editedBytes (bản dựng lại) để so sánh/hiển thị %, nên dù file
+// nén ra nhỏ hơn editedBytes, nó vẫn có thể LỚN HƠN file .pdf gốc thật mà người dùng đã mở lên — đây
+// chính là nguyên nhân cốt lõi của lỗi "nén xong file lại to hơn file gốc". Từ giờ, mọi so sánh/hiển
+// thị % giảm dung lượng trong Compress PDF đều dùng originalFileRawSize (kích thước byte thật của
+// file gốc) làm chuẩn, và khi tài liệu CHƯA bị chỉnh sửa gì (đúng nguyên trạng lúc mở), chính
+// originalFileRawBuf cũng được đưa vào làm một "ứng viên" trong vòng lặp chọn bản nhỏ nhất — đảm bảo
+// toán học rằng file tải xuống không bao giờ nặng hơn file gốc trong trường hợp phổ biến này.
+let originalFileRawBuf = null;   // ArrayBuffer nguyên bản của file .pdf vừa mở (chưa qua pdf-lib)
+let originalFileRawSize = 0;     // byte length của originalFileRawBuf
 let tesseractWorker = null;
 
 let drawingFreehand = false;
@@ -2490,6 +2503,13 @@ document.getElementById('fileInput').onchange = async (e) => {
   originalFileName = file.name.replace(/\.pdf$/i,'') + '-edited.pdf';
   document.getElementById('filename').textContent = file.name;
   const buf = await file.arrayBuffer();
+  // Lưu lại chính tham chiếu ArrayBuffer "buf" (KHÔNG slice) làm bản RAW của file .pdf vừa mở, dùng
+  // làm chuẩn so sánh dung lượng "file gốc" thật sự cho tính năng Compress PDF — xem giải thích chi
+  // tiết ở khai báo originalFileRawBuf/originalFileRawSize phía trên. Dùng chung 1 tham chiếu với
+  // srcBuf của từng trang (push ở dưới) để có thể nhận diện bằng identity (===) rằng tài liệu vẫn
+  // đúng y nguyên trạng lúc mở (chưa Insert/Combine trang từ file khác) trong compressPdfAndDownload.
+  originalFileRawBuf = buf;
+  originalFileRawSize = buf.byteLength;
   const doc = await pdfjsLib.getDocument({data: buf.slice(0)}).promise;
   pages = [];
   for(let i=1;i<=doc.numPages;i++){
@@ -6095,7 +6115,10 @@ async function printPdf(){
 
     // Bước 2: dùng pdf.js vẽ lại từng trang ra canvas ở độ phân giải đủ nét để in (~200dpi), rồi
     // xuất thành ảnh PNG (data URL) — không tạo blob URL kiểu "application/pdf" ở bất kỳ đâu.
-    const docJs = await pdfjsLib.getDocument({ data: bytes }).promise;
+    // Dùng bytes.slice() (bản sao) thay vì truyền thẳng "bytes": pdfjsLib.getDocument() chuyển
+    // quyền sở hữu (transfer/detach) ArrayBuffer gốc cho Worker, khiến "bytes" bị rút ruột về 0
+    // byte ngay sau dòng này nếu truyền trực tiếp — xem giải thích chi tiết ở compressPdfAndDownload().
+    const docJs = await pdfjsLib.getDocument({ data: bytes.slice() }).promise;
     const PRINT_SCALE = 2.5; // ~180dpi (1 point = 1/72 inch), đủ nét để in, không quá nặng bộ nhớ
     const pageImages = [];
     for(let i=0;i<docJs.numPages;i++){
@@ -6268,6 +6291,23 @@ async function renderCompressedDoc_(editedDocJs, cfg, spinnerLabel, attemptInfo)
   return compressedDoc.save();
 }
 
+// NEW: kiểm tra tài liệu hiện tại có ĐÚNG NGUYÊN TRẠNG như lúc vừa mở file lên hay không (chưa hề
+// Insert/Combine thêm trang từ file khác, chưa xoá/sắp xếp lại trang, chưa xoay trang, chưa thêm bất
+// kỳ chỉnh sửa (text/ảnh/tô/OCR...) nào). Dùng để quyết định có được phép dùng thẳng bytes RAW của
+// file gốc (originalFileRawBuf) làm một "ứng viên" trong Compress PDF hay không — chỉ khi tài liệu
+// còn nguyên trạng thì bytes RAW mới chính xác tương đương nội dung đang hiển thị trong editor.
+function isDocUnchangedFromOriginalRaw_(){
+  if(!originalFileRawBuf || !originalFileRawSize || !pages.length) return false;
+  for(let i=0;i<pages.length;i++){
+    const p = pages[i];
+    if(p.srcBuf !== originalFileRawBuf) return false;      // có trang đến từ file khác (Insert/Combine)
+    if(p.srcPage !== i+1) return false;                    // đã xoá trang hoặc sắp xếp lại thứ tự
+    if(p.edits && p.edits.length) return false;             // đã có chỉnh sửa (chữ/ảnh/tô/OCR...)
+    if(getPageRotation_(p) !== 0) return false;              // đã xoay trang
+  }
+  return true;
+}
+
 async function compressPdfAndDownload(level){
   if(!pages.length){ alert('Hãy mở một file PDF trước.'); return; }
   flushPendingEdit();
@@ -6284,50 +6324,78 @@ async function compressPdfAndDownload(level){
     spinnerLabel.textContent = ' Đang chuẩn bị tài liệu để nén…';
     const editedOutDoc = await buildEditedOutDoc(pages.map((_,i)=>i), spinnerLabel);
     const editedBytes = await saveOutDocWithVietWidthFix(editedOutDoc);
-    const originalSize = editedBytes.length;
+
+    // LỖI CỐT LÕI ĐÃ SỬA (nguyên nhân khiến "file đã nén" LỚN HƠN file gốc): trước đây biến
+    // "originalSize" dùng để so sánh/hiển thị % giảm dung lượng được gán = editedBytes.length, tức
+    // là kích thước của BẢN DỰNG LẠI qua pdf-lib — KHÔNG PHẢI kích thước byte thật của chính file
+    // .pdf mà người dùng đã mở lên. Bản dựng lại này (pdf-lib re-save, re-embed font/ảnh) hoàn toàn
+    // có thể tự nó đã NẶNG HƠN file .pdf gốc (nhất là các file được các phần mềm khác tối ưu hoá nén
+    // stream tốt sẵn từ trước, ví dụ xuất từ LaTeX/InDesign/máy scan). Vì vậy dù thuật toán nén luôn
+    // đảm bảo bestBytes ≤ editedBytes, kết quả tải xuống vẫn có thể ĐANG LỚN HƠN file gốc thật — user
+    // nhìn vào dung lượng file trên máy vẫn thấy "nén xong lại to hơn". Cách sửa: mọi so sánh/hiển
+    // thị % giảm và mọi ràng buộc "phải nhỏ hơn" bên dưới đều dùng originalFileRawSize (kích thước
+    // byte THẬT của file .pdf gốc, lưu lại ngay lúc mở file — xem khai báo originalFileRawBuf phía
+    // trên) làm chuẩn, không dùng editedBytes.length nữa.
+    const rebuiltSize = editedBytes.length; // dùng riêng để hiển thị debug/tham khảo, KHÔNG dùng làm chuẩn "gốc"
+    const trueOriginalSize = originalFileRawSize > 0 ? originalFileRawSize : rebuiltSize;
 
     // Bước 2: vẽ lại từng trang ra canvas (dùng pdf.js) rồi nén thành JPEG, sau đó nhúng ảnh đó vào
     // một trang PDF mới có ĐÚNG kích thước (point) như trang gốc — giữ nguyên khổ giấy, chỉ đổi nội
     // dung bên trong thành ảnh đã nén.
-    const editedDocJs = await pdfjsLib.getDocument({ data: editedBytes }).promise;
+    // LỖI ĐÃ SỬA (nguyên nhân cốt lõi khiến file nén ra 0KB): pdfjsLib.getDocument({data: ...})
+    // CHUYỂN QUYỀN SỞ HỮU (transfer/detach) bộ nhớ ArrayBuffer gốc sang cho PDF.js Worker xử lý —
+    // ngay sau dòng này, editedBytes.length TỰ ĐỘNG BIẾN THÀNH 0 (bị "rút ruột" bộ nhớ), dù biến
+    // vẫn còn tồn tại. Khắc phục: luôn truyền vào getDocument() một BẢN SAO độc lập
+    // (editedBytes.slice()) — bản sao có vùng nhớ riêng nên có bị Worker "rút ruột" cũng không ảnh
+    // hưởng gì tới editedBytes gốc.
+    const editedDocJs = await pdfjsLib.getDocument({ data: editedBytes.slice() }).promise;
 
-    // Bước 3 (THÍCH ỨNG): nén thử với cấu hình ban đầu của mức đã chọn, đo mức giảm dung lượng thực
-    // tế so với file gốc; nếu chưa đạt khoảng mục tiêu (targetMin–targetMax), tự động chỉnh lại
-    // chất lượng/độ phân giải và nén lại — lặp tối đa COMPRESS_MAX_ATTEMPTS lần. Luôn giữ lại kết
-    // quả nén nhỏ nhất từng đạt được (bestBytes) để đảm bảo file cuối cùng luôn nhỏ hơn file gốc.
-    // Bước 3 (THÍCH ỨNG + CÓ BẢO HIỂM): bắt đầu với chính bản ĐÃ LƯU QUA PDF-LIB nhưng CHƯA rasterize
-    // (editedBytes) làm ứng viên "an toàn" đầu tiên — bước lưu này bản thân nó thường đã nhỏ hơn file
-    // gốc (loại bỏ object/metadata thừa) mà KHÔNG làm mất chữ vector chọn/copy được. Sau đó thử nén
-    // bằng rasterize (JPEG) với cấu hình ban đầu của mức đã chọn, đo mức giảm dung lượng thực tế; nếu
-    // chưa đạt khoảng mục tiêu (targetMin–targetMax), tự động chỉnh lại chất lượng/độ phân giải và
-    // nén lại — lặp tối đa COMPRESS_MAX_ATTEMPTS lần. CHỈ thay ứng viên tốt nhất (bestBytes) khi một
-    // lượt rasterize cho ra kết quả THỰC SỰ NHỎ HƠN ứng viên hiện có — nhờ vậy, với các PDF chủ yếu
-    // là chữ vector (rasterize luôn thua vector gốc dù đã nén cực mạnh), kết quả cuối cùng sẽ tự động
-    // rơi về đúng bản chưa-rasterize này, ĐẢM BẢO file "đã nén" không bao giờ nặng hơn trước khi nén.
+    // Bước 3 (THÍCH ỨNG + CÓ BẢO HIỂM): tập hợp ứng viên ban đầu gồm:
+    //  (a) editedBytes — bản ĐÃ LƯU QUA PDF-LIB nhưng CHƯA rasterize (chữ vẫn là vector chọn/copy
+    //      được) — bước lưu này bản thân nó thường đã nhỏ hơn file gốc (loại bỏ object/metadata
+    //      thừa).
+    //  (b) NẾU tài liệu vẫn còn NGUYÊN TRẠNG như lúc mở (chưa Insert/Combine/xoá/sắp xếp lại/xoay/
+    //      chỉnh sửa gì — xem isDocUnchangedFromOriginalRaw_()): chính bytes RAW của file gốc
+    //      (originalFileRawBuf) cũng được đưa vào làm ứng viên — đây là trường hợp phổ biến nhất
+    //      (mở file rồi bấm Compress ngay) và bytes RAW luôn ĐÚNG BẰNG trueOriginalSize, nên chọn nó
+    //      sẽ đảm bảo TOÁN HỌC 100% rằng file tải xuống không bao giờ nặng hơn file gốc.
+    // Sau đó thử nén bằng rasterize (JPEG) với cấu hình ban đầu của mức đã chọn, đo mức giảm dung
+    // lượng thực tế SO VỚI trueOriginalSize; nếu chưa đạt khoảng mục tiêu (targetMin–targetMax), tự
+    // động chỉnh lại chất lượng/độ phân giải và nén lại — lặp tối đa COMPRESS_MAX_ATTEMPTS lần. CHỈ
+    // thay ứng viên tốt nhất (bestBytes) khi một lượt rasterize cho ra kết quả THỰC SỰ NHỎ HƠN ứng
+    // viên hiện có — nhờ vậy, với các PDF chủ yếu là chữ vector (rasterize luôn thua vector gốc dù đã
+    // nén cực mạnh), kết quả cuối cùng sẽ tự động rơi về đúng ứng viên (a) hoặc (b) ở trên.
     let cfg = { maxSide: baseCfg.maxSide, quality: baseCfg.quality };
-    let bestBytes = editedBytes;       // ứng viên an toàn ban đầu: chưa rasterize, chữ vẫn là vector
-    let bestReduction = 0;             // so với chính editedBytes -> 0% (chưa nén thêm gì)
-    let usedRasterize = false;         // đã từng có 1 lượt rasterize thắng được bản vector chưa
-    let finalReduction = 0;
+    let bestBytes = editedBytes;                         // ứng viên (a): chưa rasterize, chữ vẫn là vector
+    let usedRasterize = false;                            // đã từng có 1 lượt rasterize thắng chưa
+    let usedRawOriginal = false;                           // ứng viên cuối cùng có phải bytes RAW gốc không
+
+    if(isDocUnchangedFromOriginalRaw_()){
+      const rawBytes = new Uint8Array(originalFileRawBuf);
+      if(rawBytes.length < bestBytes.length){
+        bestBytes = rawBytes;
+        usedRawOriginal = true;
+      }
+    }
+
+    let finalReduction = trueOriginalSize > 0 ? (1 - bestBytes.length / trueOriginalSize) : 0;
 
     for(let attempt=0; attempt<COMPRESS_MAX_ATTEMPTS; attempt++){
       const attemptInfo = COMPRESS_MAX_ATTEMPTS>1 ? ` (lượt ${attempt+1})` : '';
       const candidateBytes = await renderCompressedDoc_(editedDocJs, cfg, spinnerLabel, attemptInfo);
-      const reduction = originalSize > 0 ? (1 - candidateBytes.length / originalSize) : 0;
+      const reduction = trueOriginalSize > 0 ? (1 - candidateBytes.length / trueOriginalSize) : 0;
 
       if(candidateBytes.length < bestBytes.length){
-        bestReduction = reduction;
         bestBytes = candidateBytes;
         usedRasterize = true;
+        usedRawOriginal = false;
+        finalReduction = reduction;
       }
 
       // Đã đạt khoảng mục tiêu mong muốn (và bản rasterize này đang là ứng viên tốt nhất) -> dừng.
-      if(reduction >= baseCfg.targetMin && reduction <= baseCfg.targetMax && usedRasterize && bestBytes===candidateBytes){
-        finalReduction = reduction;
+      if(reduction >= baseCfg.targetMin && reduction <= baseCfg.targetMax && bestBytes===candidateBytes){
         break;
       }
-
-      finalReduction = bestReduction;
 
       if(reduction < baseCfg.targetMin){
         // Giảm chưa đủ (hoặc file rasterize ra còn to hơn cả bản vector) -> nén mạnh tay hơn ở lượt sau.
@@ -6344,9 +6412,15 @@ async function compressPdfAndDownload(level){
       }
     }
 
+    // BẢO HIỂM CUỐI CÙNG: nếu vì lý do nào đó (VD tài liệu có nhiều chỉnh sửa khiến bản dựng lại qua
+    // pdf-lib tự nó đã nặng hơn file gốc, và rasterize cũng không thắng nổi) mà ứng viên tốt nhất tìm
+    // được vẫn ≥ trueOriginalSize, đồng thời tài liệu vẫn còn nguyên trạng, thì luôn ưu tiên rơi về
+    // đúng bytes RAW gốc (đã là ứng viên ở bước trên) — đảm bảo KHÔNG BAO GIỜ tải xuống file nặng hơn
+    // file gốc trong trường hợp phổ biến (chưa chỉnh sửa gì) này.
     const compressedBytes = bestBytes;
     const compressedSize = compressedBytes.length;
     const percent = Math.round(finalReduction * 100);
+    const isLargerThanOriginal = compressedSize > trueOriginalSize;
 
     const blob = new Blob([compressedBytes], {type:'application/pdf'});
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
@@ -6354,9 +6428,18 @@ async function compressPdfAndDownload(level){
     a.download = base + (level==='extreme' ? '-sieu-nen.pdf' : '-nen.pdf');
     a.click();
 
-    cprResult.textContent = percent > 0 && usedRasterize
-      ? `Xong! Dung lượng gốc: ${formatBytes_(originalSize)} → sau khi nén: ${formatBytes_(compressedSize)} (giảm ${percent}%). Đã tải file xuống.`
-      : `Tài liệu này chủ yếu là CHỮ VECTOR (chọn/copy được) nên nén thành ảnh không giúp giảm thêm dung lượng — đã tự động giữ nguyên dạng vector gốc (${formatBytes_(originalSize)}) để đảm bảo file tải xuống KHÔNG bị nặng hơn, đồng thời vẫn giữ được chữ chọn/copy được. Nếu muốn giảm dung lượng hơn nữa cho tài liệu dạng này, cân nhắc giảm số trang hoặc ảnh chèn kèm thay vì nén toàn trang.`;
+    if(usedRawOriginal){
+      cprResult.textContent = `Tài liệu chưa có chỉnh sửa nào nên đã giữ nguyên bản gốc (${formatBytes_(trueOriginalSize)}) — không có gì để nén thêm, nhưng file tải xuống ĐẢM BẢO không nặng hơn file gốc.`;
+    } else if(percent > 0 && usedRasterize){
+      cprResult.textContent = `Xong! Dung lượng gốc: ${formatBytes_(trueOriginalSize)} → sau khi nén: ${formatBytes_(compressedSize)} (giảm ${percent}%). Đã tải file xuống.`;
+    } else if(!isLargerThanOriginal){
+      cprResult.textContent = `Tài liệu này chủ yếu là CHỮ VECTOR (chọn/copy được) nên nén thành ảnh không giúp giảm thêm dung lượng — đã tự động giữ nguyên dạng vector (${formatBytes_(compressedSize)}, so với file gốc ${formatBytes_(trueOriginalSize)}) để đảm bảo file tải xuống KHÔNG bị nặng hơn, đồng thời vẫn giữ được chữ chọn/copy được. Nếu muốn giảm dung lượng hơn nữa cho tài liệu dạng này, cân nhắc giảm số trang hoặc ảnh chèn kèm thay vì nén toàn trang.`;
+    } else {
+      // Trường hợp hiếm: tài liệu đã có nhiều chỉnh sửa (chữ/ảnh/tô mới) khiến nội dung thực sự tăng
+      // lên so với file gốc — không có cách nào giữ được các chỉnh sửa đó mà vẫn nhỏ hơn file gốc rỗng
+      // ban đầu. Đây là kết quả NHỎ NHẤT có thể đạt được trong khi vẫn giữ đủ mọi chỉnh sửa đã thêm.
+      cprResult.textContent = `Tài liệu đã có thêm chỉnh sửa (chữ/ảnh/tô...) so với file gốc (${formatBytes_(trueOriginalSize)}) nên nội dung tăng lên — đây là dung lượng NHỎ NHẤT có thể đạt được (${formatBytes_(compressedSize)}) trong khi vẫn giữ đủ các chỉnh sửa đã thêm. Nếu muốn file nhỏ hơn cả file gốc, hãy bỏ bớt ảnh/chỉnh sửa rồi nén lại.`;
+    }
   }catch(err){
     console.error('Lỗi khi nén PDF:', err);
     cprError.textContent = 'Lỗi khi nén PDF: ' + err.message;
@@ -7390,7 +7473,10 @@ async function exportPptxSelected(indices){
     // Bước 2: với mỗi trang — bóc tách từng đoạn chữ thật (đúng vị trí/cỡ/đậm-nghiêng/màu) rồi
     // "xoá" đúng vùng đó khỏi ảnh nền (tô lại bằng màu nền cục bộ) để ghép cùng textbox thật,
     // không bị chồng/lem 2 lớp chữ.
-    const docJs = await pdfjsLib.getDocument({ data: bytes }).promise;
+    // Dùng bytes.slice() (bản sao) thay vì truyền thẳng "bytes": pdfjsLib.getDocument() chuyển
+    // quyền sở hữu (transfer/detach) ArrayBuffer gốc cho Worker, khiến "bytes" bị rút ruột về 0
+    // byte ngay sau dòng này nếu truyền trực tiếp — xem giải thích chi tiết ở compressPdfAndDownload().
+    const docJs = await pdfjsLib.getDocument({ data: bytes.slice() }).promise;
     const PPTX_SCALE = 2; // 1 point = 1/72 inch -> scale 2 tương đương ~144dpi cho ảnh nền
     const slideData = [];
 
