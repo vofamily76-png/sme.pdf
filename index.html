@@ -948,16 +948,18 @@
   <input type="file" id="fileInput" accept="application/pdf">
   <div class="sep"></div>
 
-  <!-- ===== Menu "Document" — gom Insert pages / Delete page / Extract Pages / Rotate pages /
-       Combine Files / Compress PDF vào một menu thả xuống kế bên nút "Open PDF" (thay vì để rời
-       rạc ngoài thanh công cụ chính như trước). Các nút bên trong GIỮ NGUYÊN id cũ (btnInsertPdf,
-       btnDeletePage, btnExtractPages, btnRotatePages, btnCombineFiles, btnCompress) nên toàn bộ
-       code JS gắn sự kiện (.onclick = ...) cho các nút này ở phía dưới không cần sửa gì thêm. -->
+  <!-- ===== Menu "Document" — gom Insert pages / Insert a blank page / Delete page / Extract Pages /
+       Rotate pages / Combine Files / Compress PDF vào một menu thả xuống kế bên nút "Open PDF" (thay
+       vì để rời rạc ngoài thanh công cụ chính như trước). Các nút bên trong GIỮ NGUYÊN id cũ
+       (btnInsertPdf, btnInsertBlank, btnDeletePage, btnExtractPages, btnRotatePages, btnCombineFiles,
+       btnCompress) nên toàn bộ code JS gắn sự kiện (.onclick = ...) cho các nút này ở phía dưới
+       không cần sửa gì thêm. -->
   <div class="menu-wrap" id="documentMenuWrap">
     <button class="tbtn" id="btnDocumentMenu" title="Các thao tác trên toàn bộ tài liệu: chèn/xoá/tách/xoay trang, gộp nhiều file, nén file"><span class="ic">📄</span>Document ▾</button>
     <div class="menu-dropdown" id="documentMenuDropdown">
       <button class="tbtn" id="btnInsertPdf" title="Chèn các trang từ một file PDF khác vào trước/sau trang đang chọn"><span class="ic">📥</span>Insert pages</button>
       <input type="file" id="insertFileInput" accept="application/pdf">
+      <button class="tbtn" id="btnInsertBlank" title="Chèn trang trắng sau trang hiện tại"><span class="ic">➕</span>Insert a blank page</button>
       <button class="tbtn" id="btnDeletePage" title="Chọn một hoặc nhiều trang để xóa khỏi tài liệu"><span class="ic">🗑️</span>Delete page</button>
       <button class="tbtn" id="btnExtractPages" title="Chọn một hoặc nhiều trang để tách ra thành 1 file PDF mới (không ảnh hưởng tài liệu đang mở)"><span class="ic">✂️</span>Extract Pages</button>
       <button class="tbtn" id="btnRotatePages" title="Chọn một hoặc nhiều trang để xoay 90°/180° (áp dụng khi Save PDF hoặc Extract Pages)"><span class="ic">🔄</span>Rotate pages</button>
@@ -984,16 +986,41 @@
   </div>
   <div class="sep"></div>
 
+  <!-- ===== Menu "Export" — chuyển từ vị trí cạnh nút "Save PDF" lên cạnh menu "Edit". Vẫn gom
+       Export Word Document / Export PowerPoint, GIỮ NGUYÊN id cũ (btnExportWord, btnExportPptx)
+       nên toàn bộ code JS gắn sự kiện phía dưới không cần sửa gì thêm. -->
+  <div class="menu-wrap" id="exportMenuWrap">
+    <button class="tbtn" id="btnExportMenu" title="Xuất tài liệu hiện tại sang Word hoặc PowerPoint"><span class="ic">⬇️</span>Export ▾</button>
+    <div class="menu-dropdown" id="exportMenuDropdown">
+      <button class="tbtn" id="btnExportWord"><span class="ic">📝</span>Export Word Document</button>
+      <button class="tbtn" id="btnExportPptx" title="Xuất các trang đã chọn thành file PowerPoint (.pptx), mỗi trang là 1 slide, giữ đúng hình ảnh/bố cục như bản gốc (bao gồm cả những chỉnh sửa bạn đã thực hiện)"><span class="ic">📊</span>Export PowerPoint</button>
+    </div>
+  </div>
+  <div class="sep"></div>
+
+  <!-- ===== Menu "Tool" — gom Insert Image / Copy / Paste / Selection area / Snapshot vào một menu
+       thả xuống, cùng cơ chế với các menu Document/Edit/Export ở trên. Các nút bên trong GIỮ NGUYÊN
+       id cũ (btnInsertImage, insertImageInput, btnCopyImage, btnPasteImage, toolRegion, btnSnapshot)
+       nên toàn bộ code JS gắn sự kiện (kể cả logic chọn công cụ theo data-tool) phía dưới không cần
+       sửa gì thêm — vẫn hoạt động y hệt dù nút nằm trong menu thay vì ngoài thanh công cụ. -->
+  <div class="menu-wrap" id="toolMenuWrap">
+    <button class="tbtn" id="btnToolMenu" title="Các công cụ: chèn ảnh, copy/paste ảnh, chọn vùng, chụp ảnh vùng đã chọn"><span class="ic">🧰</span>Tool ▾</button>
+    <div class="menu-dropdown" id="toolMenuDropdown">
+      <button class="tbtn" id="btnInsertImage" title="Chèn ảnh (PNG/JPG) — sau khi chọn ảnh, bạn CHỌN TRANG cần chèn (một hoặc nhiều trang), chỉnh vị trí/kích thước rồi bấm Chèn; ảnh chèn xong có thể kéo để di chuyển, kéo 4 góc để đổi kích thước"><span class="ic">🖼️</span>Insert Image</button>
+      <input type="file" id="insertImageInput" accept="image/png,image/jpeg,image/jpg,image/webp,image/gif,image/bmp" style="display:none">
+      <button class="tbtn" id="btnCopyImage" title="Copy ảnh đang chọn (Ctrl+C) — dùng được để dán lại trong chính PDF này, và dán sang cả ứng dụng khác (Word, Paint...) nếu trình duyệt hỗ trợ"><span class="ic">📋</span>Copy</button>
+      <button class="tbtn" id="btnPasteImage" title="Dán ảnh (Ctrl+V) — ưu tiên ảnh vừa copy từ ứng dụng khác (vd: công cụ chụp màn hình, trình duyệt), nếu không có sẽ dán ảnh vừa Copy trong chính PDF này"><span class="ic">📌</span>Paste</button>
+      <div class="sep"></div>
+      <button class="tbtn" data-tool="region" id="toolRegion" title="Kéo chọn một vùng trên trang, sau đó bấm 'Edit Text' hoặc 'Sửa văn bản (OCR)' để sửa nhanh cả vùng"><span class="ic">🔲</span>Selection area</button>
+      <button class="tbtn" id="btnSnapshot" title="Dùng công cụ 'Selection area' để kéo chọn một vùng trên trang, sau đó bấm nút này để chụp đúng vùng đó (kèm mọi chỉnh sửa đã thêm) và lưu thành file ảnh PNG"><span class="ic">📸</span>Snapshot</button>
+    </div>
+  </div>
+  <div class="sep"></div>
+
   <button class="tbtn" data-tool="select" id="toolSelect"><span class="ic">🖱️</span>Select</button>
   <button class="tbtn" data-tool="textselect" id="toolTextSelect" title="Bôi đen văn bản trong PDF để copy (Ctrl+C). Có thể là chữ PDF thật hoặc chữ OCR từ ảnh/scan. Sau khi bôi đen, bấm nút 'Đánh dấu' nổi lên để tô sáng đúng đoạn đã chọn."><span class="ic">🔤</span>Select text to copy</button>
-  <button class="tbtn" id="btnInsertImage" title="Chèn ảnh (PNG/JPG) — sau khi chọn ảnh, bạn CHỌN TRANG cần chèn (một hoặc nhiều trang), chỉnh vị trí/kích thước rồi bấm Chèn; ảnh chèn xong có thể kéo để di chuyển, kéo 4 góc để đổi kích thước"><span class="ic">🖼️</span>Insert Image</button>
-  <input type="file" id="insertImageInput" accept="image/png,image/jpeg,image/jpg,image/webp,image/gif,image/bmp" style="display:none">
-  <button class="tbtn" id="btnCopyImage" title="Copy ảnh đang chọn (Ctrl+C) — dùng được để dán lại trong chính PDF này, và dán sang cả ứng dụng khác (Word, Paint...) nếu trình duyệt hỗ trợ"><span class="ic">📋</span>Copy</button>
-  <button class="tbtn" id="btnPasteImage" title="Dán ảnh (Ctrl+V) — ưu tiên ảnh vừa copy từ ứng dụng khác (vd: công cụ chụp màn hình, trình duyệt), nếu không có sẽ dán ảnh vừa Copy trong chính PDF này"><span class="ic">📌</span>Paste</button>
-  <div class="sep"></div>
-  <button class="tbtn" data-tool="region" id="toolRegion" title="Kéo chọn một vùng trên trang, sau đó bấm 'Edit Text' hoặc 'Sửa văn bản (OCR)' để sửa nhanh cả vùng"><span class="ic">🔲</span>Selection area</button>
   <button class="tbtn" id="btnClearRegion" title="Bỏ chọn vùng hiện tại"><span class="ic">✕</span>Deselect</button>
-  <button class="tbtn" id="btnSnapshot" title="Dùng công cụ 'Selection area' để kéo chọn một vùng trên trang, sau đó bấm nút này để chụp đúng vùng đó (kèm mọi chỉnh sửa đã thêm) và lưu thành file ảnh PNG"><span class="ic">📸</span>Snapshot</button>
+  <div class="sep"></div>
   <button class="tbtn" data-tool="highlight" id="toolHighlight"><span class="ic">🖍️</span>Marker</button>
   <button class="tbtn" data-tool="draw" id="toolDraw"><span class="ic">✏️</span>Paint</button>
   <button class="tbtn" data-tool="erase" id="toolErase" title="Xóa nét vẽ do Paint tạo ra — kéo chuột qua nét cần xóa"><span class="ic">🧽</span>Eraser</button>
@@ -1048,13 +1075,6 @@
 
   <button class="tbtn" id="btnUndo" title="Hoàn tác"><span class="ic">↩️</span>Undo</button>
   <button class="tbtn" id="btnClearPage" title="Xóa hết chỉnh sửa trên trang (không xóa trang)"><span class="ic">🧹</span>Delete edit</button>
-  <div class="sep"></div>
-
-  <button class="tbtn" id="btnInsertBlank" title="Chèn trang trắng sau trang hiện tại"><span class="ic">➕</span>Insert a blank page</button>
-  <div class="sep"></div>
-
-  <button class="tbtn" id="btnExportWord"><span class="ic">📝</span>Export Word Document</button>
-  <button class="tbtn" id="btnExportPptx" title="Xuất các trang đã chọn thành file PowerPoint (.pptx), mỗi trang là 1 slide, giữ đúng hình ảnh/bố cục như bản gốc (bao gồm cả những chỉnh sửa bạn đã thực hiện)"><span class="ic">📊</span>Export PowerPoint</button>
   <div class="sep"></div>
 
   <button class="tbtn" id="zoomOut"><span class="ic">−</span></button>
@@ -2584,6 +2604,10 @@ function setupToolbarMenu_(wrapId, btnId, dropdownId){
 setupToolbarMenu_('documentMenuWrap', 'btnDocumentMenu', 'documentMenuDropdown');
 // Menu "Edit": Add text/Edit Document (OCR-PDF scan)/OCR text extract/Edit Text
 setupToolbarMenu_('editMenuWrap', 'btnEditMenu', 'editMenuDropdown');
+// Menu "Export": Export Word Document/Export PowerPoint
+setupToolbarMenu_('exportMenuWrap', 'btnExportMenu', 'exportMenuDropdown');
+// Menu "Tool": Insert Image/Copy/Paste/Selection area/Snapshot
+setupToolbarMenu_('toolMenuWrap', 'btnToolMenu', 'toolMenuDropdown');
 
 document.getElementById('fileInput').onchange = async (e) => {
   const file = e.target.files[0];
