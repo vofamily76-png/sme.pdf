@@ -2961,6 +2961,18 @@ function computeImagePlacement_(pageW, pageH, naturalW, naturalH, opts){
   opts = opts || {};
   const ratio = (naturalH > 0 && naturalW > 0) ? (naturalH / naturalW) : 1;
   let w, h;
+  // exactW/exactH: GIỮ NGUYÊN ĐÚNG kích thước đã cho (đơn vị point), KHÔNG áp dụng các luật co/giãn
+  // tự động bên dưới. Dùng cho Paste ảnh vừa Copy trong chính app này: người dùng đã tự tay kéo ảnh
+  // về đúng kích thước mong muốn rồi Copy, nên bản dán ra phải to đúng bằng lúc Copy — nếu vẫn chạy
+  // qua luật "co về tối đa 50% bề rộng trang / phóng lên tối thiểu 24pt" như ảnh chèn mới thì kích
+  // thước người dùng vừa chỉnh sẽ bị ghi đè (đúng lỗi "paste ra ảnh to như ban đầu").
+  if(opts.exactW > 0 && opts.exactH > 0){
+    w = opts.exactW; h = opts.exactH;
+    // Chỉ can thiệp khi ảnh lớn hơn cả khổ trang (không thể đặt vừa) — vẫn giữ nguyên tỉ lệ.
+    const clamp = Math.min(pageW/w, pageH/h, 1);
+    w *= clamp; h *= clamp;
+    return placeImageBox_(pageW, pageH, w, h, opts);
+  }
   if(opts.widthPct){
     const pct = Math.min(100, Math.max(1, Number(opts.widthPct) || 50));
     w = pageW * pct / 100;
@@ -2979,6 +2991,15 @@ function computeImagePlacement_(pageW, pageH, naturalW, naturalH, opts){
     w *= grow; h *= grow;
   }
 
+  return placeImageBox_(pageW, pageH, w, h, opts);
+}
+
+// Tính vị trí đặt một khung ảnh ĐÃ BIẾT kích thước (w x h) trong trang pageW x pageH, theo
+// opts.position và opts.offset. Tách riêng khỏi computeImagePlacement_ để nhánh "giữ nguyên kích
+// thước" (exactW/exactH, dùng cho Paste) và nhánh "tự co giãn" (chèn ảnh mới) dùng chung một logic
+// canh vị trí, không phải lặp lại.
+function placeImageBox_(pageW, pageH, w, h, opts){
+  opts = opts || {};
   const margin = Math.min(24, pageW*0.04, pageH*0.04);
   const pos = opts.position || 'center';
   let x, y;
@@ -3265,14 +3286,45 @@ async function copySelectedImage(){
     return;
   }
 
-  appImageClipboard = { dataUrl: ed.imageDataUrl, w: ed.w, h: ed.h };
+  // SỬA LỖI "copy rồi paste ra ảnh to như ban đầu, mất kích thước vừa chỉnh":
+  // trước đây Copy chỉ cất NGUYÊN data URL gốc của ảnh (ed.imageDataUrl — luôn là ảnh ở độ phân
+  // giải gốc lúc mới chèn) và ghi đúng ảnh gốc đó lên clipboard hệ thống. Khi Paste, nhánh đọc
+  // clipboard HỆ THỐNG được ưu tiên chạy trước nên nhận lại đúng ảnh gốc (không kèm thông tin kích
+  // thước hiển thị), rồi lại đi qua luật co giãn tự động của ảnh chèn mới -> ra ảnh to như ban đầu,
+  // bỏ qua hoàn toàn việc người dùng đã kéo nhỏ/phóng to ảnh trên trang.
+  // Nay Copy "chụp" ảnh ĐÚNG TRẠNG THÁI HIỆN TẠI: vẽ lại ảnh vào một canvas có tỉ lệ đúng bằng
+  // khung ảnh đang hiển thị trên trang (ed.w x ed.h), đồng thời ghi nhớ kích thước point đó. Nhờ
+  // vậy cả khi dán trong app lẫn dán sang Word/Paint đều ra ảnh đúng như lúc bấm Copy.
+  let snapshotDataUrl = ed.imageDataUrl, pxW = 0, pxH = 0;
+  try{
+    const img = await new Promise((resolve, reject) => {
+      const im = new Image();
+      im.onload = () => resolve(im);
+      im.onerror = () => reject(new Error('Không đọc được ảnh đang chọn.'));
+      im.src = ed.imageDataUrl;
+    });
+    // Hệ số render: đủ nét khi dán sang ứng dụng khác nhưng KHÔNG phóng to quá độ phân giải gốc
+    // (phóng lên chỉ làm file nặng mà không thêm chi tiết nào).
+    const natW = img.naturalWidth || ed.w;
+    const k = Math.max(1, Math.min(4, (natW > 0 && ed.w > 0) ? natW/ed.w : 1));
+    pxW = Math.max(1, Math.round(ed.w * k));
+    pxH = Math.max(1, Math.round(ed.h * k));
+    const off = document.createElement('canvas');
+    off.width = pxW; off.height = pxH;
+    off.getContext('2d').drawImage(img, 0, 0, pxW, pxH);
+    snapshotDataUrl = off.toDataURL('image/png');
+  }catch(err){
+    console.warn('Không tạo được ảnh chụp theo kích thước hiện tại, dùng ảnh gốc:', err);
+  }
+
+  appImageClipboard = { dataUrl: snapshotDataUrl, w: ed.w, h: ed.h, pxW, pxH };
 
   try{
     if(navigator.clipboard && window.ClipboardItem){
-      const res = await fetch(ed.imageDataUrl);
+      const res = await fetch(snapshotDataUrl);
       const blob = await res.blob();
       await navigator.clipboard.write([ new ClipboardItem({ [blob.type || 'image/png']: blob }) ]);
-      showToast_('📋 Đã copy ảnh — dán được trong PDF này lẫn ứng dụng khác.');
+      showToast_('📋 Đã copy ảnh (đúng kích thước hiện tại) — dán được trong PDF này lẫn ứng dụng khác.');
       return;
     }
   }catch(err){
@@ -3306,7 +3358,18 @@ async function pasteImage(){
           if(imgType){
             const blob = await item.getType(imgType);
             const { pngDataUrl, w, h } = await loadImageBlobAsPng_(blob);
-            await insertImageDataUrl_(pngDataUrl, w, h);
+            // Ảnh trên clipboard hệ thống CÓ ĐÚNG số điểm ảnh bằng ảnh mà chính app này vừa ghi lên
+            // lúc Copy -> đây chính là ảnh vừa Copy trong app, nên dán lại ĐÚNG kích thước điểm (pt)
+            // đã ghi nhớ thay vì để nó chạy qua luật co giãn của ảnh chèn mới. So khớp theo KÍCH
+            // THƯỚC ĐIỂM ẢNH (không so từng byte) vì một số trình duyệt mã hoá lại PNG khi đưa qua
+            // clipboard, khiến dữ liệu không còn giống hệt bản gốc dù hình ảnh vẫn y nguyên.
+            const own = appImageClipboard && appImageClipboard.pxW === w && appImageClipboard.pxH === h;
+            if(own){
+              await insertImageDataUrl_(pngDataUrl, w, h,
+                { offset: 14, exactW: appImageClipboard.w, exactH: appImageClipboard.h });
+            } else {
+              await insertImageDataUrl_(pngDataUrl, w, h);
+            }
             showToast_('📌 Đã dán ảnh từ clipboard.');
             return;
           }
@@ -3321,7 +3384,9 @@ async function pasteImage(){
     }
 
     if(appImageClipboard){
-      await insertImageDataUrl_(appImageClipboard.dataUrl, appImageClipboard.w, appImageClipboard.h, { offset: 14 });
+      await insertImageDataUrl_(appImageClipboard.dataUrl, appImageClipboard.pxW || appImageClipboard.w,
+        appImageClipboard.pxH || appImageClipboard.h,
+        { offset: 14, exactW: appImageClipboard.w, exactH: appImageClipboard.h });
       showToast_('📌 Đã dán ảnh (từ clipboard trong PDF này).');
       return;
     }
@@ -7001,6 +7066,236 @@ async function extractTableLinesForWord(idx){
   return { segments, lineWidth };
 }
 
+// ================== DÒ ĐƯỜNG KẺ BẢNG TỪ ẢNH (dành cho PDF SCAN) ==================
+// SỬA LỖI CỐT LÕI ("file Word xuất ra chưa chia cột/hàng tiếng Việt - tiếng Anh riêng"):
+// hàm extractTableLinesForWord ở trên chỉ dò được đường kẻ bảng khi chúng là ĐƯỜNG VECTOR THẬT
+// nằm trong content stream của PDF (lệnh re/l/m + stroke/fill). Nhưng RẤT NHIỀU tài liệu hành
+// chính Việt Nam là bản SCAN: cả trang chỉ gồm ĐÚNG MỘT ẢNH bitmap phủ kín trang, không có một
+// lệnh vẽ đường nào cả. Khi đó extractTableLinesForWord trả về danh sách rỗng ->
+// buildTableFromSegments_ lập tức trả null -> toàn bộ nội dung bị đổ ra theo luồng xuôi dòng,
+// MẤT HẲN bảng 2 cột (cột trái tiếng Việt / cột phải tiếng Anh) và các hàng phân cách — đúng
+// triệu chứng đang gặp. Nhóm hàm dưới đây dò đường kẻ TRỰC TIẾP TRÊN ẢNH đã render của trang:
+//   1) Nhị phân hoá ảnh bằng ngưỡng Otsu tự động (tự thích ứng với bản scan đậm/nhạt khác nhau).
+//   2) Ước lượng GÓC NGHIÊNG của bản scan. Đây là bước BẮT BUỘC: bản scan hầu như luôn bị lệch
+//      vài phần mười độ so với phương ngang (bản mẫu đang xét lệch ~0.5°). Với độ lệch đó, một
+//      đường kẻ ngang dài 480pt sẽ TRẢI QUA hơn 10 dòng điểm ảnh khác nhau, nên cách chiếu
+//      (projection) theo đúng hàng/cột thẳng đứng sẽ KHÔNG BAO GIỜ thấy được đường kẻ nào (thử
+//      nghiệm trên bản mẫu: độ phủ tối đa của một hàng điểm ảnh chỉ đạt 32%, trong khi đường kẻ
+//      thật phủ tới 80% bề ngang). Vì vậy ta chiếu theo hệ toạ độ ĐÃ XÉN NGHIÊNG (shear) một góc
+//      t, và chọn góc t làm cho biểu đồ chiếu "gai" nhất (tổng bình phương lớn nhất).
+//   3) Với góc đã chọn, tìm các "vạch" chiếu vừa ĐỦ DÀI (so với bề ngang/bề cao trang) vừa ĐỦ
+//      LIỀN MẠCH (tỉ lệ lấp đầy cao) — tiêu chí liền mạch giúp loại bỏ các dòng CHỮ (nhất là chữ
+//      in nghiêng dày đặc) vốn cũng trải dài nhưng rời rạc, tránh tạo ra hàng/cột giả.
+//   4) Trả về đúng ĐỊNH DẠNG segments mà buildTableFromSegments_ đang dùng (hệ toạ độ PDF gốc,
+//      gốc dưới-trái), nên toàn bộ phần dựng bảng/xếp chữ vào ô phía sau được TÁI SỬ DỤNG y
+//      nguyên, không phải viết lại.
+
+// Ngưỡng nhị phân hoá tự động theo thuật toán Otsu (tối đa hoá phương sai giữa 2 lớp sáng/tối).
+function otsuThreshold_(hist, total){
+  let sum = 0;
+  for(let i=0;i<256;i++) sum += i*hist[i];
+  let sumB = 0, wB = 0, best = 128, bestVar = -1;
+  for(let t=0;t<256;t++){
+    wB += hist[t];
+    if(!wB) continue;
+    const wF = total - wB;
+    if(wF <= 0) break;
+    sumB += t*hist[t];
+    const mB = sumB/wB, mF = (sum-sumB)/wF;
+    const v = wB*wF*(mB-mF)*(mB-mF);
+    if(v > bestVar){ bestVar = v; best = t; }
+  }
+  return best;
+}
+
+// Ước lượng góc nghiêng của bản scan (trả về tang của góc). Duyệt thô từ -2° đến +2° rồi tinh
+// chỉnh quanh giá trị tốt nhất; điểm số của một góc = tổng bình phương biểu đồ chiếu theo góc đó
+// (biểu đồ càng "gai" — tức các đường kẻ/dòng chữ càng dồn gọn vào cùng một vạch — điểm càng cao).
+function estimateSkewTan_(px, py, n, w, h){
+  // Chỉ lấy mẫu thưa (tối đa ~80 nghìn điểm) khi dò góc: góc nghiêng là đại lượng toàn cục nên
+  // không cần duyệt hết mọi điểm ảnh, lấy thưa giúp giảm mạnh thời gian xử lý mỗi trang.
+  const stride = Math.max(1, Math.ceil(n/80000));
+  function score(tan){
+    const off = Math.ceil(Math.abs(tan)*w) + 2;
+    const size = h + 2*off;
+    const acc = new Int32Array(size);
+    for(let i=0;i<n;i+=stride){
+      const b = (py[i] + Math.round(px[i]*tan) + off)|0;
+      if(b >= 0 && b < size) acc[b]++;
+    }
+    let s = 0;
+    for(let i=0;i<size;i++) s += acc[i]*acc[i];
+    return s;
+  }
+  let bestDeg = 0, bestScore = -1;
+  for(let d=-2; d<=2.0001; d+=0.25){
+    const s = score(Math.tan(d*Math.PI/180));
+    if(s > bestScore){ bestScore = s; bestDeg = d; }
+  }
+  for(let d=bestDeg-0.25; d<=bestDeg+0.2501; d+=0.05){
+    const s = score(Math.tan(d*Math.PI/180));
+    if(s > bestScore){ bestScore = s; bestDeg = d; }
+  }
+  return Math.tan(bestDeg*Math.PI/180);
+}
+
+// Tìm các đường kẻ theo một phương (axis='h' đường ngang / 'v' đường dọc) trên mặt nạ điểm ảnh tối.
+//  - minFrac : độ dài tối thiểu của đường kẻ, tính theo tỉ lệ bề ngang (đường ngang) / bề cao
+//              (đường dọc) của trang.
+//  - gapPx   : khe hở tối đa (điểm ảnh) vẫn coi là cùng MỘT đường kẻ (bù nét đứt do scan mờ).
+//  - densMin : tỉ lệ lấp đầy tối thiểu trong đoạn tìm được — tiêu chí LIỀN MẠCH để phân biệt
+//              đường kẻ thật (gần như đặc) với một dòng chữ (rời rạc, nhiều khoảng trắng).
+function findRulesFromMask_(px, py, n, w, h, tan, axis, minFrac, gapPx, densMin){
+  const horiz = (axis === 'h');
+  const span  = horiz ? w : h;   // chiều chạy dọc theo đường kẻ
+  const other = horiz ? h : w;   // chiều vuông góc (vị trí của đường kẻ)
+  const off   = Math.ceil(Math.abs(tan)*span) + 2;
+  const size  = other + 2*off;
+  const counts = new Int32Array(size);
+  const binOf  = new Int32Array(n);
+  for(let i=0;i<n;i++){
+    const across = horiz ? py[i] : px[i];
+    const along  = horiz ? px[i] : py[i];
+    const b = (across + Math.round(along*tan) + off)|0;
+    if(b >= 0 && b < size){ binOf[i] = b; counts[b]++; }
+    else binOf[i] = -1;
+  }
+  const start = new Int32Array(size+1);
+  for(let b=0;b<size;b++) start[b+1] = start[b] + counts[b];
+  const fillPos  = Int32Array.from(start.subarray(0, size));
+  const alongArr = new Int32Array(start[size]);
+  for(let i=0;i<n;i++){
+    const b = binOf[i];
+    if(b < 0) continue;
+    alongArr[fillPos[b]++] = horiz ? px[i] : py[i];
+  }
+  const minLen = span*minFrac;
+  const mark = new Uint8Array(span);
+  const rules = [];
+  for(let b=0;b<size;b++){
+    const s0 = start[b], e0 = start[b+1];
+    if(e0 - s0 < minLen*0.55) continue;           // chưa đủ điểm ảnh -> chắc chắn không phải đường kẻ
+    let lo = span, hi = -1;
+    for(let k=s0;k<e0;k++){
+      const a = alongArr[k];
+      if(a < 0 || a >= span) continue;
+      mark[a] = 1;
+      if(a < lo) lo = a;
+      if(a > hi) hi = a;
+    }
+    let bestLen = -1, bestS = 0, bestE = 0, bestCov = 0;
+    let runS = -1, prev = -1, runCov = 0;
+    for(let a=lo;a<=hi;a++){
+      if(mark[a]){
+        if(runS < 0){ runS = a; runCov = 0; }
+        prev = a; runCov++;
+      } else if(runS >= 0 && a - prev > gapPx){
+        if(prev - runS > bestLen){ bestLen = prev-runS; bestS = runS; bestE = prev; bestCov = runCov; }
+        runS = -1;
+      }
+    }
+    if(runS >= 0 && prev - runS > bestLen){ bestLen = prev-runS; bestS = runS; bestE = prev; bestCov = runCov; }
+    for(let k=s0;k<e0;k++){
+      const a = alongArr[k];
+      if(a >= 0 && a < span) mark[a] = 0;
+    }
+    if(bestLen < minLen) continue;
+    if(bestCov/(bestLen+1) < densMin) continue;   // quá rời rạc -> là dòng chữ, không phải đường kẻ
+    rules.push({ pos: b - off, a0: bestS, a1: bestE });
+  }
+  return rules;
+}
+
+// Gộp các vạch nằm sát nhau (đường kẻ dày 2-4 điểm ảnh sẽ sinh ra vài vạch liền kề) thành một.
+function clusterPixelRules_(rules, tolBins){
+  const sorted = rules.slice().sort((a,b)=> a.pos-b.pos);
+  const out = [];
+  for(const r of sorted){
+    const last = out[out.length-1];
+    if(last && r.pos - last.pos <= tolBins){
+      last.a0 = Math.min(last.a0, r.a0);
+      last.a1 = Math.max(last.a1, r.a1);
+    } else {
+      out.push({ pos:r.pos, a0:r.a0, a1:r.a1 });
+    }
+  }
+  return out;
+}
+
+// Hàm chính: dò đường kẻ bảng từ ảnh render của trang. Trả về cùng định dạng với
+// extractTableLinesForWord ({segments, lineWidth}, toạ độ PDF gốc - gốc dưới-trái) để dùng chung
+// được toàn bộ phần dựng bảng phía sau.
+async function detectTableLinesFromImage_(idx, W, H){
+  const empty = { segments: [], lineWidth: 1 };
+  // Chọn độ phân giải vừa đủ (khoảng 1400px bề ngang): đủ nét để thấy đường kẻ mảnh nhưng vẫn
+  // nhanh, không ngốn bộ nhớ với trang khổ lớn.
+  const SC = Math.max(1, Math.min(2.5, 1400/Math.max(1, W)));
+  let canvas;
+  try{ canvas = await renderPageToCanvas(idx, SC); }
+  catch(err){ console.warn('Không render được trang để dò đường kẻ từ ảnh (trang '+(idx+1)+'):', err); return empty; }
+  const w = canvas.width, h = canvas.height;
+  if(!w || !h) return empty;
+  let data;
+  try{ data = canvas.getContext('2d').getImageData(0,0,w,h).data; }
+  catch(err){ console.warn('Không đọc được điểm ảnh của trang '+(idx+1)+':', err); return empty; }
+
+  const total = w*h;
+  const gray = new Uint8Array(total);
+  const hist = new Int32Array(256);
+  for(let i=0, j=0; i<total; i++, j+=4){
+    const g = (data[j]*299 + data[j+1]*587 + data[j+2]*114)/1000 | 0;
+    gray[i] = g; hist[g]++;
+  }
+  // NGƯỠNG NHỊ PHÂN HOÁ — điểm này quyết định thành/bại của cả việc dò bảng, nên cần giải thích rõ:
+  // Otsu thuần tuý tách "giấy" khỏi "mực đậm" nên cho ngưỡng khá THẤP (trên bản mẫu đang xét là
+  // 149). Ở ngưỡng đó, nét CHỮ đậm thì giữ được, nhưng ĐƯỜNG KẺ BẢNG của bản scan lại thường rất
+  // mảnh và bị nhoè thành xám nhạt (~160-200) nên bị loại gần hết -> dò ra thiếu hẳn đường kẻ và
+  // KHÔNG dựng được bảng (thử nghiệm: ở ngưỡng 149 không ghép nổi lưới bảng nào; từ 185 trở lên
+  // thì ra đúng bảng 3 hàng x 2 cột như bản gốc). Vì vậy ta nới ngưỡng sáng hơn Otsu một khoảng,
+  // nhưng vẫn chặn trên theo mức sáng của NỀN GIẤY (mode sáng nhất của histogram) trừ đi một biên
+  // an toàn, để không quét nhầm chính nền giấy/vệt ố thành "mực".
+  let paper = 255, paperCount = -1;
+  for(let g=180; g<256; g++){ if(hist[g] > paperCount){ paperCount = hist[g]; paper = g; } }
+  let thr = Math.round(otsuThreshold_(hist, total) + 45);
+  thr = Math.min(thr, paper - 18);
+  thr = Math.max(90, Math.min(thr, 215));
+
+  let cnt = 0;
+  for(let i=0;i<total;i++) if(gray[i] < thr) cnt++;
+  // Trang trắng trơn (không có gì để dò) hoặc ảnh nền quá tối (nhị phân hoá không đáng tin) -> bỏ qua.
+  if(cnt < 500 || cnt > total*0.45) return empty;
+
+  const px = new Int32Array(cnt), py = new Int32Array(cnt);
+  let k = 0;
+  for(let y=0;y<h;y++){
+    const row = y*w;
+    for(let x=0;x<w;x++){
+      if(gray[row+x] < thr){ px[k] = x; py[k] = y; k++; }
+    }
+  }
+  const tan = estimateSkewTan_(px, py, cnt, w, h);
+  const gapPx  = Math.max(4, Math.round(SC*4));   // ~4pt khe hở vẫn coi là cùng một đường kẻ
+  const tolBin = Math.max(2, Math.round(SC*2.5)); // ~2.5pt để gộp các vạch sát nhau
+  // Ngưỡng đường ngang cao hơn đường dọc: đường kẻ ngang của bảng thường chạy gần hết bề ngang
+  // trang, còn đường kẻ dọc (kể cả đường phân cách 2 cột) có thể chỉ cao bằng một phần bảng.
+  const hRules = clusterPixelRules_(findRulesFromMask_(px,py,cnt,w,h,  tan, 'h', 0.22, gapPx, 0.70), tolBin);
+  const vRules = clusterPixelRules_(findRulesFromMask_(px,py,cnt,w,h, -tan, 'v', 0.10, gapPx, 0.70), tolBin);
+
+  const segments = [];
+  // Quy đổi vị trí vạch (đo ở mép trái/mép trên của ảnh) về vị trí tại TÂM trang cho đúng với
+  // toạ độ chữ do OCR trả về, rồi đổi sang hệ PDF gốc (gốc dưới-trái) mà buildTableFromSegments_
+  // đang chờ: y_pdf = H - y_trên.
+  for(const r of hRules){
+    const yTop = (r.pos - (w/2)*tan)/SC;
+    segments.push({ orient:'h', y: H - yTop, x0: r.a0/SC, x1: r.a1/SC });
+  }
+  for(const r of vRules){
+    const x = (r.pos + (h/2)*tan)/SC;
+    segments.push({ orient:'v', x, y0: H - r.a1/SC, y1: H - r.a0/SC });
+  }
+  return { segments, lineWidth: 1 };
+}
+
 // ---------- Dò và trích xuất ẢNH NHÚNG (logo, con dấu, chữ ký...) để giữ lại khi xuất Word ----------
 // Rất nhiều mẫu văn bản (bảng báo giá, công văn...) có LOGO công ty ở đầu trang và/hoặc CON DẤU/
 // CHỮ KÝ dạng ảnh ở cuối trang. Đây là các đối tượng ẢNH thực sự trong PDF (không phải chữ, cũng
@@ -7015,7 +7310,7 @@ async function extractTableLinesForWord(idx){
 //     rồi CẮT đúng vùng ảnh đó ra thành PNG riêng — cách này cho kết quả giống hệt những gì đang
 //     hiển thị trên trang mà không cần tự giải mã từng định dạng ảnh gốc (JPEG/CMYK/ảnh có mặt
 //     nạ trong suốt...), tránh rủi ro hiển thị sai màu hay bị vỡ ảnh.
-async function extractPageImagesForWord(idx, H){
+async function extractPageImagesForWord(idx, W, H){
   const p = pages[idx];
   const images = [];
   if(p.type !== 'pdf') return images;
@@ -7046,6 +7341,13 @@ async function extractPageImagesForWord(idx, H){
       const x0 = Math.min(...xs), x1 = Math.max(...xs);
       const y0pdf = Math.min(...ys), y1pdf = Math.max(...ys);
       if((x1-x0) < 3 || (y1pdf-y0pdf) < 3) continue; // bỏ ảnh quá nhỏ (thường là hoạ tiết/nét trang trí)
+      // BỎ QUA ẢNH NỀN PHỦ KÍN TRANG (bản SCAN). Với PDF scan, cả trang chỉ là MỘT ảnh bitmap
+      // duy nhất phủ gần hết khổ giấy. Nếu vẫn chèn ảnh này vào file Word thì kết quả chỉ là
+      // một tấm hình chụp nguyên trang (không sửa/không chọn được chữ), lại còn NẰM ĐÈ/TRÙNG
+      // LẶP với phần chữ OCR và bảng vừa dựng lại — khiến file Word trông rối và sai hẳn bố cục.
+      // Ở đây bỏ qua; nếu hoá ra trang không có chữ nào để dựng lại thì buildWordPageHtml sẽ tự
+      // chèn ảnh nguyên trang làm phương án dự phòng.
+      if((x1-x0) >= W*0.9 && (y1pdf-y0pdf) >= H*0.9) continue;
       boxes.push({ x0, x1, y0pdf, y1pdf });
     }
   }
@@ -7364,7 +7666,11 @@ function buildTableFromSegments_(tableLines, lines, H){
     for(let c=0;c<nCols;c++){
       const w = (colXs[c+1]-colXs[c]).toFixed(2);
       const cellLines = cells[r][c].sort((a,b)=> a.y0-b.y0 || a.x0-b.x0);
-      const fs = cellLines.length ? Math.max(6, cellLines[0].fontSize).toFixed(2) : '10';
+      // Cỡ chữ của ô lấy theo TRUNG VỊ của các dòng trong ô, không lấy theo dòng đầu tiên: với
+      // trang scan, cỡ chữ do OCR ước lượng dao động khá mạnh giữa các dòng, nếu chỉ lấy dòng đầu
+      // thì cả ô dễ bị đặt sai cỡ (quá to/quá nhỏ) so với bản gốc.
+      const fsList = cellLines.map(l => Math.max(6, l.fontSize||10)).sort((a,b)=>a-b);
+      const fs = fsList.length ? fsList[Math.floor(fsList.length/2)].toFixed(2) : '10';
       const text = cellLines.map(l=> escapeHtml(l.text)).join('<br>');
       html += `<td style="width:${w}pt;border:0.75pt solid #000000;font-size:${fs}pt;vertical-align:top;">${text || '&nbsp;'}</td>`;
     }
@@ -7461,10 +7767,9 @@ function renderSingleLineRow_(l, W, marginTop){
   return { html, bottom };
 }
 
-// Dựng HTML cho MỘT hàng có từ 2 dòng chữ trở lên nằm cạnh nhau (ví dụ số hiệu văn bản bên
-// trái + ngày tháng bên phải) — dùng bảng KHÔNG viền để các cột vẫn nằm cùng 1 hàng trong Word.
-function renderMultiColumnRow_(row, W, marginTop){
-  const mt = Math.max(0, marginTop).toFixed(2);
+// Tính mốc biên cột (bounds) cho MỘT hàng nhiều cột, dựa vào điểm giữa (midpoint) giữa mép phải
+// của cột hiện tại và mép trái của cột kế tiếp. Trả về mảng dài (số cột + 1): [0, b1, b2, ..., W].
+function computeRowColumnBounds_(row, W){
   const bounds = [0];
   for(let i=0;i<row.length-1;i++){
     const curX1 = (row[i].x1 != null && row[i].x1 > row[i].x0) ? row[i].x1 : row[i].x0;
@@ -7473,62 +7778,87 @@ function renderMultiColumnRow_(row, W, marginTop){
     bounds.push(Math.max(bounds[bounds.length-1] + 1, Math.min(mid, W - 1)));
   }
   bounds.push(W);
-  // SỬA LỖI QUAN TRỌNG: bản cũ đặt bề rộng cột bằng PHẦN TRĂM (width:...%). Word (bộ lọc "mso"
-  // dùng khi mở .doc dạng HTML) không tôn trọng đáng tin cậy width dạng % trên <td> khi kết hợp
-  // table-layout:fixed — kết quả thực tế là các cột bị co lại gần như bằng 0 và toàn bộ chữ của
-  // các cột bị dồn sát vào nhau không còn khoảng cách (đúng lỗi "hai cột dính liền chữ" quan sát
-  // được, ví dụ tên công ty dính liền quốc hiệu). Khắc phục bằng cách quy đổi sang bề rộng TUYỆT
-  // ĐỐI theo đơn vị "pt" (giống hệ đơn vị point đã dùng xuyên suốt tài liệu) cho cả bảng lẫn từng
-  // cột, kèm thêm <colgroup> khai báo rõ bề rộng — đây là kiểu khai báo Word luôn tôn trọng.
-  // SỬA LỖI QUAN TRỌNG (LẦN 2 — lỗi vẫn còn dù đã đổi % sang pt): Word có cơ chế "AutoFit to
-  // Contents" BẬT MẶC ĐỊNH cho bảng nhập từ HTML — cơ chế này tự động CO độ rộng từng cột về sát
-  // đúng nội dung thật của nó, BỎ QUA hoàn toàn "table-layout:fixed" dù width đã khai báo bằng
-  // đơn vị tuyệt đối "pt" ở cả <table>, <col> lẫn <td> (đây là lý do dù bản sửa trước đã đổi từ %
-  // sang pt vẫn không hết lỗi "hai cột dính liền chữ" — vì AutoFit không quan tâm đơn vị, nó ghi
-  // đè lên toàn bộ width đã khai báo). Cách duy nhất buộc Word THỰC SỰ tôn trọng độ rộng cột cố
-  // định là khai báo thêm thuộc tính CSS RIÊNG của Word "mso-table-layout-alt:fixed" — đây là cờ
-  // duy nhất tắt được AutoFit (table-layout:fixed theo chuẩn CSS thường không đủ, Word cần đúng
-  // thuộc tính mso- này).
+  return bounds;
+}
+
+// Dựng HTML cho MỘT ô <td> của bảng nhiều-cột (tách riêng khỏi renderMultiColumnBand_ để dùng
+// chung cho mọi hàng trong cùng một dải mà không phải lặp lại logic căn lề/thụt lề).
+function renderMultiColumnCell_(l, colLeft, colRight){
+  const colW = Math.max(1, colRight - colLeft);
+  const x1 = (l.x1 != null && l.x1 > l.x0) ? l.x1 : (l.x0 + String(l.text||'').length*(l.fontSize||12)*0.5);
+  const leftGap = Math.max(0, l.x0-colLeft), rightGap = Math.max(0, colRight-x1);
+  let align = 'left';
+  if(rightGap < leftGap*0.6) align = 'right';
+  else if(leftGap>8 && rightGap>8 && Math.abs(leftGap-rightGap) < Math.max(leftGap,rightGap)*0.35) align = 'center';
+  if(l.isImage){
+    const imgW = Math.max(1, l.x1-l.x0), imgH = Math.max(1, l.y1-l.y0);
+    return `<td style="width:${colW.toFixed(2)}pt;vertical-align:top;border:none;padding:0;" width="${Math.round(colW)}">`+
+              `<div style="text-align:${align};"><img src="${l.dataUrl}" style="width:${imgW.toFixed(2)}pt;height:${imgH.toFixed(2)}pt;" width="${Math.round(imgW)}" height="${Math.round(imgH)}"></div></td>`;
+  }
+  const fs = Math.max(6, l.fontSize).toFixed(2);
+  const text = String(l.text).split('\n').map(s=>escapeHtml(s)).join('<br>');
+  // Giữ khoảng thụt lề thật (padding trên <div> lồng bên trong <td>, không đặt trực tiếp lên
+  // <td>) để chữ không bị ép dính sát mép cột và không làm phình bề rộng ô ra ngoài cột đã khai báo.
+  const padLeft = align==='left' ? Math.max(0, leftGap).toFixed(2) : '0';
+  const padRight = align==='right' ? Math.max(0, rightGap).toFixed(2) : '0';
+  return `<td style="width:${colW.toFixed(2)}pt;vertical-align:top;border:none;padding:0;" width="${Math.round(colW)}">`+
+            `<div style="text-align:${align};padding:0 ${padRight}pt 0 ${padLeft}pt;font-size:${fs}pt;color:${l.color};white-space:pre-wrap;">${text || '&nbsp;'}</div></td>`;
+}
+
+// SỬA LỖI CỐT LÕI ("nội dung song ngữ 2 cột — ví dụ Việt/Anh đặt cạnh nhau — xuất ra Word bị lệch
+// cột, không thẳng hàng như bản PDF gốc"): bản cũ (renderMultiColumnRow_) dựng MỘT <table> HOÀN
+// TOÀN RIÊNG cho MỖI hàng nhiều-cột, với biên cột (bounds) tính ĐỘC LẬP chỉ dựa vào đúng hàng đó
+// (điểm giữa giữa mép phải cột trái và mép trái cột phải CỦA RIÊNG HÀNG NÀY). Vì độ dài chữ mỗi
+// dòng khác nhau (dòng tiếng Việt dài/ngắn khác hẳn dòng tiếng Anh tương ứng), biên cột tính ra bị
+// TRÔI khác nhau giữa các dòng liên tiếp (ví dụ cột trái đo được 358.83pt ở dòng này nhưng lại
+// 361.83pt, rồi 361.83pt ở các dòng ngay sau) — mỗi dòng nằm trong một bảng riêng với độ rộng cột
+// khác nhau khiến 2 cột KHÔNG còn thẳng hàng dọc xuyên suốt đoạn văn, dù trong PDF gốc đây thực
+// chất là một khối 2 cột DUY NHẤT chạy liền mạch từ trên xuống dưới. Khắc phục: gom các hàng
+// nhiều-cột LIÊN TIẾP có CÙNG SỐ CỘT thành một "dải" (band) duy nhất, tính MỘT bộ biên cột dùng
+// chung cho cả dải (lấy trung vị/median của biên từng hàng trong dải — ổn định hơn trung bình
+// cộng, không bị 1-2 dòng chữ dài bất thường kéo lệch), rồi dựng đúng MỘT bảng cho cả dải (mỗi
+// hàng trong dải là một <tr>) — đảm bảo 2 cột luôn thẳng hàng suốt cả khối, giống hệt bố cục PDF.
+function renderMultiColumnBand_(bandRows, W, marginTop){
+  const numCols = bandRows[0].length;
+  const bounds = [0];
+  for(let c=1;c<numCols;c++){
+    const vals = bandRows.map(r => computeRowColumnBounds_(r, W)[c]).sort((a,b)=>a-b);
+    const mid = vals[Math.floor(vals.length/2)];
+    bounds.push(Math.max(bounds[bounds.length-1] + 1, Math.min(mid, W - 1)));
+  }
+  bounds.push(W);
+
+  const mt = Math.max(0, marginTop).toFixed(2);
+  // Xem chú thích ở bản cũ về lý do dùng "pt" tuyệt đối trên <table>/<col>/<td> CÙNG với thuộc
+  // tính mso-table-layout-alt:fixed (bắt buộc để tắt "AutoFit to Contents" của Word).
   let html = `<table cellspacing="0" cellpadding="0" style="width:${W.toFixed(2)}pt;border-collapse:collapse;`+
     `table-layout:fixed;mso-table-layout-alt:fixed;margin:${mt}pt 0 0 0;" width="${Math.round(W)}">`;
   html += '<colgroup>';
-  for(let i=0;i<row.length;i++){ html += `<col style="width:${(bounds[i+1]-bounds[i]).toFixed(2)}pt">`; }
-  html += '</colgroup><tr>';
+  for(let i=0;i<numCols;i++){ html += `<col style="width:${(bounds[i+1]-bounds[i]).toFixed(2)}pt">`; }
+  html += '</colgroup>';
   let bottom = 0;
-  for(let i=0;i<row.length;i++){
-    const l = row[i];
-    const colLeft = bounds[i], colRight = bounds[i+1];
-    const colW = Math.max(1, colRight - colLeft);
-    const x1 = (l.x1 != null && l.x1 > l.x0) ? l.x1 : (l.x0 + String(l.text).length*(l.fontSize||12)*0.5);
-    const leftGap = Math.max(0, l.x0-colLeft), rightGap = Math.max(0, colRight-x1);
-    let align = 'left';
-    if(rightGap < leftGap*0.6) align = 'right';
-    else if(leftGap>8 && rightGap>8 && Math.abs(leftGap-rightGap) < Math.max(leftGap,rightGap)*0.35) align = 'center';
-    if(l.isImage){
-      const imgW = Math.max(1, l.x1-l.x0), imgH = Math.max(1, l.y1-l.y0);
-      html += `<td style="width:${colW.toFixed(2)}pt;vertical-align:top;border:none;padding:0;" width="${Math.round(colW)}">`+
-                `<div style="text-align:${align};"><img src="${l.dataUrl}" style="width:${imgW.toFixed(2)}pt;height:${imgH.toFixed(2)}pt;" width="${Math.round(imgW)}" height="${Math.round(imgH)}"></div></td>`;
-      bottom = Math.max(bottom, l.y0 + imgH);
-      continue;
+  for(const row of bandRows){
+    html += '<tr>';
+    for(let i=0;i<numCols;i++){
+      const l = row[i];
+      html += renderMultiColumnCell_(l, bounds[i], bounds[i+1]);
+      const cellBottom = l.isImage
+        ? l.y0 + Math.max(1, l.y1-l.y0)
+        : l.y0 + Math.max(6,l.fontSize)*1.22*(String(l.text).split('\n').length);
+      bottom = Math.max(bottom, cellBottom);
     }
-    const fs = Math.max(6, l.fontSize).toFixed(2);
-    const text = String(l.text).split('\n').map(s=>escapeHtml(s)).join('<br>');
-    // SỬA LỖI: trước đây căn trái/phải luôn ép chữ sát mép cột (colLeft/colRight), làm mất khoảng
-    // thụt lề thật của chữ so với biên cột (ví dụ tên gara vốn thụt vào so với lề trái của "cột"
-    // chứa nó thì lại bị xuất ra dính sát mép 0, lệch hẳn vị trí so với PDF gốc). Đặt khoảng thụt
-    // lề (padding-left/right đúng bằng khoảng cách gốc) lên một <div> LỒNG BÊN TRONG <td> — không
-    // đặt trực tiếp lên <td> (vì <td> đã có width cố định theo mô hình content-box mặc định, cộng
-    // thêm padding sẽ làm tổng bề rộng ô PHÌNH RỘNG hơn cột đã khai báo, đè chồng sang cột kế bên).
-    // Div bên trong có width mặc định "auto" (co giãn vừa khít bên trong ô cha), nên thêm padding
-    // vào đó chỉ thu hẹp phần chữ hiển thị bên trong, không làm ô bảng phình ra ngoài biên cột.
-    const padLeft = align==='left' ? Math.max(0, leftGap).toFixed(2) : '0';
-    const padRight = align==='right' ? Math.max(0, rightGap).toFixed(2) : '0';
-    html += `<td style="width:${colW.toFixed(2)}pt;vertical-align:top;border:none;padding:0;" width="${Math.round(colW)}">`+
-              `<div style="text-align:${align};padding:0 ${padRight}pt 0 ${padLeft}pt;font-size:${fs}pt;color:${l.color};white-space:pre-wrap;">${text || '&nbsp;'}</div></td>`;
-    bottom = Math.max(bottom, l.y0 + Math.max(6,l.fontSize)*1.22*(String(l.text).split('\n').length));
+    html += '</tr>';
   }
-  html += '</tr></table>\n';
+  html += '</table>\n';
   return { html, bottom };
+}
+
+// Dựng HTML cho MỘT hàng có từ 2 dòng chữ trở lên nằm cạnh nhau (ví dụ số hiệu văn bản bên
+// trái + ngày tháng bên phải) — dùng bảng KHÔNG viền để các cột vẫn nằm cùng 1 hàng trong Word.
+// Được GIỮ LẠI (không xoá) cho các nơi gọi hiện có/trường hợp một hàng nhiều-cột đơn lẻ không gộp
+// được với hàng liền kề nào khác — chuyển tiếp sang renderMultiColumnBand_ với dải chỉ gồm 1 hàng.
+function renderMultiColumnRow_(row, W, marginTop){
+  return renderMultiColumnBand_([row], W, marginTop);
 }
 
 // Hàm chính: nhận một danh sách dòng chữ (đã có toạ độ tuyệt đối x0/x1/y0 lấy từ PDF gốc) +
@@ -7541,12 +7871,35 @@ function renderFlowRows_(arr, W, startBottom){
   const rows = groupLinesIntoRows_(arr.filter(l=>l.isImage || (l.text && l.text.trim())));
   let html = '';
   let bottom = startBottom || 0;
-  for(const row of rows){
-    const top = Math.min(...row.map(l=>l.y0));
-    const marginTop = top - bottom;
-    const result = row.length > 1 ? renderMultiColumnRow_(row, W, marginTop) : renderSingleLineRow_(row[0], W, marginTop);
-    html += result.html;
-    bottom = result.bottom;
+  let i = 0;
+  while(i < rows.length){
+    const row = rows[i];
+    if(row.length > 1){
+      // SỬA LỖI: xem chú thích đầy đủ tại renderMultiColumnBand_. Gom mọi hàng nhiều-cột LIÊN
+      // TIẾP có CÙNG số cột với hàng hiện tại thành một dải (band) duy nhất, để cả dải dùng
+      // CHUNG một bộ biên cột nhất quán (thay vì mỗi hàng tự tính biên cột riêng rồi trôi lệch
+      // dần qua từng dòng) — đúng bản chất đây là MỘT khối bảng nhiều cột chạy liên tục trong
+      // PDF gốc, không phải nhiều bảng nhỏ rời rạc xếp chồng lên nhau.
+      const band = [row];
+      let j = i+1;
+      while(j < rows.length && rows[j].length === row.length){
+        band.push(rows[j]);
+        j++;
+      }
+      const top = Math.min(...band.reduce((acc,r)=>acc.concat(r), []).map(l=>l.y0));
+      const marginTop = top - bottom;
+      const result = renderMultiColumnBand_(band, W, marginTop);
+      html += result.html;
+      bottom = result.bottom;
+      i = j;
+    } else {
+      const top = row[0].y0;
+      const marginTop = top - bottom;
+      const result = renderSingleLineRow_(row[0], W, marginTop);
+      html += result.html;
+      bottom = result.bottom;
+      i++;
+    }
   }
   return { html, bottom };
 }
@@ -7564,11 +7917,26 @@ async function buildWordPageHtml(idx){
   // tại hàm extractPageImagesForWord phía trên. Đây là phần nội dung TRƯỚC ĐÂY BỊ BỎ SÓT hoàn
   // toàn khi xuất Word, khiến file Word trông "không giống với file PDF gốc".
   let images = [];
-  try{ images = await extractPageImagesForWord(idx, H); }
+  try{ images = await extractPageImagesForWord(idx, W, H); }
   catch(err){ console.warn('Không trích được ảnh trang '+(idx+1)+':', err); }
 
   let inner = '';
-  const grid = buildTableFromSegments_(tableLines, lines, H);
+  let grid = buildTableFromSegments_(tableLines, lines, H);
+
+  // PHƯƠNG ÁN DỰ PHÒNG CHO PDF SCAN (xem giải thích đầy đủ ở detectTableLinesFromImage_):
+  // nếu không dựng được bảng từ đường kẻ vector — điển hình là trang scan, vốn KHÔNG có một
+  // lệnh vẽ đường nào trong PDF — thì dò lại đường kẻ TRỰC TIẾP TRÊN ẢNH của trang. Nhờ vậy
+  // các bảng 2 cột song ngữ (Việt/Anh) trong bản scan vẫn được tái tạo thành <table> thật với
+  // đúng số hàng, số cột, thay vì bị đổ thành văn bản xuôi dòng mất hết bố cục.
+  if(!grid){
+    try{
+      const imgLines = await detectTableLinesFromImage_(idx, W, H);
+      if(imgLines.segments.length){
+        const g2 = buildTableFromSegments_(imgLines, lines, H);
+        if(g2){ grid = g2; tableLines = imgLines; }
+      }
+    }catch(err){ console.warn('Không dò được đường kẻ bảng từ ảnh trang '+(idx+1)+':', err); }
+  }
 
   if(grid){
     // Có bảng thật: in phần chữ (+ ảnh) phía TRÊN bảng, rồi bảng, rồi phần chữ (+ ảnh) phía DƯỚI
@@ -7592,6 +7960,19 @@ async function buildWordPageHtml(idx){
   }
 
   if(!lines.length && !tableLines.segments.length && !images.length){
+    // Không lấy được chữ (OCR thất bại/không có mạng tải mô hình OCR), cũng không có đường kẻ hay
+    // ảnh nhỏ nào -> thay vì trả về một trang trống vô dụng, chèn ẢNH NGUYÊN TRANG để người dùng
+    // ít nhất vẫn thấy đúng nội dung trang trong file Word (xem chú thích ở extractPageImagesForWord).
+    try{
+      const shot = await renderPageToCanvas(idx, 2);
+      const dataUrl = shot.toDataURL('image/png');
+      return `<div style="width:${W.toFixed(2)}pt;margin:0 auto;background:#fff;">`+
+             `<p style="margin:0;padding:0;line-height:0;"><img src="${dataUrl}" `+
+             `style="width:${W.toFixed(2)}pt;height:${H.toFixed(2)}pt;" `+
+             `width="${Math.round(W)}" height="${Math.round(H)}"></p></div>`;
+    }catch(err){
+      console.warn('Không tạo được ảnh dự phòng cho trang '+(idx+1)+':', err);
+    }
     return `<div style="width:${W.toFixed(2)}pt;margin:0 auto;background:#fff;">`+
            `<p style="margin:0;color:#9aa0a8;font-style:italic;">[Trang không có văn bản]</p></div>`;
   }
