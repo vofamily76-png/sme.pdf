@@ -547,6 +547,18 @@
       (preserving any edits made), while the document currently open on your screen remains unchanged.
     </div>
 
+    <!-- Nhập số trang trực tiếp (vd: 1,3,5-7) để tick chọn nhanh nhiều trang cùng lúc thay vì phải
+         bấm từng ảnh thu nhỏ — hữu ích khi cần tách một lượng lớn trang không liền kề nhau. -->
+    <div style="display:flex;gap:8px;margin-bottom:10px;align-items:flex-start;">
+      <input type="text" id="epPageRangeInput" placeholder="Enter page numbers, e.g. 1,3,5-7" style="
+        flex:1;background:#1c1e22;color:#eceff1;border:1px solid #454a52;border-radius:6px;
+        padding:8px 10px;font-size:12.5px;">
+      <button type="button" id="epApplyRangeBtn" style="
+        padding:8px 14px;border:1px solid #454a52;border-radius:6px;background:#3a3f47;color:#eceff1;
+        font-weight:600;font-size:12.5px;cursor:pointer;white-space:nowrap;">Select pages</button>
+    </div>
+    <div id="epRangeError" style="min-height:16px;color:#ff8a80;font-size:11.5px;margin:-4px 0 8px;"></div>
+
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
       <label style="display:flex;align-items:center;gap:8px;font-size:12.5px;cursor:pointer;">
         <input type="checkbox" id="epSelectAll"> Select all
@@ -3685,6 +3697,9 @@ const epList = document.getElementById('epList');
 const epSelectAll = document.getElementById('epSelectAll');
 const epSelectedCount = document.getElementById('epSelectedCount');
 const epError = document.getElementById('epError');
+const epPageRangeInput = document.getElementById('epPageRangeInput');
+const epApplyRangeBtn = document.getElementById('epApplyRangeBtn');
+const epRangeError = document.getElementById('epRangeError');
 
 document.getElementById('btnExtractPages').onclick = openExtractPagesModal;
 document.getElementById('epCancelBtn').addEventListener('click', closeExtractPagesModal);
@@ -3692,6 +3707,40 @@ document.getElementById('epCloseBtn').addEventListener('click', closeExtractPage
 extractPagesModal.addEventListener('click', function(e){ if(e.target === extractPagesModal) closeExtractPagesModal(); });
 
 function closeExtractPagesModal(){ extractPagesModal.style.display = 'none'; }
+
+// Áp kết quả gõ số trang (dùng chung parsePageRangeInput_ đã viết cho modal Delete page) vào lưới
+// checkbox của modal Extract Pages — chọn ĐÚNG các trang vừa gõ (thay thế lựa chọn hiện có), để
+// người dùng gõ một danh sách trang rồi bấm "Extract selected pages" là tách đúng những trang đó
+// ra file PDF mới trong một lần, không cần tự tay tick lại từng ảnh thu nhỏ.
+function applyEpPageRangeSelection_(){
+  epRangeError.textContent = '';
+  const { indices, invalidTokens, outOfRangeTokens } = parsePageRangeInput_(epPageRangeInput.value, pages.length);
+  if(invalidTokens.length){
+    epRangeError.textContent = 'Không hiểu: ' + invalidTokens.join(', ');
+    return;
+  }
+  if(outOfRangeTokens.length){
+    epRangeError.textContent = `Trang không hợp lệ (tài liệu chỉ có ${pages.length} trang): ` + outOfRangeTokens.join(', ');
+    return;
+  }
+  if(!indices.size){
+    epRangeError.textContent = 'Hãy nhập ít nhất một số trang, vd: 1,3,5-7';
+    return;
+  }
+  epList.querySelectorAll('.dp-checkbox').forEach(cb => {
+    const idx = Number(cb.dataset.idx);
+    cb.checked = indices.has(idx);
+    cb.closest('.dp-item').classList.toggle('selected', cb.checked);
+  });
+  updateEpSelectedCount();
+  const firstChecked = epList.querySelector('.dp-checkbox:checked');
+  if(firstChecked) firstChecked.closest('.dp-item').scrollIntoView({ block:'nearest' });
+}
+
+epApplyRangeBtn.addEventListener('click', applyEpPageRangeSelection_);
+epPageRangeInput.addEventListener('keydown', (e) => {
+  if(e.key === 'Enter'){ e.preventDefault(); applyEpPageRangeSelection_(); }
+});
 
 function updateEpSelectedCount(){
   const total = epList.querySelectorAll('.dp-checkbox').length;
@@ -3703,6 +3752,8 @@ function updateEpSelectedCount(){
 
 async function openExtractPagesModal(){
   epError.textContent = '';
+  epRangeError.textContent = '';
+  epPageRangeInput.value = '';
   if(!pages.length){ alert('Hãy mở một file PDF trước.'); return; }
   epList.innerHTML = '';
   extractPagesModal.style.display = 'flex';
