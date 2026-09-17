@@ -7,6 +7,11 @@
 <script src="https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/2.1.4/tesseract.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
+<!-- ExcelJS: dùng để ghi ra file .xlsx CÓ ĐỊNH DẠNG THẬT (viền, tô nền, đậm, canh lề, ô gộp, độ
+     rộng cột/cao hàng...). Trước đây dùng SheetJS bản xlsx.full.min.js (miễn phí/Community) —
+     bản này CHỈ ghi được dữ liệu ô, KHÔNG ghi được style, nên file xuất ra luôn "trần trụi" không
+     giống định dạng gốc dù dữ liệu đúng hàng/cột. ExcelJS là mã nguồn mở, ghi style đầy đủ. -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@pdf-lib/fontkit@1.1.1/dist/fontkit.umd.min.js"></script>
 <style>
   :root{
@@ -486,6 +491,18 @@
       Select one or more pages to delete from the document. This action cannot be Undo.
     </div>
 
+    <!-- Nhập số trang trực tiếp (vd: 1,3,5-7) để tick chọn nhanh nhiều trang cùng lúc thay vì phải
+         bấm từng ảnh thu nhỏ — hữu ích khi cần xóa một lượng lớn trang không liền kề nhau. -->
+    <div style="display:flex;gap:8px;margin-bottom:10px;align-items:flex-start;">
+      <input type="text" id="dpPageRangeInput" placeholder="Enter page numbers, e.g. 1,3,5-7" style="
+        flex:1;background:#1c1e22;color:#eceff1;border:1px solid #454a52;border-radius:6px;
+        padding:8px 10px;font-size:12.5px;">
+      <button type="button" id="dpApplyRangeBtn" style="
+        padding:8px 14px;border:1px solid #454a52;border-radius:6px;background:#3a3f47;color:#eceff1;
+        font-weight:600;font-size:12.5px;cursor:pointer;white-space:nowrap;">Select pages</button>
+    </div>
+    <div id="dpRangeError" style="min-height:16px;color:#ff8a80;font-size:11.5px;margin:-4px 0 8px;"></div>
+
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
       <label style="display:flex;align-items:center;gap:8px;font-size:12.5px;cursor:pointer;">
         <input type="checkbox" id="dpSelectAll"> Select all
@@ -742,6 +759,54 @@
   </div>
 </div>
 
+<!-- ===================== MODAL: EXPORT EXCEL (chọn trang cần xuất) =====================
+     Dùng đúng cơ chế/giao diện của modal Export Word ở trên (lưới ảnh thu nhỏ + hộp chọn từng
+     trang, mặc định chọn tất cả) để thao tác quen tay, chỉ khác phần mô tả và nút xác nhận. -->
+<div id="exportExcelModal" style="
+  position:fixed;inset:0;z-index:1100;display:none;
+  background:rgba(0,0,0,.55);
+  align-items:center;justify-content:center;
+  font-family:'Segoe UI',Roboto,Arial,sans-serif;color:#eceff1;">
+  <div style="
+    background:#25282e;border:1px solid #454a52;border-radius:10px;
+    padding:22px 24px;width:560px;max-width:92vw;max-height:86vh;overflow:auto;
+    box-shadow:0 10px 40px rgba(0,0,0,.5);">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+      <div style="font-weight:600;font-size:15px;">📈 Export Excel</div>
+      <button type="button" id="exCloseBtn" style="
+        background:transparent;border:none;color:#9aa0a8;font-size:18px;cursor:pointer;line-height:1;">✕</button>
+    </div>
+    <div style="font-size:12px;color:#9aa0a8;margin-bottom:12px;">
+      Chọn các trang muốn xuất sang Excel (mặc định: tất cả các trang). Mỗi trang thành một sheet
+      riêng; bảng trong trang được dựng lại thành đúng hàng/cột của bảng tính, có viền — hàng tiêu
+      đề in đậm và giữ đúng màu nền nếu bản gốc có tô màu. File .xlsx xuất ra chỉnh sửa được bình
+      thường.
+    </div>
+
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+      <label style="display:flex;align-items:center;gap:8px;font-size:12.5px;cursor:pointer;">
+        <input type="checkbox" id="exSelectAll"> Chọn tất cả (Xuất tất cả các trang)
+      </label>
+      <span id="exSelectedCount" style="font-size:11.5px;color:#9aa0a8;"></span>
+    </div>
+
+    <div id="exList" style="
+      display:grid;grid-template-columns:repeat(auto-fill,minmax(86px,1fr));gap:10px;
+      margin-bottom:14px;max-height:380px;overflow:auto;padding:2px;"></div>
+
+    <div id="exError" style="min-height:18px;color:#ff8a80;font-size:12px;margin-bottom:4px;"></div>
+
+    <div style="display:flex;gap:8px;margin-top:6px;">
+      <button type="button" id="exCancelBtn" style="
+        flex:1;padding:10px;border:1px solid #454a52;border-radius:6px;background:transparent;color:#eceff1;
+        font-weight:600;font-size:13px;cursor:pointer;">Huỷ</button>
+      <button type="button" id="exConfirmBtn" style="
+        flex:1;padding:10px;border:none;border-radius:6px;background:#1d7a44;color:#fff;
+        font-weight:600;font-size:13px;cursor:pointer;">📈 Xuất Excel</button>
+    </div>
+  </div>
+</div>
+
 <!-- ===================== MODAL: EXPORT POWERPOINT (chọn trang cần xuất) ===================== -->
 <div id="exportPptxModal" style="
   position:fixed;inset:0;z-index:1100;display:none;
@@ -994,6 +1059,7 @@
     <div class="menu-dropdown" id="exportMenuDropdown">
       <button class="tbtn" id="btnExportWord"><span class="ic">📝</span>Export Word Document</button>
       <button class="tbtn" id="btnExportPptx" title="Xuất các trang đã chọn thành file PowerPoint (.pptx), mỗi trang là 1 slide, giữ đúng hình ảnh/bố cục như bản gốc (bao gồm cả những chỉnh sửa bạn đã thực hiện)"><span class="ic">📊</span>Export PowerPoint</button>
+      <button class="tbtn" id="btnExportExcel" title="Xuất các trang đã chọn thành file Excel (.xlsx) chỉnh sửa được — bảng trong PDF được dựng lại thành đúng hàng/cột của bảng tính"><span class="ic">📈</span>Export Excel</button>
     </div>
   </div>
   <div class="sep"></div>
@@ -3422,6 +3488,9 @@ const dpList = document.getElementById('dpList');
 const dpSelectAll = document.getElementById('dpSelectAll');
 const dpSelectedCount = document.getElementById('dpSelectedCount');
 const dpError = document.getElementById('dpError');
+const dpPageRangeInput = document.getElementById('dpPageRangeInput');
+const dpApplyRangeBtn = document.getElementById('dpApplyRangeBtn');
+const dpRangeError = document.getElementById('dpRangeError');
 
 document.getElementById('btnDeletePage').onclick = openDeletePageModal;
 document.getElementById('dpCancelBtn').addEventListener('click', closeDeletePageModal);
@@ -3429,6 +3498,67 @@ document.getElementById('dpCloseBtn').addEventListener('click', closeDeletePageM
 deletePageModal.addEventListener('click', function(e){ if(e.target === deletePageModal) closeDeletePageModal(); });
 
 function closeDeletePageModal(){ deletePageModal.style.display = 'none'; }
+
+// Phân tích chuỗi số trang người dùng gõ (vd "1,3,5-7", "2 4 6", "10-8" tự đảo lại thành 8-10)
+// thành TẬP HỢP chỉ số trang (0-based). Chấp nhận dấu phẩy/khoảng trắng/chấm phẩy làm dấu phân
+// cách, và dấu gạch ngang cho khoảng trang liên tiếp. Trả về { indices: Set, invalidTokens: [],
+// outOfRangeTokens: [] } để nơi gọi báo lỗi cụ thể thay vì chỉ im lặng bỏ qua.
+function parsePageRangeInput_(str, maxPage){
+  const indices = new Set();
+  const invalidTokens = [];
+  const outOfRangeTokens = [];
+  const tokens = (str||'').split(/[,;\s]+/).map(t=>t.trim()).filter(Boolean);
+  for(const tok of tokens){
+    const m = tok.match(/^(\d+)\s*-\s*(\d+)$/);
+    if(m){
+      let a = parseInt(m[1],10), b = parseInt(m[2],10);
+      if(a > b){ const t=a; a=b; b=t; }
+      if(a < 1 || b > maxPage){ outOfRangeTokens.push(tok); continue; }
+      for(let n=a; n<=b; n++) indices.add(n-1);
+    } else if(/^\d+$/.test(tok)){
+      const n = parseInt(tok,10);
+      if(n < 1 || n > maxPage){ outOfRangeTokens.push(tok); continue; }
+      indices.add(n-1);
+    } else {
+      invalidTokens.push(tok);
+    }
+  }
+  return { indices, invalidTokens, outOfRangeTokens };
+}
+
+// Áp KẾT QUẢ phân tích vào lưới checkbox: chọn ĐÚNG các trang vừa gõ (thay thế lựa chọn hiện có,
+// không cộng dồn) — để người dùng gõ một danh sách trang rồi bấm "Delete selected page" là xóa
+// đúng một lần những trang đó, không cần tự tay tick lại từng ảnh thu nhỏ.
+function applyDpPageRangeSelection_(){
+  dpRangeError.textContent = '';
+  const { indices, invalidTokens, outOfRangeTokens } = parsePageRangeInput_(dpPageRangeInput.value, pages.length);
+  if(invalidTokens.length){
+    dpRangeError.textContent = 'Không hiểu: ' + invalidTokens.join(', ');
+    return;
+  }
+  if(outOfRangeTokens.length){
+    dpRangeError.textContent = `Trang không hợp lệ (tài liệu chỉ có ${pages.length} trang): ` + outOfRangeTokens.join(', ');
+    return;
+  }
+  if(!indices.size){
+    dpRangeError.textContent = 'Hãy nhập ít nhất một số trang, vd: 1,3,5-7';
+    return;
+  }
+  dpList.querySelectorAll('.dp-checkbox').forEach(cb => {
+    const idx = Number(cb.dataset.idx);
+    cb.checked = indices.has(idx);
+    cb.closest('.dp-item').classList.toggle('selected', cb.checked);
+  });
+  updateDpSelectedCount();
+  // Cuộn tới trang đầu tiên vừa chọn để người dùng thấy ngay kết quả gõ số trang có đúng ý không.
+  const firstChecked = dpList.querySelector('.dp-checkbox:checked');
+  if(firstChecked) firstChecked.closest('.dp-item').scrollIntoView({ block:'nearest' });
+}
+
+dpApplyRangeBtn.addEventListener('click', applyDpPageRangeSelection_);
+dpPageRangeInput.addEventListener('keydown', (e) => {
+  if(e.key === 'Enter'){ e.preventDefault(); applyDpPageRangeSelection_(); }
+});
 
 function updateDpSelectedCount(){
   const total = dpList.querySelectorAll('.dp-checkbox').length;
@@ -3440,6 +3570,8 @@ function updateDpSelectedCount(){
 
 async function openDeletePageModal(){
   dpError.textContent = '';
+  dpRangeError.textContent = '';
+  dpPageRangeInput.value = '';
   if(!pages.length){ alert('Hãy mở một file PDF trước.'); return; }
   dpList.innerHTML = '';
   deletePageModal.style.display = 'flex';
@@ -7584,7 +7716,12 @@ function clusterConnectedGridSegments_(hSegs, vSegs, tol){
   return Object.values(groups);
 }
 
-function buildTableFromSegments_(tableLines, lines, H){
+// Tính LƯỚI BẢNG (mốc hàng/cột + chữ đã xếp vào từng ô) từ các đường kẻ dò được. Tách riêng khỏi
+// buildTableFromSegments_ để phần "hiểu cấu trúc bảng" được dùng chung cho CẢ xuất Word (dựng HTML)
+// lẫn xuất Excel (dựng ô bảng tính) — hai nơi cần đúng một cách hiểu bảng, không nên tính hai lần
+// bằng hai đoạn code khác nhau rồi lệch nhau.
+// Trả về { rowYs, colXs, cells, outside, top, bottom, left, right } hoặc null nếu không phải bảng.
+function computeTableGrid_(tableLines, lines, H){
   const TOL = 2.2;       // pt — dung sai gộp mốc hàng/cột
   const TOUCH_TOL = 3;   // pt — dung sai coi 2 đoạn ngang/dọc là "chạm/giao nhau" ở góc ô bảng
 
@@ -7603,7 +7740,19 @@ function buildTableFromSegments_(tableLines, lines, H){
   const maxHSpan = Math.max(...hSegs.map(s => s.x1 - s.x0));
   const maxVSpan = Math.max(...vSegs.map(s => s.y1 - s.y0));
   const hCore = hSegs.filter(s => (s.x1 - s.x0) >= Math.max(maxHSpan * 0.30, 18));
-  const vCore = vSegs.filter(s => (s.y1 - s.y0) >= Math.max(maxVSpan * 0.30, 12));
+  // Với đường kẻ DỌC, chỉ lọc theo độ dài là chưa đủ. Trong các biểu mẫu thực tế (đơn đề nghị mua
+  // hàng, phiếu yêu cầu...), bảng thường có phần thân rất cao nhưng dải phân cách cột lại CHỈ chạy
+  // qua đúng hàng tiêu đề + hàng dữ liệu ở giữa — ngắn hơn nhiều so với khung ngoài, nên bị ngưỡng
+  // 30% loại sạch, khiến cả bảng thành MỘT cột duy nhất (mọi giá trị Quantity/Unit/Item/Remarks bị
+  // dồn chung vào một ô). Vì vậy giữ thêm các đoạn dọc mà CẢ HAI đầu đều chạm vào một đường kẻ
+  // ngang của bảng: đó chính là đặc trưng của một đường phân cách cột thật, còn nét gạch chân hay
+  // nét ký tên thì không bao giờ nối được hai đường kẻ ngang như vậy.
+  const hCoreYs = hCore.map(s => H - s.y);
+  const touchesHRule_ = (y) => hCoreYs.some(hy => Math.abs(hy - y) <= TOUCH_TOL);
+  const vCore = vSegs.filter(s => {
+    if((s.y1 - s.y0) >= Math.max(maxVSpan * 0.30, 12)) return true;
+    return (s.y1 - s.y0) >= 8 && touchesHRule_(H - s.y1) && touchesHRule_(H - s.y0);
+  });
   if(hCore.length < 3 || vCore.length < 2) return null;
 
   // BƯỚC 2 — chỉ giữ lại đúng MỘT cụm đường kẻ thực sự liên thông với nhau (xem giải thích ở
@@ -7617,7 +7766,7 @@ function buildTableFromSegments_(tableLines, lines, H){
     const gColXs = clusterLineCoords_(g.v.map(s => s.x), TOL);
     if(gRowYs.length < 3 || gColXs.length < 2) continue;
     const score = (gRowYs.length - 1) * (gColXs.length - 1);
-    if(!best || score > best.score) best = { rowYs: gRowYs, colXs: gColXs, score };
+    if(!best || score > best.score) best = { rowYs: gRowYs, colXs: gColXs, score, v: g.v };
   }
   // Cần tối thiểu 2 hàng (3 đường ngang) và 1 cột (2 đường dọc) mới coi là một bảng thật.
   if(!best) return null;
@@ -7629,6 +7778,29 @@ function buildTableFromSegments_(tableLines, lines, H){
   const cells = Array.from({length:nRows}, () => Array.from({length:nCols}, () => []));
   const outside = [];
 
+  // Ô GỘP (merged cell): không phải hàng nào cũng bị cắt bởi đủ mọi mốc cột. Ví dụ ở biểu mẫu
+  // "Purchase Requisition Form", phần đầu trang và phần ký tên là những hàng GỘP HẾT bề ngang bảng,
+  // chỉ có hàng tiêu đề và hàng dữ liệu ở giữa mới thực sự chia thành 5 cột. Nếu cứ cắt mọi hàng
+  // theo đủ 5 mốc cột thì tiêu đề "PURCHASE REQUISITION FORM" sẽ bị chặt làm ba mảnh rơi vào ba ô
+  // khác nhau. Vì vậy với TỪNG hàng, ta xác định mốc cột nào THỰC SỰ có đường kẻ dọc chạy qua hàng
+  // đó; những mốc không có thì hai ô hai bên được gộp làm một.
+  const rowSpans = [];
+  for(let r=0;r<nRows;r++){
+    const yTop = rowYs[r], yBot = rowYs[r+1];
+    const present = [];
+    for(let b=1;b<nCols;b++){
+      const x = colXs[b];
+      const has = best.v.some(s => Math.abs(s.x - x) <= TOL
+        && (H - s.y1) <= yTop + TOUCH_TOL && (H - s.y0) >= yBot - TOUCH_TOL);
+      if(has) present.push(b);
+    }
+    const spans = [];
+    let c0 = 0;
+    for(const b of present){ spans.push({ c0, c1: b-1 }); c0 = b; }
+    spans.push({ c0, c1: nCols-1 });
+    rowSpans.push(spans);
+  }
+
   for(const l of lines){
     if(l.y0 < top - TOL || l.y0 > bottom + TOL || l.x0 < left - TOL || l.x0 > right + TOL){
       outside.push(l); continue;
@@ -7639,14 +7811,25 @@ function buildTableFromSegments_(tableLines, lines, H){
     // khiến trước đây có ô rõ ràng có chữ nhưng xuất Word lại trống, còn chữ thì dạt ra ngoài
     // bảng, trông như "nằm nhầm hàng/cột khác").
     const r = bandIndex_(l.y0, rowYs, TOL);
-    // Trước khi xếp vào MỘT cột duy nhất theo l.x0, kiểm tra xem dòng này có vô tình chứa chữ
-    // của NHIỀU cột khác nhau hay không (xem giải thích ở splitLineAcrossColumns_) — nếu có,
-    // tách lại đúng theo từng cột thay vì nhét chung cả cụm vào 1 ô.
-    const parts = splitLineAcrossColumns_(l, colXs, TOL);
+    // Tách theo ĐÚNG các mốc cột có thật ở hàng này (xem phần ô gộp ở trên) — không tách tại
+    // những mốc mà hàng này không hề có đường kẻ dọc.
+    const spans = rowSpans[r];
+    const rowColXs = spans.map(sp => colXs[sp.c0]).concat([colXs[nCols]]);
+    const parts = splitLineAcrossColumns_(l, rowColXs, TOL);
     for(const { col, line } of parts){
-      cells[r][col].push(line);
+      const sp = spans[Math.min(col, spans.length-1)];
+      cells[r][sp.c0].push(line); // chữ của ô gộp luôn nằm ở cột đầu tiên của vùng gộp
     }
   }
+
+  return { rowYs, colXs, cells, outside, top, bottom, left, right, nRows, nCols, rowSpans };
+}
+
+// Dựng HTML <table> cho file Word từ lưới bảng đã tính ở computeTableGrid_.
+function buildTableFromSegments_(tableLines, lines, H){
+  const grid = computeTableGrid_(tableLines, lines, H);
+  if(!grid) return null;
+  const { rowYs, colXs, cells, outside, top, bottom, left, right, nRows, nCols, rowSpans } = grid;
 
   // QUAN TRỌNG: Word (bộ lọc mso khi mở .doc dạng HTML) KHÔNG áp dụng position:absolute —
   // mọi thẻ có left/top đều bị Word đẩy về vị trí mặc định trong luồng văn bản, sai hẳn so với
@@ -7663,16 +7846,18 @@ function buildTableFromSegments_(tableLines, lines, H){
   html += '</colgroup>\n';
   for(let r=0;r<nRows;r++){
     html += '<tr>';
-    for(let c=0;c<nCols;c++){
-      const w = (colXs[c+1]-colXs[c]).toFixed(2);
-      const cellLines = cells[r][c].sort((a,b)=> a.y0-b.y0 || a.x0-b.x0);
+    for(const sp of rowSpans[r]){
+      const span = sp.c1 - sp.c0 + 1;
+      const w = (colXs[sp.c1+1] - colXs[sp.c0]).toFixed(2);
+      const cellLines = cells[r][sp.c0].sort((a,b)=> a.y0-b.y0 || a.x0-b.x0);
       // Cỡ chữ của ô lấy theo TRUNG VỊ của các dòng trong ô, không lấy theo dòng đầu tiên: với
       // trang scan, cỡ chữ do OCR ước lượng dao động khá mạnh giữa các dòng, nếu chỉ lấy dòng đầu
       // thì cả ô dễ bị đặt sai cỡ (quá to/quá nhỏ) so với bản gốc.
       const fsList = cellLines.map(l => Math.max(6, l.fontSize||10)).sort((a,b)=>a-b);
       const fs = fsList.length ? fsList[Math.floor(fsList.length/2)].toFixed(2) : '10';
       const text = cellLines.map(l=> escapeHtml(l.text)).join('<br>');
-      html += `<td style="width:${w}pt;border:0.75pt solid #000000;font-size:${fs}pt;vertical-align:top;">${text || '&nbsp;'}</td>`;
+      const colspanAttr = span > 1 ? ` colspan="${span}"` : '';
+      html += `<td${colspanAttr} style="width:${w}pt;border:0.75pt solid #000000;font-size:${fs}pt;vertical-align:top;">${text || '&nbsp;'}</td>`;
     }
     html += '</tr>\n';
   }
@@ -8112,6 +8297,529 @@ document.getElementById('ewConfirmBtn').addEventListener('click', async () => {
   ewError.textContent = '';
   closeExportWordModal();
   await exportWordSelected(selected);
+});
+
+// ============================ XUẤT EXCEL (.xlsx) ============================
+// Mục tiêu: file Excel xuất ra phải CHỈNH SỬA ĐƯỢC như một bảng tính bình thường (sửa từng ô,
+// thêm/xoá hàng cột, đặt công thức) VÀ NHÌN GIỐNG bản gốc (có viền bảng, hàng tiêu đề in đậm/tô
+// nền, đúng tỉ lệ độ rộng cột/độ cao hàng, ô gộp, chữ xuống dòng đúng chỗ...), chứ không phải một
+// bảng chữ trần trụi không viền không kiểu dáng.
+//
+// SỬA LỖI "file Excel xuất ra không giống định dạng file gốc": nguyên nhân là thư viện tạo file
+// trước đây (SheetJS bản xlsx.full.min.js — bản MIỄN PHÍ/Community) chỉ ghi được DỮ LIỆU của ô,
+// KHÔNG ghi được ĐỊNH DẠNG của ô (không viền, không tô nền, không in đậm, không canh giữa...) —
+// đây là giới hạn có chủ đích của bản miễn phí, định dạng ô chỉ có ở bản trả phí (SheetJS Pro).
+// Do đó dù dữ liệu tách đúng hàng/cột, mở ra vẫn chỉ thấy chữ trần không viền, trông "không giống
+// định dạng gốc" như phản ánh. Sửa bằng cách đổi sang ExcelJS — thư viện mã nguồn mở, ghi được đầy
+// đủ style thật (viền, tô nền, font, đậm/nghiêng, canh lề, ô gộp, độ rộng cột/cao hàng theo point)
+// — cùng nhóm tính năng "output format" mà docx/pptx đang dùng trong app này.
+//
+// Cách hiểu một trang thành bảng tính (dùng chung computeTableGrid_ với xuất Word):
+//   - Nếu trang có BẢNG THẬT (dò được lưới đường kẻ, kể cả phương án dò từ ảnh cho bản scan): lấy
+//     lưới đó làm hàng/cột của sheet, có VIỀN THẬT quanh từng ô như bảng gốc; ô gộp trong PDF trở
+//     thành ô gộp thật trong Excel; HÀNG TIÊU ĐỀ của bảng (hàng đầu tiên của lưới) được in đậm +
+//     canh giữa, và nếu PDF có tô nền cho hàng đó (dò qua extractVectorRects — cùng hàm đang dùng
+//     cho xuất PowerPoint) thì tô đúng màu nền đó trong Excel, KHÔNG tự bịa màu nếu bản gốc không
+//     tô nền. Độ rộng cột suy từ bề rộng thật (point) của cột trong PDF; độ cao mỗi hàng bảng lấy
+//     đúng khoảng cách point giữa 2 đường kẻ ngang trong PDF (đơn vị Point trùng khớp với đơn vị
+//     chiều cao hàng của Excel nên không cần quy đổi) — nhờ vậy TỈ LỆ hàng/cột trong Excel đúng như
+//     bản gốc, không bị dàn đều vô hồn.
+//   - Phần chữ nằm NGOÀI bảng (tiêu đề, ngày tháng, chữ ký...) vẫn giữ lại: gom theo từng dòng ngang
+//     trên trang gốc, đặt vào đúng cột của bảng mà nó nằm trùng theo phương ngang, KHÔNG viền (đúng
+//     như bản gốc không có khung ở phần này).
+
+// Gom các giá trị X thành các "mốc cột" (các X gần nhau trong khoảng tol được coi là một mốc).
+function clusterXAnchors_(xs, tol){
+  const sorted = xs.slice().sort((a,b)=>a-b);
+  const out = [];
+  for(const x of sorted){
+    if(out.length && x - out[out.length-1].last <= tol){
+      const g = out[out.length-1];
+      g.last = x; g.sum += x; g.n++;
+    } else {
+      out.push({ last:x, sum:x, n:1 });
+    }
+  }
+  return out.map(g => g.sum/g.n);
+}
+
+// Tìm chỉ số cột của một toạ độ x trong danh sách mốc cột tăng dần (mốc cuối cùng <= x).
+function colIndexForX_(x, anchors){
+  let idx = 0;
+  for(let i=0;i<anchors.length;i++){ if(x >= anchors[i] - 1.5) idx = i; else break; }
+  return idx;
+}
+
+// Quy đổi màu PDF (mảng RGB 0-255, có thể lẻ) sang mã ARGB 8 ký tự mà ExcelJS cần cho fill/font.
+function rgbToArgb_(rgb){
+  const hex = rgb.map(v => Math.max(0,Math.min(255,Math.round(v))).toString(16).padStart(2,'0')).join('').toUpperCase();
+  return 'FF' + hex;
+}
+
+// Dò MÀU NỀN thật của từng ô trong lưới bảng (nếu PDF có tô nền, ví dụ hàng tiêu đề tô xám nhạt),
+// bằng cách tái sử dụng extractVectorRects (đã viết sẵn cho phần xuất PowerPoint) để lấy các hình
+// chữ nhật được TÔ MÀU thật trong PDF, rồi so khớp hình nào phủ phần lớn diện tích ô nào. Chỉ áp
+// dụng được với trang PDF gốc (có thể đọc lệnh vẽ vector qua getOperatorList); trang scan/ảnh không
+// có lệnh vẽ nào để dò nên trả về rỗng — Excel sẽ không tô bậy màu lên bảng ở những trang đó.
+async function detectCellFillsForExcel_(idx, rowYs, colXs){
+  const fills = {}; // key "r_c" -> argb
+  const p = pages[idx];
+  if(!p || p.type !== 'pdf') return fills;
+  let rects;
+  try{
+    const page = await p.doc.getPage(p.srcPage);
+    const vp1 = page.getViewport({ scale: 1 });
+    rects = await extractVectorRects(page, vp1);
+  }catch(err){ console.warn('Không dò được màu nền ô bảng trang '+(idx+1)+':', err); return fills; }
+  if(!rects || !rects.length) return fills;
+  const nRows = rowYs.length - 1, nCols = colXs.length - 1;
+  for(let r=0;r<nRows;r++){
+    const cy0 = rowYs[r], cy1 = rowYs[r+1], cellArea = Math.max(1, (cy1-cy0));
+    for(let c=0;c<nCols;c++){
+      const cx0 = colXs[c], cx1 = colXs[c+1];
+      const cellW = Math.max(1, cx1-cx0);
+      let best = null, bestCov = 0;
+      for(const rc of rects){
+        if(!rc.fill || rc.fill.alpha < 0.05) continue;
+        // Bỏ qua nền TRẮNG/gần trắng: tô trắng trong Excel không khác gì không tô, chỉ nên tô khi
+        // PDF thực sự dùng một màu có thể phân biệt (vd xám nhạt của hàng tiêu đề).
+        const [rr,gg,bb] = rc.fill.color;
+        if(rr>250 && gg>250 && bb>250) continue;
+        const ox = Math.max(0, Math.min(cx1, rc.leftPt+rc.widthPt) - Math.max(cx0, rc.leftPt));
+        const oy = Math.max(0, Math.min(cy1, rc.topPt+rc.heightPt) - Math.max(cy0, rc.topPt));
+        if(ox<=0 || oy<=0) continue;
+        const cov = (ox*oy)/(cellW*cellArea);
+        if(cov > bestCov){ bestCov = cov; best = rc.fill.color; }
+      }
+      if(best && bestCov >= 0.6) fills[r+'_'+c] = rgbToArgb_(best);
+    }
+  }
+  return fills;
+}
+
+// Neo danh sách ẢNH NHÚNG (logo/con dấu/chữ ký, lấy từ extractPageImagesForWord) vào ĐÚNG hàng/cột
+// trong danh sách `rows` đã dựng (mỗi rowPlan mang theo _yTop/_yBot theo hệ toạ độ điểm, gốc trên-
+// trái — cùng hệ với x0/y0 của ảnh) — dùng chung cho cả nhánh "có bảng" lẫn "không có bảng" ở
+// buildExcelSheetPlan_. Trả về mảng {dataUrl, row, col, widthPx, heightPx} để writeExcelSheet_ ghi
+// bằng ws.addImage (row/col là số thực: phần nguyên là chỉ số hàng/cột 0-based, phần thập phân là
+// vị trí tương đối bên trong ô đó — đây là cách ExcelJS neo ảnh không cần chuyển đổi đơn vị pixel
+// chính xác tuyệt đối, chỉ cần đúng tỉ lệ tương đối).
+function anchorImagesToRows_(images, rows, fallbackColXs){
+  if(!images || !images.length) return [];
+  const out = [];
+  for(const im of images){
+    let rowIdx = 0;
+    for(let i=0;i<rows.length;i++){
+      const yTop = rows[i]._yTop;
+      if(yTop == null) continue;
+      if(im.y0 + 0.5 >= yTop) rowIdx = i; else break;
+    }
+    const rp = rows[rowIdx] || {};
+    const yTop = (rp._yTop != null) ? rp._yTop : im.y0;
+    const yBot = (rp._yBot != null && rp._yBot > yTop) ? rp._yBot : (yTop + (rp.heightPt || (im.y1-im.y0) || 20));
+    const rowFrac = Math.max(0, Math.min(0.9, (im.y0 - yTop) / Math.max(1, yBot - yTop)));
+    const colXs = rp._colXs || fallbackColXs || [im.x0, im.x1];
+    let colIdx = 0;
+    for(let c=0;c<colXs.length-1;c++){ if(im.x0 + 0.5 >= colXs[c]) colIdx = c; else break; }
+    const cx0 = colXs[colIdx], cx1 = (colXs[colIdx+1] != null) ? colXs[colIdx+1] : (cx0 + (im.x1-im.x0));
+    const colFrac = Math.max(0, Math.min(0.9, (im.x0 - cx0) / Math.max(1, cx1 - cx0)));
+    out.push({
+      dataUrl: im.dataUrl,
+      row: rowIdx + rowFrac,
+      col: colIdx + colFrac,
+      widthPx: Math.max(8, (im.x1 - im.x0) * 96/72),
+      heightPx: Math.max(8, (im.y1 - im.y0) * 96/72),
+    });
+  }
+  return out;
+}
+
+// Dựng "kế hoạch" cho MỘT sheet Excel từ một trang PDF: danh sách hàng (kèm độ cao point nếu có),
+// mỗi hàng là mảng ô (kèm colspan/đậm/canh giữa/tô nền khi có), cộng bề rộng cột. Tách riêng phần
+// "hiểu nội dung" này khỏi phần "ghi ra workbook bằng ExcelJS" bên dưới cho dễ kiểm tra/tái sử dụng.
+async function buildExcelSheetPlan_(idx){
+  const { lines, W, H } = await getPageVisualLinesForWord(idx);
+  let tableLines = { segments: [], lineWidth: 1 };
+  try{ tableLines = await extractTableLinesForWord(idx); }
+  catch(err){ console.warn('Không dò được đường kẻ bảng trang '+(idx+1)+':', err); }
+
+  // SỬA LỖI "file Excel xuất ra không có logo/hình ảnh": trước đây buildExcelSheetPlan_ chỉ đọc
+  // CHỮ + ĐƯỜNG KẺ BẢNG, không hề gọi tới bước trích xuất ẢNH NHÚNG (logo công ty, con dấu, chữ
+  // ký...) như xuất Word/PowerPoint đã làm (xem extractPageImagesForWord phía trên) — nên logo ở
+  // đầu trang luôn bị bỏ sót hoàn toàn khi xuất Excel dù vẫn còn nguyên trong file Word/PDF gốc.
+  let images = [];
+  try{ images = await extractPageImagesForWord(idx, W, H); }
+  catch(err){ console.warn('Không trích được ảnh trang '+(idx+1)+' để chèn Excel:', err); }
+
+  let grid = computeTableGrid_(tableLines, lines, H);
+  if(!grid){
+    // Trang scan không có đường kẻ vector -> dò đường kẻ từ chính ảnh của trang (xem
+    // detectTableLinesFromImage_). Đây là điều kiện sống còn để bảng trong bản scan ra đúng
+    // hàng/cột trong Excel thay vì thành một cột chữ dài.
+    try{
+      const imgLines = await detectTableLinesFromImage_(idx, W, H);
+      if(imgLines.segments.length) grid = computeTableGrid_(imgLines, lines, H);
+    }catch(err){ console.warn('Không dò được đường kẻ bảng từ ảnh trang '+(idx+1)+':', err); }
+  }
+
+  const textOf = (arr) => arr.slice().sort((a,b)=> a.y0-b.y0 || a.x0-b.x0)
+    .map(l => (l.text||'').trim()).filter(Boolean).join('\n');
+
+  if(grid){
+    const { rowYs, colXs, cells, outside, top, nRows, nCols, rowSpans } = grid;
+    let fills = {};
+    try{ fills = await detectCellFillsForExcel_(idx, rowYs, colXs); }
+    catch(err){ console.warn('Không dò được màu nền bảng trang '+(idx+1)+':', err); }
+
+    // XÁC ĐỊNH ĐÚNG HÀNG TIÊU ĐỀ CỦA BẢNG (để in đậm + canh giữa) — KHÔNG được giả định máy móc là
+    // "hàng đầu tiên của lưới" (r===0): trong biểu mẫu như "Purchase Requisition Form", hàng đầu
+    // tiên của lưới lại là một Ô GỘP chứa cả khối tiêu đề/ngày tháng/người yêu cầu, còn hàng tiêu
+    // đề cột thật ("Quantity/Unit/Item in Particular/...") nằm Ở HÀNG THỨ HAI. Nếu cứ tô đậm hàng 0
+    // thì sẽ tô nhầm khối mở đầu, còn đúng hàng tiêu đề cột thì lại bỏ sót. Suy ra hàng tiêu đề
+    // đúng bằng hai tín hiệu khách quan lấy từ chính hình học của bảng, không đoán mò:
+    //   (1) là HÀNG ĐẦU TIÊN chia đủ hết mọi cột (rowSpans[r].length === nCols) — hàng gộp mở đầu
+    //       (nếu có) luôn CHỈ có 1 vùng gộp duy nhất nên bị loại khỏi tiêu chí này;
+    //   (2) NẾU PDF có tô nền cho một hàng nào đó (dò được ở fills phía trên) thì hàng đó chắc chắn
+    //       là hàng tiêu đề (tô nền hàng tiêu đề là quy ước cực kỳ phổ biến ở biểu mẫu hành chính)
+    //       — tín hiệu này được ưu tiên hơn vì lấy thẳng từ bản gốc, không phải suy đoán cấu trúc.
+    let headerRowIdx = -1;
+    for(let r=0;r<nRows;r++){
+      const rowHasFill = rowSpans[r].some(sp => fills[r+'_'+sp.c0]);
+      if(rowHasFill){ headerRowIdx = r; break; }
+    }
+    if(headerRowIdx < 0){
+      for(let r=0;r<nRows;r++){
+        if(rowSpans[r].length === nCols){ headerRowIdx = r; break; }
+      }
+    }
+
+    // Chữ ngoài bảng: gom theo từng hàng ngang, đặt vào đúng cột theo vị trí x, KHÔNG viền/không
+    // tô nền — đúng như phần này trong PDF gốc không nằm trong khung bảng. Độ cao mỗi hàng lấy
+    // đúng KHOẢNG CÁCH THẬT (point) tới hàng kế tiếp (thay vì để trống/mặc định như trước đây),
+    // để nhịp cách dòng ở phần tiêu đề/chữ ký cũng khớp bản gốc như phần bảng.
+    const makeOutsideRows = (arr) => {
+      const groups = groupLinesIntoRows_(arr);
+      return groups.map((group, gi) => {
+        const rowCells = new Array(nCols).fill(null).map(()=>({text:''}));
+        for(const l of group){
+          const c = Math.min(nCols-1, Math.max(0, colIndexForX_(l.x0, colXs.slice(0, nCols))));
+          rowCells[c].text = rowCells[c].text ? rowCells[c].text + ' ' + (l.text||'').trim() : (l.text||'').trim();
+        }
+        const yTop = Math.min(...group.map(l=>l.y0));
+        return { heightPt: null, cells: rowCells, _yTop: yTop, _yBot: null, _colXs: colXs, _fontSize: group[0].fontSize||11 };
+      });
+    };
+    // Gán độ cao thật (khoảng cách tới hàng kế) cho một dãy outside-rows đã dựng ở trên.
+    const finalizeOutsideHeights = (arr, fallbackBottom) => {
+      for(let i=0;i<arr.length;i++){
+        const yBot = (i+1<arr.length) ? arr[i+1]._yTop : fallbackBottom;
+        arr[i]._yBot = yBot;
+        const minH = Math.max(12, (arr[i]._fontSize||11)*1.3);
+        arr[i].heightPt = (yBot!=null && yBot>arr[i]._yTop) ? Math.max(minH, yBot-arr[i]._yTop) : minH + 4;
+      }
+      return arr;
+    };
+
+    const rows = [];
+    const beforeRows = finalizeOutsideHeights(makeOutsideRows(outside.filter(l => l.y0 < top)), top);
+    rows.push(...beforeRows);
+
+    for(let r=0;r<nRows;r++){
+      const isHeaderRow = (r === headerRowIdx);
+      const rowTop = rowYs[r], rowBottom = rowYs[r+1];
+      const rowHeight = Math.max(14, rowBottom - rowTop);
+      const fullMerge = rowSpans[r].length === 1 && rowSpans[r][0].c0 === 0 && rowSpans[r][0].c1 === nCols-1;
+      const blockLines = fullMerge ? cells[r][0].slice().sort((a,b)=> a.y0-b.y0 || a.x0-b.x0) : null;
+
+      if(fullMerge && !isHeaderRow && blockLines.length > 1){
+        // SỬA LỖI "các dòng hiện tại cách nhau chưa chuẩn": trước đây TOÀN BỘ khối gộp (ví dụ phần
+        // tiêu đề/ngày tháng/người yêu cầu ở đầu biểu mẫu, hay phần chữ ký ở cuối) bị nhồi chung
+        // vào MỘT ô duy nhất, nối các dòng bằng "\n" và đoán độ cao mỗi dòng là 13pt cố định —
+        // hoàn toàn không khớp khoảng cách thật giữa các dòng trên PDF gốc (có dòng cách xa, có
+        // dòng sát nhau). Giờ TÁCH khối này thành NHIỀU HÀNG EXCEL RIÊNG, mỗi hàng ứng với đúng MỘT
+        // dòng chữ gốc và có độ cao bằng đúng khoảng cách điểm (point) tới dòng kế tiếp trong PDF —
+        // viền chỉ vẽ ở mép TRÊN (hàng đầu) và mép DƯỚI (hàng cuối) + hai mép trái/phải trên MỌI
+        // hàng, để vẫn trông như MỘT khung liền bao quanh cả khối (giống bản gốc), không bị kẻ
+        // ngang chia vụn bên trong.
+        const n = blockLines.length;
+        for(let li=0; li<n; li++){
+          const line = blockLines[li];
+          const isFirst = li===0, isLast = li===n-1;
+          const minH = Math.max(12, (line.fontSize||11)*1.3);
+          let h = isLast ? (rowBottom - line.y0) : (blockLines[li+1].y0 - line.y0);
+          h = Math.max(minH, h);
+          if(isFirst) h += Math.max(0, line.y0 - rowTop); // giữ phần đệm trên cùng của cả khối
+          rows.push({
+            heightPt: h,
+            cells: [{
+              text: (line.text||'').trim(), colSpan: nCols,
+              borderSides: { top: isFirst, bottom: isLast, left: true, right: true },
+              align: 'left', bold: false,
+            }],
+            _yTop: isFirst ? rowTop : line.y0,
+            _yBot: isLast ? rowBottom : blockLines[li+1].y0,
+            _colXs: colXs,
+          });
+        }
+      } else {
+        const rowCells = new Array(nCols).fill(null);
+        for(const sp of rowSpans[r]){
+          const text = textOf(cells[r][sp.c0]);
+          const lineCount = Math.max(1, text.split('\n').length);
+          rowCells[sp.c0] = {
+            text, colSpan: sp.c1 - sp.c0 + 1, bordered: true,
+            bold: isHeaderRow, align: isHeaderRow ? 'center' : 'left',
+            fill: fills[r+'_'+sp.c0] || null,
+          };
+          // Nếu nội dung nhiều dòng hơn độ cao hàng gốc cho phép chứa -> nới thêm để không bị cắt chữ
+          // (đơn vị point, ~ cỡ chữ*1.25 mỗi dòng, cộng đôi chút đệm trên dưới).
+          rowCells[sp.c0]._minHeight = lineCount * 13 + 6;
+        }
+        const effHeight = Math.max(rowHeight, ...rowSpans[r].map(sp => (rowCells[sp.c0]&&rowCells[sp.c0]._minHeight)||0));
+        rows.push({ heightPt: effHeight, cells: rowCells, isTableRow: true, _yTop: rowTop, _yBot: rowBottom, _colXs: colXs });
+      }
+    }
+
+    const afterRows = finalizeOutsideHeights(makeOutsideRows(outside.filter(l => l.y0 >= top)), null);
+    rows.push(...afterRows);
+
+    const colWidths = [];
+    for(let c=0;c<nCols;c++) colWidths.push(Math.max(8, Math.min(70, (colXs[c+1]-colXs[c])/7)));
+    const anchoredImages = anchorImagesToRows_(images, rows, colXs);
+    return { nCols, colWidths, rows, images: anchoredImages };
+  }
+
+  // ---- Trang không có bảng: tự dựng lưới cột từ các mốc X mà chữ hay bắt đầu ----
+  if(!lines.length){
+    const anchoredImages = anchorImagesToRows_(images, [{ _yTop:0, _yBot:H }], [0, W]);
+    return { nCols: 1, colWidths: [20], rows: [{ heightPt:null, cells:[{text:''}] }], images: anchoredImages };
+  }
+  const anchors = clusterXAnchors_(lines.map(l => l.x0), Math.max(6, W*0.012)).slice(0, 26);
+  const nCols = Math.max(1, anchors.length);
+  const groups = groupLinesIntoRows_(lines);
+  const rows = groups.map((group, gi) => {
+    const rowCells = new Array(nCols).fill(null).map(()=>({text:''}));
+    for(const l of group){
+      const c = Math.min(nCols-1, colIndexForX_(l.x0, anchors));
+      rowCells[c].text = rowCells[c].text ? rowCells[c].text + ' ' + (l.text||'').trim() : (l.text||'').trim();
+    }
+    const yTop = Math.min(...group.map(l=>l.y0));
+    const nextTop = (gi+1<groups.length) ? Math.min(...groups[gi+1].map(l=>l.y0)) : H;
+    const minH = Math.max(12, (group[0].fontSize||11)*1.3);
+    return { heightPt: Math.max(minH, nextTop-yTop), cells: rowCells, _yTop: yTop, _yBot: nextTop, _colXs: anchors.concat([W]) };
+  });
+  const colWidths = [];
+  for(let c=0;c<anchors.length;c++){
+    const next = (c+1 < anchors.length) ? anchors[c+1] : W;
+    colWidths.push(Math.max(8, Math.min(70, (next - anchors[c])/7)));
+  }
+  const anchoredImages = anchorImagesToRows_(images, rows, anchors.concat([W]));
+  return { nCols, colWidths, rows, images: anchoredImages };
+}
+
+// Ghi MỘT kế hoạch sheet (từ buildExcelSheetPlan_) vào workbook ExcelJS, áp dụng đầy đủ style thật:
+// viền, tô nền, đậm, canh lề, xuống dòng, độ rộng cột/cao hàng — đây là phần trước đây KHÔNG làm
+// được với SheetJS bản miễn phí (chỉ ghi được giá trị ô, không ghi được style).
+function writeExcelSheet_(wb, sheetName, plan){
+  const ws = wb.addWorksheet(sheetName, { views: [{ showGridLines: true }] });
+  ws.columns = plan.colWidths.map(w => ({ width: w }));
+  const THIN = { style: 'thin', color: { argb: 'FF000000' } };
+  // Dựng đối tượng border từ {top,bottom,left,right} (boolean) — dùng cho các hàng ĐÃ TÁCH từ một
+  // khối gộp nhiều dòng (xem buildExcelSheetPlan_): chỉ hàng ĐẦU có viền trên, chỉ hàng CUỐI có
+  // viền dưới, còn viền trái/phải thì hàng nào cũng có — nhờ vậy nhiều hàng Excel liền nhau vẫn
+  // hiện ra như MỘT khung liền duy nhất bao quanh cả khối, không bị kẻ ngang chia vụn ở giữa.
+  const borderFromSides = (sides) => {
+    const b = {};
+    if(sides.top) b.top = THIN;
+    if(sides.bottom) b.bottom = THIN;
+    if(sides.left) b.left = THIN;
+    if(sides.right) b.right = THIN;
+    return b;
+  };
+
+  for(let ri=0; ri<plan.rows.length; ri++){
+    const rowPlan = plan.rows[ri];
+    const excelRow = ws.getRow(ri+1);
+    if(rowPlan.heightPt) excelRow.height = rowPlan.heightPt;
+    for(let ci=0; ci<plan.nCols; ci++){
+      const cellPlan = rowPlan.cells[ci];
+      if(!cellPlan) continue; // ô bị "che" bởi một ô gộp bên trái, không ghi gì ở đây
+      const cell = excelRow.getCell(ci+1);
+      cell.value = cellPlan.text || '';
+      cell.alignment = {
+        vertical: 'top',
+        horizontal: cellPlan.align || 'left',
+        wrapText: true,
+      };
+      cell.font = {
+        name: 'Times New Roman',
+        size: 11,
+        bold: !!cellPlan.bold,
+      };
+      const borderObj = cellPlan.borderSides ? borderFromSides(cellPlan.borderSides)
+        : (cellPlan.bordered ? { top: THIN, bottom: THIN, left: THIN, right: THIN } : null);
+      if(borderObj) cell.border = borderObj;
+      if(cellPlan.fill){
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: cellPlan.fill } };
+      }
+      if(cellPlan.colSpan && cellPlan.colSpan > 1){
+        ws.mergeCells(ri+1, ci+1, ri+1, ci+cellPlan.colSpan);
+        // ExcelJS chỉ áp style cho ô neo (ô trên-trái) của vùng gộp theo mặc định — áp lại viền cho
+        // TỪNG ô trong vùng gộp để đường viền hiển thị liền mạch quanh trọn vùng đã gộp, giống hệt
+        // cách Word/PDF vẽ viền cho một ô đã gộp (một khung liền, không đứt đoạn ở giữa).
+        if(borderObj){
+          for(let k=ci+1; k<ci+cellPlan.colSpan; k++){
+            excelRow.getCell(k+1).border = borderObj;
+          }
+        }
+      }
+      excelRow.commit();
+    }
+  }
+
+  // SỬA LỖI "file Excel xuất ra không có logo": chèn các ảnh nhúng (logo đầu trang, con dấu/chữ ký
+  // cuối trang...) đã được neo đúng hàng/cột ở anchorImagesToRows_. tl.row/tl.col là số thực theo
+  // quy ước của ExcelJS: phần nguyên là chỉ số hàng/cột (0-based), phần thập phân là vị trí tương
+  // đối bên trong hàng/cột đó — nhờ vậy ảnh nằm đúng khoảng trang PDF gốc mà không cần quy đổi
+  // sang đơn vị pixel tuyệt đối của từng cột/hàng đã tạo trước đó.
+  if(plan.images && plan.images.length){
+    for(const im of plan.images){
+      try{
+        const base64 = (im.dataUrl||'').split(',')[1];
+        if(!base64) continue;
+        const imgId = wb.addImage({ base64, extension: 'png' });
+        ws.addImage(imgId, {
+          tl: { col: im.col, row: im.row },
+          ext: { width: im.widthPx, height: im.heightPx },
+        });
+      }catch(err){ console.warn('Không chèn được ảnh vào sheet '+sheetName+':', err); }
+    }
+  }
+}
+
+// Xuất Excel cho ĐÚNG danh sách chỉ số trang được chọn — mỗi trang một sheet riêng, có định dạng
+// (viền/tô nền/đậm/canh lề/ô gộp) giống bản gốc, không chỉ đúng dữ liệu thô.
+async function exportExcelSelected(indices){
+  if(!indices || !indices.length){ alert('Hãy chọn ít nhất một trang để xuất.'); return; }
+  if(typeof ExcelJS === 'undefined'){
+    alert('Chưa tải được thư viện tạo file Excel (ExcelJS). Hãy kiểm tra kết nối mạng rồi thử lại.');
+    return;
+  }
+  flushPendingEdit(); // chốt chỉnh sửa dang dở trước khi đọc nội dung để xuất Excel
+  const spinner = document.getElementById('spinner');
+  const spinnerLabel = spinner.lastChild;
+  spinner.classList.add('show');
+  try{
+    const wb = new ExcelJS.Workbook();
+    for(let k=0;k<indices.length;k++){
+      const i = indices[k];
+      spinnerLabel.textContent = ` Đang chuyển trang ${i+1} sang Excel (${k+1}/${indices.length})…`;
+      let plan;
+      try{ plan = await buildExcelSheetPlan_(i); }
+      catch(err){
+        console.warn('Không chuyển được trang '+(i+1)+' sang Excel:', err);
+        plan = { nCols:1, colWidths:[60], rows:[{ heightPt:null, cells:[{text:'[Không thể chuyển trang '+(i+1)+' sang Excel]'}] }] };
+      }
+      writeExcelSheet_(wb, 'Trang ' + (i+1), plan);
+    }
+    const base = originalFileName.replace(/\.pdf$/i,'').replace(/-edited$/,'');
+    const name = indices.length===pages.length ? base+'.xlsx'
+      : base+'-trang-'+indices.map(i=>i+1).join('_')+'.xlsx';
+    const buf = await wb.xlsx.writeBuffer();
+    const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+    a.download = name; a.click();
+    setTimeout(()=>URL.revokeObjectURL(a.href), 2000);
+  }catch(err){
+    alert('Lỗi khi xuất Excel: '+err.message);
+  }finally{
+    spinner.classList.remove('show');
+    spinnerLabel.textContent = ' Đang xử lý OCR…';
+  }
+}
+
+// ---------- Modal chọn trang để xuất Excel (giống hệt cơ chế modal Export Word ở trên) ----------
+const exportExcelModal = document.getElementById('exportExcelModal');
+const exList = document.getElementById('exList');
+const exSelectAll = document.getElementById('exSelectAll');
+const exSelectedCount = document.getElementById('exSelectedCount');
+const exError = document.getElementById('exError');
+
+document.getElementById('btnExportExcel').onclick = openExportExcelModal;
+document.getElementById('exCancelBtn').addEventListener('click', closeExportExcelModal);
+document.getElementById('exCloseBtn').addEventListener('click', closeExportExcelModal);
+exportExcelModal.addEventListener('click', function(e){ if(e.target === exportExcelModal) closeExportExcelModal(); });
+
+function closeExportExcelModal(){ exportExcelModal.style.display = 'none'; }
+
+function updateExSelectedCount(){
+  const total = exList.querySelectorAll('.dp-checkbox').length;
+  const checked = exList.querySelectorAll('.dp-checkbox:checked').length;
+  exSelectedCount.textContent = checked>0 ? `Đã chọn ${checked}/${total} trang` : `${total} trang`;
+  exSelectAll.checked = total>0 && checked===total;
+  exSelectAll.indeterminate = checked>0 && checked<total;
+}
+
+async function openExportExcelModal(){
+  exError.textContent = '';
+  if(!pages.length){ alert('Hãy mở một file PDF trước.'); return; }
+  exList.innerHTML = '';
+  exportExcelModal.style.display = 'flex';
+
+  const items = [];
+  for(let i=0;i<pages.length;i++){
+    const item = document.createElement('label');
+    item.className = 'dp-item selected';
+    item.dataset.idx = i;
+
+    const wrap = document.createElement('div');
+    wrap.className = 'dp-thumb-wrap';
+    const c = document.createElement('canvas');
+    wrap.appendChild(c);
+
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.className = 'dp-checkbox';
+    cb.dataset.idx = i;
+    cb.checked = true; // mặc định: xuất TẤT CẢ các trang
+    cb.addEventListener('change', () => {
+      item.classList.toggle('selected', cb.checked);
+      updateExSelectedCount();
+    });
+    wrap.appendChild(cb);
+
+    const pnum = document.createElement('div');
+    pnum.className = 'dp-pnum';
+    pnum.textContent = 'Trang ' + (i+1);
+
+    item.appendChild(wrap);
+    item.appendChild(pnum);
+    exList.appendChild(item);
+    items.push({idx:i, canvas:c});
+  }
+  updateExSelectedCount();
+
+  for(const {idx, canvas} of items){
+    try{ await renderDpThumb(idx, canvas); }
+    catch(err){ console.warn('Không vẽ được ảnh thu nhỏ trang', idx+1, err); }
+  }
+}
+
+exSelectAll.addEventListener('change', (e) => {
+  exList.querySelectorAll('.dp-checkbox').forEach(cb => {
+    cb.checked = e.target.checked;
+    cb.closest('.dp-item').classList.toggle('selected', cb.checked);
+  });
+  updateExSelectedCount();
+});
+
+document.getElementById('exConfirmBtn').addEventListener('click', async () => {
+  const selected = Array.from(exList.querySelectorAll('.dp-checkbox:checked'))
+    .map(cb => parseInt(cb.dataset.idx, 10)).sort((a,b)=>a-b);
+  if(!selected.length){ exError.textContent = 'Hãy chọn ít nhất một trang.'; return; }
+  exError.textContent = '';
+  closeExportExcelModal();
+  await exportExcelSelected(selected);
 });
 
 // ---------- Xuất sang PowerPoint (.pptx) — mỗi trang PDF thành 1 slide CÓ THỂ CHỈNH SỬA ----------
