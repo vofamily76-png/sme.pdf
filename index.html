@@ -105,6 +105,29 @@
   .sep{width:1px;align-self:stretch;background:var(--border);margin:2px 6px;}
   .tbtn.primary{background:var(--accent);}
 
+  /* ===== THÊM TÍNH NĂNG: icon canh chữ (Align Left / Center / Right / Justify) trên 4 nút mới
+     btnAlignLeft/btnAlignCenter/btnAlignRight/btnAlignJustify — vẽ bằng 4 vạch ngang (CSS thuần,
+     không cần file ảnh/icon-font ngoài) mô phỏng đúng kiểu icon canh lề quen thuộc trong Word/Docs.
+     Vạch dài/ngắn xen kẽ + hướng align-items khác nhau cho từng nút để nhìn là phân biệt được ngay
+     nút nào đang canh trái/giữa/phải/đều 2 bên. currentColor để icon tự đổi màu theo màu chữ nút
+     (trắng khi thường, theo --tool-active khi nút đang bật/active giống 3 nút B/I/U). */
+  .align-ic{display:inline-flex;flex-direction:column;justify-content:center;gap:3px;width:16px;height:14px;flex-shrink:0;}
+  .align-ic span{display:block;height:2px;border-radius:1px;background:currentColor;}
+  .align-ic.al-left{align-items:flex-start;}
+  .align-ic.al-left span:nth-child(1){width:100%;}
+  .align-ic.al-left span:nth-child(2){width:65%;}
+  .align-ic.al-left span:nth-child(3){width:85%;}
+  .align-ic.al-center{align-items:center;}
+  .align-ic.al-center span:nth-child(1){width:100%;}
+  .align-ic.al-center span:nth-child(2){width:55%;}
+  .align-ic.al-center span:nth-child(3){width:80%;}
+  .align-ic.al-right{align-items:flex-end;}
+  .align-ic.al-right span:nth-child(1){width:100%;}
+  .align-ic.al-right span:nth-child(2){width:65%;}
+  .align-ic.al-right span:nth-child(3){width:85%;}
+  .align-ic.al-justify{align-items:stretch;}
+  .align-ic.al-justify span{width:100%;}
+
   /* ===== Menu "Document" (menu thả xuống kế bên nút "Open PDF") =====
      Gom các thao tác quản lý TOÀN BỘ tài liệu (chèn/xoá/tách/xoay trang, gộp nhiều file, nén file)
      vào một menu duy nhất thay vì để rời rạc ngoài thanh công cụ chính, cho gọn thanh công cụ. */
@@ -248,7 +271,7 @@
     position:absolute;z-index:50;border:1px dashed rgba(0,0,0,.22);background:#fff;color:#111;
     font-family:Arial,sans-serif;padding:1px 2px;outline:none;
     white-space:pre-wrap;word-break:break-word;overflow:hidden;
-    min-width:80px;min-height:22px;resize:both;box-shadow:none;
+    min-width:24px;min-height:18px;resize:both;box-shadow:none;
   }
   #editInput:focus{ border-color:rgba(0,0,0,.32); }
 
@@ -1176,6 +1199,17 @@
   <button class="tbtn" id="btnBold" title="In đậm (áp dụng cho chữ đang chọn hoặc chữ sắp gõ tiếp theo)" style="font-weight:800;padding-left:10px;padding-right:10px;">B</button>
   <button class="tbtn" id="btnItalic" title="In nghiêng (áp dụng cho chữ đang chọn hoặc chữ sắp gõ tiếp theo)" style="font-style:italic;padding-left:10px;padding-right:10px;">I</button>
   <button class="tbtn" id="btnUnderline" title="Gạch chân (áp dụng cho chữ đang chọn hoặc chữ sắp gõ tiếp theo)" style="text-decoration:underline;padding-left:10px;padding-right:10px;">U</button>
+  <div class="sep"></div>
+
+  <!-- ===== THÊM TÍNH NĂNG: 4 nút canh chữ Align Left / Center / Right / Justify — áp dụng cho khối
+       chữ đang được chọn (công cụ Select) hoặc chữ sắp gõ tiếp theo, giống hệt cách 3 nút B/I/U hoạt
+       động ở trên. Khác với B/I/U (bật/tắt độc lập), 4 nút này CHỈ ĐƯỢC BẬT 1 TRONG 4 tại một thời
+       điểm (giống radio) vì một đoạn chữ chỉ có thể canh theo đúng 1 kiểu. Xem hàm setTextAlign() và
+       refreshStyleToggleButtons() ở phần script bên dưới. -->
+  <button class="tbtn active" id="btnAlignLeft" title="Canh trái (áp dụng cho chữ đang chọn hoặc chữ sắp gõ tiếp theo)"><span class="align-ic al-left"><span></span><span></span><span></span></span></button>
+  <button class="tbtn" id="btnAlignCenter" title="Canh giữa (áp dụng cho chữ đang chọn hoặc chữ sắp gõ tiếp theo)"><span class="align-ic al-center"><span></span><span></span><span></span></span></button>
+  <button class="tbtn" id="btnAlignRight" title="Canh phải (áp dụng cho chữ đang chọn hoặc chữ sắp gõ tiếp theo)"><span class="align-ic al-right"><span></span><span></span><span></span></span></button>
+  <button class="tbtn" id="btnAlignJustify" title="Canh đều 2 bên (áp dụng cho chữ đang chọn hoặc chữ sắp gõ tiếp theo) — dòng cuối cùng của đoạn vẫn canh trái như quy ước thông thường"><span class="align-ic al-justify"><span></span><span></span><span></span></span></button>
   <div class="sep"></div>
 
   <button class="tbtn" id="btnUndo" title="Hoàn tác"><span class="ic">↩️</span>Undo</button>
@@ -2150,21 +2184,31 @@ function hexToRgbFloats(hex){
   const r = parseInt(h.slice(0,2),16)/255, g = parseInt(h.slice(2,4),16)/255, b = parseInt(h.slice(4,6),16)/255;
   return [isNaN(r)?0:r, isNaN(g)?0:g, isNaN(b)?0:b];
 }
+// THÊM TÍNH NĂNG (canh đều 2 bên - Justify): cần biết dòng nào là DÒNG CUỐI của mỗi đoạn (mỗi lần
+// xuống dòng bằng Enter, hoặc một dòng lẻ không bị ngắt) để không kéo giãn khoảng cách dòng đó (quy
+// ước chung của Justify: dòng cuối đoạn luôn canh trái như bình thường). Gắn thêm mảng cờ lastFlags
+// ngay trên chính mảng "lines" trả về (lines.lastFlags[i] === true nếu lines[i] là dòng cuối đoạn)
+// thay vì đổi hẳn kiểu trả về của hàm — nhờ vậy mọi chỗ khác vẫn dùng lines như một mảng chuỗi bình
+// thường (for...of, .length, .push...) không cần sửa gì thêm.
 function wrapTextForPdfFont(font, text, fontSize, maxWidth){
   const lines = [];
+  const lastFlags = [];
   const rawLines = String(text).split('\n');
   for(const raw of rawLines){
     const words = raw.split(' ');
     let curLine = '';
+    const paraLines = [];
     for(const w of words){
       const test = curLine ? curLine+' '+w : w;
       let testWidth;
       try{ testWidth = font.widthOfTextAtSize(test, fontSize); }catch(e){ testWidth = test.length*fontSize*0.55; }
-      if(testWidth > maxWidth && curLine){ lines.push(curLine); curLine = w; }
+      if(testWidth > maxWidth && curLine){ paraLines.push(curLine); curLine = w; }
       else curLine = test;
     }
-    lines.push(curLine);
+    paraLines.push(curLine);
+    paraLines.forEach((l, i)=>{ lines.push(l); lastFlags.push(i === paraLines.length-1); });
   }
+  lines.lastFlags = lastFlags;
   return lines;
 }
 function safeDrawText(page, text, opts, fallbackFont){
@@ -2387,13 +2431,26 @@ async function drawEditOnPdfPage(page, ed, rotInfo, font, fallbackFont, outDoc, 
       // Dùng đúng màu nền đã lấy mẫu tại vị trí này (nếu có) thay vì trắng cứng, để phần "che" đè lên
       // chữ cũ hòa lẫn với nền trang gốc (giấy trắng, giấy ngả vàng, nền màu...) thay vì hiện khối trắng lộ liễu.
       const [br,bg2,bb] = hexToRgbFloats(ed.bgColor || '#ffffff');
-      const rr = rawRectFromDisplay_(rotInfo, ed.x, ed.y, ed.w, ed.h);
+      // Dùng KHUNG CHE RIÊNG (getCoverRect) thay vì khung chữ: khung chữ nay có thể được người dùng
+      // kéo thu nhỏ lại tuỳ ý bằng công cụ Select, nhưng phần che chữ gốc phải luôn giữ nguyên đúng
+      // phạm vi dòng chữ gốc, nếu không chữ cũ sẽ lòi ra trong file PDF xuất ra.
+      const cb_ = getCoverRect(ed);
+      const rr = rawRectFromDisplay_(rotInfo, cb_.x, cb_.y, cb_.w, cb_.h);
       page.drawRectangle({ x: rr.x, y: rr.y, width: rr.width, height: rr.height, color: rgb(br,bg2,bb) });
     }
     const [r,g,b] = hexToRgbFloats(ed.color || '#000000');
     const fontSize = ed.fontSize || 12;
-    const lines = wrapTextForPdfFont(font, String(ed.text), fontSize, Math.max(ed.w-4, fontSize));
+    // Khung chữ nay được tính vừa khít nội dung (không còn phần đệm thừa như trước), nên độ chênh
+    // rất nhỏ giữa cách ĐO bề rộng chữ của trình duyệt (canvas, lúc xem trước) và của font nhúng
+    // trong pdf-lib (lúc xuất file) có thể vô tình làm từ cuối dòng bị đẩy xuống dòng dưới trong
+    // file PDF dù trên màn hình vẫn nằm gọn 1 hàng. Cộng thêm 4% dung sai khi ngắt dòng lúc xuất
+    // file để hai bên luôn khớp nhau (khung này không hiển thị trong file nên nới nhẹ là an toàn).
+    const maxWidth = Math.max((ed.w-4)*1.04, fontSize);
+    const lines = wrapTextForPdfFont(font, String(ed.text), fontSize, maxWidth);
     const wordExtra = computeWordSpacingExtraForPdf(font, ed);
+    // THÊM TÍNH NĂNG: canh chữ (Align Left/Center/Right/Justify) khi xuất PDF — mặc định 'left' để
+    // khớp với hành vi gốc (ed.align chưa từng tồn tại ở các file/edit cũ trước khi có tính năng này).
+    const textAlign = ed.align || 'left';
     // In nghiêng: dùng thẳng tham số xSkew có sẵn của pdf-lib (nghiêng trục X của chữ ~12 độ, mô
     // phỏng đúng kiểu "oblique" thường thấy) — không cần font Italic riêng. In đậm: xem drawStyledText.
     const italicSkew = ed.italic ? degrees(12) : undefined;
@@ -2410,22 +2467,43 @@ async function drawEditOnPdfPage(page, ed, rotInfo, font, fallbackFont, outDoc, 
     // true khi ed.bold=true NHƯNG đang phải dùng font Việt hoá dùng chung (không có bản Bold thật).
     const boldForDraw = (fauxBold !== undefined) ? fauxBold : ed.bold;
     let baseYDisp = ed.y + fontSize*0.85;
-    for(const line of lines){
-      let lineWidth = 0;
-      if(wordExtra){
-        lineWidth = drawLineWithWordSpacing(page, line, ed.x+2, baseYDisp, fontSize, font, rgb(r,g,b), fallbackFont, wordExtra, boldForDraw, italicSkew, rotInfo);
-      } else {
-        const pivot = rotInfo.toRaw(ed.x+2, baseYDisp);
-        drawStyledText(page, line, { x: pivot.x, y: pivot.y, size: fontSize, font, color: rgb(r,g,b), xSkew: italicSkew, rotate: rotDeg }, fallbackFont, boldForDraw);
-        try{ lineWidth = font.widthOfTextAtSize(line, fontSize); }catch(e){ lineWidth = line.length*fontSize*0.55; }
+    for(let li=0; li<lines.length; li++){
+      const line = lines[li];
+      // Độ rộng TỰ NHIÊN của dòng (chưa cộng thêm khoảng cách bù) — dùng để tính điểm bắt đầu (x)
+      // cho center/right, và để biết còn thiếu bao nhiêu chỗ trống cần lấp đầy khi justify.
+      let naturalWidth;
+      try{ naturalWidth = font.widthOfTextAtSize(line, fontSize); }catch(e){ naturalWidth = line.length*fontSize*0.55; }
+      const isLastOfParagraph = lines.lastFlags ? lines.lastFlags[li] : true;
+      let startXDisp = ed.x+2;
+      let lineExtra = wordExtra; // mặc định: giữ nguyên phần bù khoảng cách nhỏ vốn có (khớp canvas xem trước)
+      if(textAlign === 'center'){
+        startXDisp = ed.x+2 + Math.max(0, (maxWidth - naturalWidth)/2);
+      } else if(textAlign === 'right'){
+        startXDisp = ed.x+2 + Math.max(0, (maxWidth - naturalWidth));
+      } else if(textAlign === 'justify' && !isLastOfParagraph){
+        // Không phải dòng cuối đoạn -> kéo giãn khoảng cách giữa các từ để lấp đầy đúng maxWidth,
+        // đúng quy ước Justify (dòng cuối đoạn giữ canh trái bình thường, xem điều kiện ở trên).
+        const gaps = (line.match(/ /g) || []).length;
+        if(gaps>0 && naturalWidth < maxWidth){
+          lineExtra = (maxWidth - naturalWidth) / gaps;
+        }
       }
-      // Gạch chân: vẽ 1 đường thẳng ngay dưới dòng chữ vừa vẽ, dài đúng bằng độ rộng dòng đó.
+      let lineWidth = 0;
+      if(lineExtra){
+        lineWidth = drawLineWithWordSpacing(page, line, startXDisp, baseYDisp, fontSize, font, rgb(r,g,b), fallbackFont, lineExtra, boldForDraw, italicSkew, rotInfo);
+      } else {
+        const pivot = rotInfo.toRaw(startXDisp, baseYDisp);
+        drawStyledText(page, line, { x: pivot.x, y: pivot.y, size: fontSize, font, color: rgb(r,g,b), xSkew: italicSkew, rotate: rotDeg }, fallbackFont, boldForDraw);
+        lineWidth = naturalWidth;
+      }
+      // Gạch chân: vẽ 1 đường thẳng ngay dưới dòng chữ vừa vẽ, dài đúng bằng độ rộng dòng đó (kể cả
+      // khi đã bị kéo giãn bởi Justify, vì lineWidth ở trên luôn là độ rộng THẬT đã vẽ ra).
       // drawLine chỉ nhận 2 điểm đầu/cuối (không có tham số rotate) -> quy đổi TỪNG điểm qua toRaw
       // là đủ đúng cho mọi góc xoay (một đoạn thẳng luôn được xác định trọn vẹn bởi 2 điểm đầu-cuối).
       if(ed.underline && line.trim()){
         const underlineYDisp = baseYDisp - fontSize*0.12;
-        const p1 = rotInfo.toRaw(ed.x+2, underlineYDisp);
-        const p2 = rotInfo.toRaw(ed.x+2+lineWidth, underlineYDisp);
+        const p1 = rotInfo.toRaw(startXDisp, underlineYDisp);
+        const p2 = rotInfo.toRaw(startXDisp+lineWidth, underlineYDisp);
         page.drawLine({
           start: { x: p1.x, y: p1.y },
           end: { x: p2.x, y: p2.y },
@@ -2496,6 +2574,11 @@ function roundFontSize_(v){
 let currentBold = false;
 let currentItalic = false;
 let currentUnderline = false;
+// THÊM TÍNH NĂNG: canh chữ (Align Left/Center/Right/Justify) — giống cơ chế currentBold/Italic/
+// Underline ở trên: là trạng thái đang bật trên thanh công cụ, áp dụng cho chữ MỚI sắp gõ, và
+// được đồng bộ (syncFontControlsToSelection) theo đúng kiểu canh của khối chữ đang được chọn.
+// Chỉ nhận 1 trong 4 giá trị: 'left' | 'center' | 'right' | 'justify'.
+let currentAlign = 'left';
 // Tham chiếu tới ô nhập liệu (textarea) nổi đang mở, nếu có — dùng để cập nhật font/cỡ chữ
 // NGAY LẬP TỨC khi người dùng đổi 2 ô "Font chữ"/"Cỡ chữ" trong lúc đang gõ sửa, thay vì
 // phải gõ xong rồi mới thấy đổi (hoặc tệ hơn là không đổi được gì cả).
@@ -2509,6 +2592,7 @@ function refreshActiveEditInputFont(){
   activeEditInputEl.style.fontWeight = currentBold ? 'bold' : 'normal';
   activeEditInputEl.style.fontStyle = currentItalic ? 'italic' : 'normal';
   activeEditInputEl.style.textDecoration = currentUnderline ? 'underline' : 'none';
+  activeEditInputEl.style.textAlign = currentAlign === 'justify' ? 'justify' : currentAlign; // xem ghi chú currentAlign
   activeEditInputEl.dispatchEvent(new Event('input')); // để ô tự tính lại kích thước khung theo font mới
 }
 // Cập nhật giao diện (trạng thái "đang bật") của 3 nút B / I / U trên thanh công cụ theo đúng
@@ -2519,11 +2603,18 @@ function refreshStyleToggleButtons(){
     const btn = document.getElementById(id);
     if(btn) btn.classList.toggle('active', !!on);
   }
+  // 4 nút canh chữ hoạt động kiểu radio (chỉ 1 nút được bật tại một thời điểm) — không dùng chung
+  // vòng lặp map ở trên (vốn dùng cho on/off độc lập của B/I/U) để tránh nhầm lẫn.
+  const alignMap = { left:'btnAlignLeft', center:'btnAlignCenter', right:'btnAlignRight', justify:'btnAlignJustify' };
+  for(const key in alignMap){
+    const btn = document.getElementById(alignMap[key]);
+    if(btn) btn.classList.toggle('active', currentAlign === key);
+  }
 }
 // Đồng bộ 2 ô "Font chữ"/"Cỡ chữ" trên thanh công cụ theo font/cỡ ban đầu của đoạn chữ SẮP sửa
 // (không phải đoạn đang chọn bằng công cụ Select) — dùng ngay trước khi mở ô nhập liệu để sửa,
 // để: (1) người dùng biết đang sửa với font/cỡ nào, (2) nếu họ đổi trong lúc gõ thì áp dụng đúng.
-function setActiveEditFont(fontFamily, fontSize, fontColor, bold, italic, underline){
+function setActiveEditFont(fontFamily, fontSize, fontColor, bold, italic, underline, align){
   currentFontFamily = fontFamily || 'Arial';
   // SỬA LỖI/THÊM TÍNH NĂNG "cỡ chữ lẻ": trước đây luôn Math.round() cỡ chữ về số nguyên rồi ép chọn
   // đúng 1 trong 14 cỡ dựng sẵn gần nhất (mất hẳn phần thập phân nếu chữ gốc có cỡ lẻ, ví dụ PDF gốc
@@ -2540,6 +2631,10 @@ function setActiveEditFont(fontFamily, fontSize, fontColor, bold, italic, underl
   if(bold !== undefined) currentBold = !!bold;
   if(italic !== undefined) currentItalic = !!italic;
   if(underline !== undefined) currentUnderline = !!underline;
+  // Cùng quy tắc như bold/italic/underline ở trên: chỉ ghi đè currentAlign khi được truyền RÕ RÀNG
+  // (đang mở lại khối chữ có sẵn) — gõ chữ mới hoàn toàn thì GIỮ NGUYÊN kiểu canh đang bật trên
+  // thanh công cụ (giống Word: bật "Canh giữa" một lần rồi gõ tiếp thì đoạn nào cũng canh giữa).
+  if(align !== undefined) currentAlign = align || 'left';
   refreshStyleToggleButtons();
   const famSel = document.getElementById('fontFamilySelect');
   const sizeInp = document.getElementById('fontSizeInput');
@@ -2583,6 +2678,10 @@ let resizingImage = false;
 let resizeHandleName = null; // 'nw' | 'ne' | 'sw' | 'se'
 let resizeAnchor = null;     // góc đối diện (pdf-space), giữ cố định trong lúc resize
 let resizeAspect = 1;        // tỉ lệ w/h gốc của ảnh, giữ nguyên khi resize
+// Dùng riêng cho việc kéo chỉnh khung của KHỐI CHỮ (kéo tự do, không ép tỉ lệ): khung và vị trí
+// chuột tại thời điểm bắt đầu kéo, để tính khung mới = khung cũ + độ dời chuột theo từng chiều.
+let resizeStartBox = null;   // {x,y,w,h} pdf-space lúc bắt đầu kéo
+let resizeStartPdf = null;   // {x,y} pdf-space của con trỏ lúc bắt đầu kéo
 let resizeTargetEdit = null;
 // Hàm "chốt" (commit) ô nhập sửa chữ đang mở, nếu có — dùng để tránh mất chỉnh sửa cuối cùng
 // khi người dùng gõ xong rồi bấm thẳng vào một nút trên toolbar (Lưu PDF, Xuất Word...) mà
@@ -4540,20 +4639,27 @@ function computeTightTextBox(e){
 
 function drawSelectionBox(e){
   const isTextType = (e.type==='text' || e.type==='ocrfix' || e.type==='textfix');
-  const b = isTextType ? computeTightTextBox(e) : getEditBounds(e);
+  // VỚI KHỐI CHỮ: vẽ ĐÚNG khung thật (ed.x/y/w/h) — chính là khung mà người dùng sắp kéo chỉnh bằng
+  // 8 tay cầm bên dưới, và cũng chính là khung dùng để ngắt dòng khi vẽ/xuất PDF. Trước đây chỗ này
+  // vẽ một khung "ước lượng" khác (computeTightTextBox) không trùng với khung thật, nên người dùng
+  // kéo chỉnh sẽ thấy lệch. Nay khung chữ đã tách khỏi khung nền che nên nó vốn đã vừa khít chữ.
+  const b = isTextType ? getEditBounds(e) : getEditBounds(e);
+  const inflate = isTextType ? 0 : 3;
   octx.save();
   octx.strokeStyle = '#2196f3'; octx.lineWidth = 1.5; octx.setLineDash([5,4]);
-  octx.strokeRect(b.x*scale-3, b.y*scale-3, b.w*scale+6, b.h*scale+6);
+  octx.strokeRect(b.x*scale-inflate, b.y*scale-inflate, b.w*scale+inflate*2, b.h*scale+inflate*2);
   octx.restore();
-  // Ảnh đã chèn: vẽ thêm 4 tay cầm ở góc để người dùng kéo chỉnh kích thước (giữ tỉ lệ gốc).
-  if(e.type === 'image'){
+  // Ảnh đã chèn: 4 tay cầm ở góc (giữ tỉ lệ gốc).
+  // Khối chữ: 8 tay cầm (4 góc + 4 cạnh) để kéo chỉnh TỰ DO phần khung thừa quanh chữ; kích thước
+  // sau khi kéo được GHI NHỚ LẠI (ed.manualBox = true) và không bao giờ tự phình to lại nữa.
+  if(e.type === 'image' || isTextType){
     const ib = getEditBounds(e);
     octx.save();
     octx.setLineDash([]);
     octx.fillStyle = '#2196f3';
     octx.strokeStyle = '#ffffff';
     octx.lineWidth = 1.5;
-    for(const h of getImageHandlePositions(ib)){
+    for(const h of getEditHandlePositions(ib, isTextType)){
       octx.fillRect(h.px - IMAGE_HANDLE_SIZE/2, h.py - IMAGE_HANDLE_SIZE/2, IMAGE_HANDLE_SIZE, IMAGE_HANDLE_SIZE);
       octx.strokeRect(h.px - IMAGE_HANDLE_SIZE/2, h.py - IMAGE_HANDLE_SIZE/2, IMAGE_HANDLE_SIZE, IMAGE_HANDLE_SIZE);
     }
@@ -4561,25 +4667,55 @@ function drawSelectionBox(e){
   }
 }
 
-// Trả về toạ độ (px màn hình, đã nhân scale) của 4 tay cầm góc cho khung ảnh có bounds b (pdf-space).
-function getImageHandlePositions(b){
-  return [
+// Trả về toạ độ (px màn hình, đã nhân scale) các tay cầm resize cho khung b (pdf-space).
+// - Ảnh: 4 tay cầm ở góc (kéo giữ nguyên tỉ lệ).
+// - Khối chữ: 8 tay cầm (4 góc + 4 điểm giữa cạnh) để kéo rộng/hẹp/cao/thấp độc lập từng chiều.
+function getEditHandlePositions(b, withEdges){
+  const mx = (b.x + b.w/2)*scale, my = (b.y + b.h/2)*scale;
+  const list = [
     { name:'nw', px: b.x*scale,       py: b.y*scale       },
     { name:'ne', px: (b.x+b.w)*scale, py: b.y*scale       },
     { name:'sw', px: b.x*scale,       py: (b.y+b.h)*scale },
     { name:'se', px: (b.x+b.w)*scale, py: (b.y+b.h)*scale }
   ];
+  if(withEdges){
+    list.push(
+      { name:'n', px: mx,              py: b.y*scale       },
+      { name:'s', px: mx,              py: (b.y+b.h)*scale },
+      { name:'w', px: b.x*scale,       py: my              },
+      { name:'e', px: (b.x+b.w)*scale, py: my              }
+    );
+  }
+  return list;
 }
+// Giữ lại tên hàm cũ để mọi chỗ gọi cũ vẫn chạy bình thường.
+function getImageHandlePositions(b){ return getEditHandlePositions(b, false); }
 
-// Nếu (px,py) (toạ độ màn hình) nằm trong 1 tay cầm resize của ảnh đang chọn ed, trả về tên góc đó.
-function getImageHandleAt(ed, px, py){
-  if(!ed || ed.type !== 'image') return null;
+// Nếu (px,py) (toạ độ màn hình) nằm trong 1 tay cầm resize của phần tử đang chọn ed, trả về tên nó.
+// Áp dụng cho CẢ ảnh (4 góc) LẪN khối chữ (8 tay cầm) — đây là cách người dùng "điều chỉnh phần
+// khung thừa" quanh chữ bằng công cụ Select.
+function getResizeHandleAt(ed, px, py){
+  if(!ed) return null;
+  const isText = isTextEdit(ed);
+  if(ed.type !== 'image' && !isText) return null;
   const b = getEditBounds(ed);
   const tol = IMAGE_HANDLE_SIZE/2 + 2;
-  for(const h of getImageHandlePositions(b)){
+  for(const h of getEditHandlePositions(b, isText)){
     if(Math.abs(px-h.px) <= tol && Math.abs(py-h.py) <= tol) return h.name;
   }
   return null;
+}
+function getImageHandleAt(ed, px, py){
+  if(!ed || ed.type !== 'image') return null;
+  return getResizeHandleAt(ed, px, py);
+}
+// Con trỏ chuột phù hợp cho từng tay cầm (mũi tên 2 chiều đúng hướng kéo).
+function cursorForHandle(name){
+  if(name==='nw' || name==='se') return 'nwse-resize';
+  if(name==='ne' || name==='sw') return 'nesw-resize';
+  if(name==='n'  || name==='s')  return 'ns-resize';
+  if(name==='e'  || name==='w')  return 'ew-resize';
+  return '';
 }
 
 function hitTestEdits(px, py){
@@ -4600,12 +4736,14 @@ function drawEdit(ctx, e, s){
     ctx.fillStyle = e.bgColor || '#ffffff';
     ctx.fillRect(e.x*s, e.y*s, e.w*s, e.h*s);
   } else if(e.type === 'text' || e.type === 'ocrfix' || e.type === 'textfix'){
-    if(e.bg){ ctx.fillStyle = e.bgColor || '#ffffff'; ctx.fillRect(e.x*s, e.y*s, e.w*s, e.h*s); }
+    // Nền che vẽ theo KHUNG CHE RIÊNG (cố định tại chỗ chữ gốc), KHÔNG theo khung chữ nữa —
+    // nhờ vậy người dùng kéo thu nhỏ khung chữ bao nhiêu cũng không làm lộ lại chữ gốc.
+    if(e.bg){ const cb = getCoverRect(e); ctx.fillStyle = e.bgColor || '#ffffff'; ctx.fillRect(cb.x*s, cb.y*s, cb.w*s, cb.h*s); }
     ctx.fillStyle = e.color || '#000000';
     ctx.font = `${e.italic?'italic ':''}${e.bold?'bold ':''}${e.fontSize*s}px ${pdfFontFamilyStack(e.fontFamily)}`;
     ctx.textBaseline = 'top';
     applyOriginalSpacing(ctx, e, s);
-    wrapText(ctx, e.text, e.x*s+2, e.y*s+1, e.w*s-4, e.fontSize*s*1.15, e.underline);
+    wrapText(ctx, e.text, e.x*s+2, e.y*s+1, e.w*s-4, e.fontSize*s*1.15, e.underline, e.align);
     ctx.wordSpacing = '0px';
   } else if(e.type === 'draw'){
     ctx.strokeStyle = e.color; ctx.lineWidth = e.width*s; ctx.lineCap='round'; ctx.lineJoin='round';
@@ -4663,35 +4801,68 @@ function applyOriginalSpacing(ctx, e, s){
   ctx.wordSpacing = '0px';
 }
 
-function wrapText(ctx, text, x, y, maxWidth, lineHeight, underline){
-  const lines = String(text).split('\n');
+// THÊM TÍNH NĂNG (canh chữ Align Left/Center/Right/Justify): trước đây hàm này luôn vẽ mọi dòng bắt
+// đầu từ đúng toạ độ x truyền vào (canh trái cứng). Giờ đây nhận thêm tham số "align" và:
+//  - 'left'   : giữ nguyên hành vi cũ (bắt đầu từ x).
+//  - 'center' : dịch điểm bắt đầu sang phải một nửa phần chênh lệch giữa maxWidth và độ rộng dòng.
+//  - 'right'  : dịch hẳn điểm bắt đầu sang phải bằng đúng phần chênh lệch đó (dòng kết thúc sát mép phải).
+//  - 'justify': kéo giãn khoảng cách giữa các từ (ctx.wordSpacing) để dòng chữ lấp đầy đúng maxWidth —
+//               riêng DÒNG CUỐI CÙNG của mỗi đoạn (mỗi lần xuống dòng bằng Enter, hoặc dòng lẻ không
+//               bị ngắt) vẫn canh trái như quy ước thông thường của mọi trình soạn thảo văn bản.
+// Phải bẻ dòng xong hết (2 bước: bẻ dòng rồi mới vẽ) thay vì vừa bẻ vừa vẽ như bản cũ, vì cần biết
+// trước dòng nào là "dòng cuối của đoạn" để quyết định có kéo giãn justify hay không.
+function wrapText(ctx, text, x, y, maxWidth, lineHeight, underline, align){
+  align = align || 'left';
+  const paragraphs = String(text).split('\n');
+  // allLines: mảng { text, isLastOfParagraph } theo đúng thứ tự hiển thị từ trên xuống.
+  const allLines = [];
+  for(const para of paragraphs){
+    const words = para.split(' ');
+    let curLine = '';
+    const paraLines = [];
+    for(const w of words){
+      const test = curLine ? curLine+' '+w : w;
+      if(ctx.measureText(test).width > maxWidth && curLine){
+        paraLines.push(curLine); curLine = w;
+      } else curLine = test;
+    }
+    paraLines.push(curLine);
+    paraLines.forEach((l, i)=> allLines.push({ text:l, isLastOfParagraph: i===paraLines.length-1 }));
+  }
   let cy = y;
   // Vẽ 1 dòng đã "chốt" (không còn bẻ tiếp) + gạch chân ngay bên dưới nếu bật Underline — dùng
   // đúng chiều rộng thật của dòng đó (đo bằng ctx.measureText, đã áp cỡ/kiểu chữ hiện tại của ctx.font)
   // để gạch chân khớp đúng độ dài chữ, không bị ngắn/dài hơn thực tế.
-  function drawLine(line){
-    ctx.fillText(line, x, cy);
+  function drawLine(item){
+    const line = item.text;
+    const naturalW = ctx.measureText(line).width;
+    let lx = x;
+    let drawnW = naturalW;
+    let usedJustifySpacing = false;
+    if(align === 'center'){
+      lx = x + Math.max(0, (maxWidth - naturalW)/2);
+    } else if(align === 'right'){
+      lx = x + Math.max(0, (maxWidth - naturalW));
+    } else if(align === 'justify' && !item.isLastOfParagraph){
+      const gaps = (line.match(/ /g) || []).length;
+      if(gaps>0 && naturalW < maxWidth){
+        ctx.wordSpacing = ((maxWidth - naturalW)/gaps)+'px';
+        usedJustifySpacing = true;
+        drawnW = maxWidth;
+      }
+    }
+    ctx.fillText(line, lx, cy);
+    if(usedJustifySpacing) ctx.wordSpacing = '0px'; // trả lại ngay để không ảnh hưởng dòng kế tiếp
     if(underline && line.trim()){
-      const w = ctx.measureText(line).width;
       const uy = cy + lineHeight*0.83;
       ctx.save();
       ctx.strokeStyle = ctx.fillStyle;
       ctx.lineWidth = Math.max(1, lineHeight*0.055);
-      ctx.beginPath(); ctx.moveTo(x, uy); ctx.lineTo(x+w, uy); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(lx, uy); ctx.lineTo(lx+drawnW, uy); ctx.stroke();
       ctx.restore();
     }
   }
-  for(const line of lines){
-    const words = line.split(' ');
-    let curLine = '';
-    for(const w of words){
-      const test = curLine ? curLine+' '+w : w;
-      if(ctx.measureText(test).width > maxWidth && curLine){
-        drawLine(curLine); curLine = w; cy += lineHeight;
-      } else curLine = test;
-    }
-    drawLine(curLine); cy += lineHeight;
-  }
+  for(const item of allLines){ drawLine(item); cy += lineHeight; }
 }
 
 function hexToRgba(hex, a){
@@ -4758,7 +4929,7 @@ async function updateZoom(){
 
 // ---------- Chọn công cụ ----------
 const toolLabels = {
-  select:'Select — nhấn để chọn, kéo để di chuyển, đúp chuột để sửa chữ, phím Delete để xóa',
+  select:'Select — nhấn để chọn, kéo để di chuyển, kéo 8 ô vuông xanh ở viền để chỉnh khung chữ (khung sẽ được LƯU LẠI đúng kích thước vừa canh, không tự to ra nữa; phím F để trả về khung tự động), đúp chuột để sửa chữ, phím Delete để xóa',
   textselect:'Select text to copy — bôi đen (kéo chuột) qua chữ trong PDF rồi Ctrl+C để copy ra ngoài; bấm nút "🖍️ Marker" nổi lên cạnh vùng vừa bôi đen để tô sáng đúng đoạn chữ đó.',
   addtext:'Add text',
   edittext:'Edit Text — trỏ chuột vào bất kỳ đoạn chữ nào (chữ PDF thật hoặc chữ trong ảnh/scan) rồi bấm để sửa ngay, không cần chọn vùng.',
@@ -4891,6 +5062,11 @@ function removeOverlappingTextEdits(p, x0, y0, x1, y1, exceptEdit){
 // computeAutoBoxSize) — để việc xuống dòng hay không luôn NHẤT QUÁN, không phụ thuộc vào việc đang
 // chỉnh style qua đường nào.
 function resizeTextEditToFitContent(ed){
+  // TÔN TRỌNG KHUNG NGƯỜI DÙNG TỰ CANH: nếu khung của khối chữ này đã từng được kéo chỉnh bằng
+  // công cụ Select (ed.manualBox = true) thì GIỮ NGUYÊN kích thước đó — không tự nới rộng/thu hẹp
+  // theo nội dung hay theo kiểu chữ nữa. Đây chính là yêu cầu "điều chỉnh xong thì khung lưu lại
+  // tại thời điểm đó chứ không tự động to ra".
+  if(ed && ed.manualBox) return;
   const auto = computeAutoBoxSize(ed.text, ed.fontFamily, ed.fontSize, ed.x, ed.bold, ed.italic);
   if(ed.bg){
     // Đã có nền che (bg) -> khung mới vẫn phải đủ để (a) tiếp tục che kín chữ gốc (minCover) và
@@ -4970,6 +5146,29 @@ function toggleTextStyle(prop){
 document.getElementById('btnBold').onclick = ()=> toggleTextStyle('bold');
 document.getElementById('btnItalic').onclick = ()=> toggleTextStyle('italic');
 document.getElementById('btnUnderline').onclick = ()=> toggleTextStyle('underline');
+// THÊM TÍNH NĂNG: 4 nút canh chữ (Align Left/Center/Right/Justify) — cùng cơ chế với toggleTextStyle
+// ở trên (áp dụng ngay lên khối chữ đang chọn nếu có, đồng thời lưu lại làm mặc định cho chữ sắp gõ
+// tiếp theo), NHƯNG là "chọn 1 trong 4" (radio) thay vì bật/tắt độc lập như B/I/U — nên không dùng
+// lại chung hàm toggleTextStyle mà tách riêng setTextAlign(align) để gán thẳng giá trị.
+function setTextAlign(align){
+  currentAlign = align;
+  refreshStyleToggleButtons();
+  if(pages.length && selectedEditIndex>=0){
+    const ed = cur().edits[selectedEditIndex];
+    if(isTextEdit(ed)){
+      pushUndo(currentIndex);
+      ed.align = currentAlign;
+      // Đổi kiểu canh KHÔNG làm thay đổi kích thước khung chữ (khác với đổi Đậm/Nghiêng có thể làm
+      // chữ rộng/hẹp hơn) -> không cần gọi resizeTextEditToFitContent(ed) như toggleTextStyle.
+      redrawOverlay();
+    }
+  }
+  refreshActiveEditInputFont();
+}
+document.getElementById('btnAlignLeft').onclick = ()=> setTextAlign('left');
+document.getElementById('btnAlignCenter').onclick = ()=> setTextAlign('center');
+document.getElementById('btnAlignRight').onclick = ()=> setTextAlign('right');
+document.getElementById('btnAlignJustify').onclick = ()=> setTextAlign('justify');
 // Khi chọn (select) một khối văn bản trên trang, đồng bộ 2 ô Font chữ / Cỡ chữ theo khối đó
 // để người dùng biết đang chỉnh sửa với thông số nào.
 function syncFontControlsToSelection(){
@@ -5002,6 +5201,7 @@ function syncFontControlsToSelection(){
   currentBold = !!ed.bold;
   currentItalic = !!ed.italic;
   currentUnderline = !!ed.underline;
+  currentAlign = ed.align || 'left';
   refreshStyleToggleButtons();
 }
 
@@ -5369,6 +5569,9 @@ function buildRegionEdits(mode, region, originalLines, editedText, fallbackFontS
     } else {
       editsToAdd.push({
         type: editType, x:region.x, y:cy0, w:region.w, h:ch,
+        // Khung nền che cố định = đúng vùng vừa che (độc lập với khung chữ, xem getCoverRect) ->
+        // sau này người dùng có thể kéo thu nhỏ khung chữ mà không lộ lại chữ gốc.
+        coverX: region.x, coverY: cy0, coverW: region.w, coverH: ch,
         text: newTextJoined, fontSize, fontFamily: currentFontFamily, color: currentFontColor,
         bold: currentBold, italic: currentItalic, underline: currentUnderline, bg:true, bgColor,
         // Chỉ đặt origLineW khi hunk này khớp với ĐÚNG MỘT dòng gốc (trường hợp phổ biến nhất khi
@@ -5421,7 +5624,7 @@ async function bulkEditRegion(mode){
         if(newVal.trim()){
           const bgColor = sampleBackgroundColor(region.x, region.y, region.w, region.h);
           removeOverlappingTextEdits(cur(), region.x, region.y, region.x+region.w, region.y+region.h);
-          cur().edits.push({ type: mode==='ocr' ? 'ocrfix' : 'textfix', x:region.x, y:region.y, w:region.w, h:region.h, text:newVal, fontSize, fontFamily: currentFontFamily, color: currentFontColor, bold: currentBold, italic: currentItalic, underline: currentUnderline, bg:true, bgColor });
+          cur().edits.push({ type: mode==='ocr' ? 'ocrfix' : 'textfix', x:region.x, y:region.y, w:region.w, h:region.h, coverX:region.x, coverY:region.y, coverW:region.w, coverH:region.h, text:newVal, fontSize, fontFamily: currentFontFamily, color: currentFontColor, bold: currentBold, italic: currentItalic, underline: currentUnderline, bg:true, bgColor });
         }
       } else {
         const newEdits = buildRegionEdits(mode, region, originalLines, newVal, fontSize);
@@ -5532,9 +5735,46 @@ function computeAutoBoxSize(text, fontFamily, fontSize, x, bold, italic){
     wrapped.push(curLine);
     neededWidth = Math.max(neededWidth, c.measureText(curLine).width);
   }
-  const w = Math.min(maxWidth, Math.max(24, neededWidth + 6));
-  const h = Math.max(fontSize*1.3, wrapped.length*fontSize*1.15 + fontSize*0.3);
+  // SỬA LỖI "khung thừa quanh chữ, trống hai bên và trên dưới": trước đây khung (ed.w/ed.h) vừa là
+  // khung CHỮ vừa là khung NỀN CHE chữ gốc, nên buộc phải cộng thêm rất nhiều phần đệm (fontSize*0.3
+  // theo chiều dọc, +6pt chiều ngang) để chắc chắn che kín dấu tiếng Việt/đuôi chữ g,y,p của chữ GỐC.
+  // Từ nay phần nền che đã được tách hẳn ra một khung RIÊNG (xem getCoverRect/ensureCoverRect) nên
+  // khung chữ chỉ cần vừa khít đúng phần chữ thật sự được vẽ ra -> không còn khoảng trống thừa.
+  const w = Math.min(maxWidth, Math.max(24, neededWidth + 5));
+  const h = Math.max(fontSize*1.2, wrapped.length*fontSize*1.15 + 2);
   return { w, h };
+}
+
+// ===================== KHUNG NỀN CHE RIÊNG (tách khỏi khung chữ) =====================
+// TRƯỚC ĐÂY: nền che chữ gốc được vẽ đúng bằng ed.x/y/w/h — cùng một khung với khung chữ. Vì vậy
+// khung chữ KHÔNG BAO GIỜ được phép nhỏ hơn vùng chữ gốc (nếu nhỏ hơn, chữ cũ của PDF sẽ lòi ra),
+// dẫn tới 2 hệ quả người dùng nhìn thấy:
+//   (1) luôn thừa một khoảng trống quanh chữ (hai bên + trên dưới) — chính là phần đệm của nền che;
+//   (2) không thể kéo thu nhỏ khung lại bằng công cụ Select, vì mọi chỗ đều tự "nới to lại".
+// GIỜ: mỗi chỉnh sửa chữ có thêm 4 trường coverX/coverY/coverW/coverH — khung NỀN CHE cố định, luôn
+// nằm đúng chỗ dòng chữ gốc. Nền che vẽ theo khung này; chữ mới vẽ theo ed.x/y/w/h. Nhờ vậy khung
+// chữ có thể thu nhỏ/kéo giãn tuỳ ý (kể cả nhỏ hơn dòng gốc) mà chữ gốc vẫn bị che kín tuyệt đối.
+function getCoverRect(e){
+  if(e && typeof e.coverX === 'number' && typeof e.coverY === 'number' && e.coverW > 0 && e.coverH > 0){
+    return { x:e.coverX, y:e.coverY, w:e.coverW, h:e.coverH };
+  }
+  // Chỉnh sửa tạo từ bản cũ (chưa có coverX...) nhưng có toạ độ dòng gốc -> suy ra khung che từ đó.
+  if(e && typeof e.srcX0 === 'number' && typeof e.srcY0 === 'number' &&
+     typeof e.srcX1 === 'number' && typeof e.srcY1 === 'number'){
+    const fs = e.fontSize || 12;
+    const padY = Math.max(3, fs*0.35), padX = Math.max(2, fs*0.1);
+    return { x:e.srcX0-padX, y:e.srcY0-padY, w:(e.srcX1-e.srcX0)+padX*2, h:(e.srcY1-e.srcY0)+padY*2 };
+  }
+  // Không biết gì về chữ gốc -> giữ nguyên hành vi cũ (che đúng bằng khung chữ).
+  return { x:e.x, y:e.y, w:e.w, h:e.h };
+}
+// Chốt lại khung che HIỆN TẠI vào 4 trường coverX/coverY/coverW/coverH, để từ sau đó khung chữ có
+// thu nhỏ/di chuyển thế nào thì nền che vẫn đứng yên đúng chỗ chữ gốc.
+function ensureCoverRect(e){
+  if(!e || !e.bg) return;
+  if(typeof e.coverX === 'number' && e.coverW > 0) return;
+  const r = getCoverRect(e);
+  e.coverX = r.x; e.coverY = r.y; e.coverW = r.w; e.coverH = r.h;
 }
 
 // SỬA LỖI "khung/nền che (canvas) của chữ sau khi sửa chiếm khoảng trống nhiều hơn hẳn so với chữ
@@ -5556,6 +5796,13 @@ function computeAutoBoxSize(text, fontFamily, fontSize, x, bold, italic){
 // khung-vừa-đủ-cho-nội-dung-mới) — luôn đủ để giấu chữ cũ, luôn đủ để hiện chữ mới, nhưng KHÔNG còn
 // giữ lại phần "thừa" từ những lần sửa trước có nội dung dài/cao hơn.
 function computeMinCoverSize(ed){
+  // CẬP NHẬT: nền che chữ gốc nay được vẽ theo một khung RIÊNG, độc lập hoàn toàn với khung chữ
+  // (xem getCoverRect). Vì vậy khung chữ KHÔNG CÒN bị ràng buộc "không được nhỏ hơn vùng chữ gốc"
+  // nữa -> trả về 0 để khung chữ được phép thu gọn vừa khít nội dung (hoặc vừa đúng kích thước
+  // người dùng tự kéo bằng công cụ Select), không còn khoảng trống thừa hai bên/trên dưới.
+  if(ed && (typeof ed.coverX === 'number' || typeof ed.srcX0 === 'number')){
+    return { w: 0, h: 0 };
+  }
   if(!ed || typeof ed.srcX0 !== 'number' || typeof ed.srcY0 !== 'number' ||
      typeof ed.srcX1 !== 'number' || typeof ed.srcY1 !== 'number'){
     // Chỉnh sửa cũ (được tạo trước khi có trường srcX0..srcY1) -> không có cách nào biết chắc
@@ -5591,7 +5838,8 @@ function computeMinCoverSize(ed){
 function normalizeEditText(val){
   return String(val).normalize('NFC').split('\n').map(line => line.replace(/[ \t\u00A0]{2,}/g, ' ')).join('\n');
 }
-function openEditInput(screenX, screenY, screenW, screenH, initialText, onCommit){
+function openEditInput(screenX, screenY, screenW, screenH, initialText, onCommit, opts){
+  opts = opts || {};
   // Nếu đang có một ô nhập khác còn mở (chưa chốt), chốt nó lại trước để không bao giờ mất
   // chỉnh sửa trước đó, kể cả trong các trường hợp trình duyệt không tự bắn "blur" đúng lúc.
   flushPendingEdit();
@@ -5619,13 +5867,35 @@ function openEditInput(screenX, screenY, screenW, screenH, initialText, onCommit
 
   // Không giới hạn độ dài chữ nhập vào — hộp sẽ tự phình rộng/cao theo nội dung, người dùng
   // cũng có thể tự kéo giãn góc dưới-phải (resize:both trong CSS) nếu muốn.
+  //
+  // SỬA LỖI "khung viền nét đứt màu xanh khi đang sửa chữ cao hơn hẳn chữ bên trong, đè lên
+  // khoảng trống của chữ xung quanh": trước đây neededH luôn lấy Math.max(screenH, inp.scrollHeight)
+  // — bắt buộc khung không bao giờ được THẤP HƠN screenH, tức chiều cao của ô nhập BAN ĐẦU (sx,sy,
+  // sw,sh truyền vào openEditInput). Với chữ đã có sẵn (đang mở lại để sửa) hoặc chữ mới gõ vào chỗ
+  // trống, sh/screenH đó lại chính là ed.h từ computeAutoBoxSize() — CỐ TÌNH được tính cao hơn chữ
+  // thật (fontSize*1.45) để dùng làm khung NỀN CHE phía sau chữ (che hết dấu tiếng Việt/đuôi chữ
+  // g,y,p khi vẽ ra canvas/PDF), KHÔNG PHẢI chiều cao thật của chữ. Dùng nhầm giá trị này làm chiều
+  // cao TỐI THIỂU cho ô nhập đang gõ khiến khung luôn thừa ra một khoảng trống phía trên/dưới chữ.
+  // Từ giờ, chiều cao ô nhập CHỈ dựa vào inp.scrollHeight (trình duyệt tự đo đúng theo font/cỡ chữ/
+  // số dòng thật đang có trong ô, đã cộng sẵn đúng phần đệm padding 1px trên+dưới của #editInput) —
+  // khớp sát với chữ bên trong, không còn phụ thuộc vào khung nền che cao hơn kể trên. CSS
+  // min-height:22px của #editInput vẫn đảm bảo khung không bao giờ bị bóp quá thấp khi ô đang trống.
   function sizeToContent(){
+    // KHUNG ĐÃ ĐƯỢC NGƯỜI DÙNG TỰ CANH (opts.fixedBox): giữ NGUYÊN bề rộng khung đã lưu, chữ chỉ
+    // tự ngắt dòng bên trong — để những gì đang gõ khớp đúng với khung sẽ được lưu/xuất ra PDF,
+    // không còn cảnh "đang gõ thì khung tự phình rộng ra rồi lưu lại theo kích thước phình đó".
+    if(opts.fixedBox){
+      inp.style.width = Math.max(24, screenW)+'px';
+      inp.style.height = 'auto';
+      inp.style.height = Math.min(pageMaxH, inp.scrollHeight)+'px';
+      return;
+    }
     const text = inp.value || initialText || '';
     const measureFont = `${currentItalic?'italic ':''}${currentBold?'bold ':''}${Math.max(11, currentFontSize*scale)}px ${pdfFontFamilyStack(currentFontFamily)}`;
     const neededW = Math.min(pageMaxW, Math.max(screenW, measureTextWidth(text, measureFont) + 10));
     inp.style.width = neededW+'px';
     inp.style.height = 'auto';
-    const neededH = Math.min(pageMaxH, Math.max(screenH, inp.scrollHeight));
+    const neededH = Math.min(pageMaxH, inp.scrollHeight);
     inp.style.height = neededH+'px';
   }
 
@@ -5690,7 +5960,7 @@ overlayCanvas.addEventListener('mousedown', (e)=>{
         pushUndo(currentIndex);
         const newIdx = cur().edits.length;
         const auto = computeAutoBoxSize(val, currentFontFamily, currentFontSize, pdfP.x, currentBold, currentItalic);
-        cur().edits.push({type:'text', x:pdfP.x, y:pdfP.y, w:auto.w, h:auto.h, text:val, fontSize:currentFontSize, fontFamily: currentFontFamily, color: currentFontColor, bold: currentBold, italic: currentItalic, underline: currentUnderline, bg:false});
+        cur().edits.push({type:'text', x:pdfP.x, y:pdfP.y, w:auto.w, h:auto.h, text:val, fontSize:currentFontSize, fontFamily: currentFontFamily, color: currentFontColor, bold: currentBold, italic: currentItalic, underline: currentUnderline, align: currentAlign, bg:false});
         selectedEditIndex = newIdx;
         redrawOverlay();
       }
@@ -5725,7 +5995,7 @@ overlayCanvas.addEventListener('mousedown', (e)=>{
     // Nếu đang có 1 ảnh được chọn sẵn, ưu tiên kiểm tra xem có bấm trúng tay cầm resize ở góc
     // không, trước khi xử lý như một cú bấm chọn/kéo-di-chuyển bình thường.
     const selectedEd = selectedEditIndex>=0 ? cur().edits[selectedEditIndex] : null;
-    const handle = getImageHandleAt(selectedEd, px, py);
+    const handle = getResizeHandleAt(selectedEd, px, py);
     if(handle){
       pushUndo(currentIndex);
       const b = getEditBounds(selectedEd);
@@ -5733,6 +6003,16 @@ overlayCanvas.addEventListener('mousedown', (e)=>{
       resizeHandleName = handle;
       resizeTargetEdit = selectedEd;
       resizeAspect = (b.h > 0) ? (b.w / b.h) : 1;
+      // KHỐI CHỮ: ghi nhớ khung + vị trí chuột lúc BẮT ĐẦU kéo, để tính khung mới theo độ dời chuột
+      // (kéo tự do từng chiều, không ép tỉ lệ như ảnh). Đồng thời chốt luôn khung NỀN CHE hiện tại
+      // (ensureCoverRect) để dù kéo thu nhỏ khung chữ tới đâu, chữ gốc của PDF vẫn bị che kín.
+      if(isTextEdit(selectedEd)){
+        ensureCoverRect(selectedEd);
+        resizeStartBox = { x:b.x, y:b.y, w:b.w, h:b.h };
+        resizeStartPdf = { x:pdfP.x, y:pdfP.y };
+      } else {
+        resizeStartBox = null; resizeStartPdf = null;
+      }
       // Góc neo là góc ĐỐI DIỆN với tay cầm đang kéo — góc này giữ nguyên vị trí khi resize.
       resizeAnchor = {
         x: handle.includes('e') ? b.x : b.x + b.w,
@@ -5793,7 +6073,7 @@ function editLineAt(px, py, editType, customLines){
     if(hitIdx >= 0 && isTextEdit(p.edits[hitIdx])){
       const ed = p.edits[hitIdx];
       selectedEditIndex = hitIdx;
-      setActiveEditFont(ed.fontFamily, ed.fontSize, ed.color, ed.bold, ed.italic, ed.underline);
+      setActiveEditFont(ed.fontFamily, ed.fontSize, ed.color, ed.bold, ed.italic, ed.underline, ed.align);
       openEditInput(ed.x*scale, ed.y*scale, ed.w*scale, ed.h*scale, ed.text, (val)=>{
         val = normalizeEditText(val);
         pushUndo(currentIndex);
@@ -5805,26 +6085,24 @@ function editLineAt(px, py, editType, customLines){
           ed.bold = currentBold;
           ed.italic = currentItalic;
           ed.underline = currentUnderline;
+          ed.align = currentAlign;
           // Nới khung vừa đủ chứa hết nội dung mới (không bao giờ để hẹp hơn nội dung thực tế);
           // nếu đã có nền che (bg) thì không thu hẹp lại, chỉ nới rộng thêm khi cần, để không lộ
           // lại chữ cũ ở phần đã che trước đó.
-          const auto = computeAutoBoxSize(val, ed.fontFamily, ed.fontSize, ed.x, ed.bold, ed.italic);
-          if(ed.bg){
-            // Khung mới = vừa đủ để (a) vẫn che kín chữ gốc (minCover) và (b) chứa hết nội dung mới
-            // (auto) — không còn giữ nguyên phần "thừa" nếu nội dung mới ngắn/thấp hơn trước.
+          // Nếu người dùng đã tự canh khung bằng công cụ Select thì GIỮ NGUYÊN khung đó (chữ mới chỉ
+          // việc tự ngắt dòng bên trong), không tự động phình to ra nữa.
+          if(!ed.manualBox){
+            const auto = computeAutoBoxSize(val, ed.fontFamily, ed.fontSize, ed.x, ed.bold, ed.italic);
             const minCover = computeMinCoverSize(ed);
             ed.w = Math.max(minCover.w, auto.w);
             ed.h = Math.max(minCover.h, auto.h);
-          } else {
-            ed.w = auto.w;
-            ed.h = auto.h;
           }
           // Dọn mọi chỉnh sửa khác chồng lấn lên vùng vừa cập nhật, để không có 2 lớp chữ đè nhau.
           removeOverlappingTextEdits(p, ed.x, ed.y, ed.x+ed.w, ed.y+ed.h, ed);
         }
         else { p.edits.splice(hitIdx,1); selectedEditIndex = -1; }
         redrawOverlay();
-      });
+      }, { fixedBox: !!ed.manualBox });
       return;
     }
     // Vùng hoàn toàn trống -> cho phép gõ chữ MỚI ngay tại đúng điểm vừa bấm, không giới hạn
@@ -5843,7 +6121,7 @@ function editLineAt(px, py, editType, customLines){
         p.edits.push({
           type:'text', x:pdfP.x, y:pdfP.y, w:auto.w, h:auto.h,
           text:val, fontSize: currentFontSize, fontFamily: currentFontFamily, color: currentFontColor,
-          bold: currentBold, italic: currentItalic, underline: currentUnderline, bg:false
+          bold: currentBold, italic: currentItalic, underline: currentUnderline, align: currentAlign, bg:false
         });
         selectedEditIndex = newIdx;
         redrawOverlay();
@@ -5873,7 +6151,8 @@ function editLineAt(px, py, editType, customLines){
     existing ? (existing.edit.color || currentFontColor) : currentFontColor,
     existing ? !!existing.edit.bold : false,
     existing ? !!existing.edit.italic : false,
-    existing ? !!existing.edit.underline : false
+    existing ? !!existing.edit.underline : false,
+    existing ? (existing.edit.align || 'left') : 'left'
   );
 
   openEditInput(sx, sy, sw, sh, initialText, (val)=>{
@@ -5883,8 +6162,9 @@ function editLineAt(px, py, editType, customLines){
        && currentFontColor === (existing ? (existing.edit.color || '#000000') : currentFontColor)
        && currentBold === !!(existing && existing.edit.bold)
        && currentItalic === !!(existing && existing.edit.italic)
-       && currentUnderline === !!(existing && existing.edit.underline)){
-      return; // không đổi gì cả (kể cả font/cỡ/màu/đậm/nghiêng/gạch chân) -> giữ nguyên, không tạo chỉnh sửa mới
+       && currentUnderline === !!(existing && existing.edit.underline)
+       && currentAlign === (existing ? (existing.edit.align || 'left') : 'left')){
+      return; // không đổi gì cả (kể cả font/cỡ/màu/đậm/nghiêng/gạch chân/canh chữ) -> giữ nguyên, không tạo chỉnh sửa mới
     }
     pushUndo(currentIndex);
     if(existing){
@@ -5896,6 +6176,7 @@ function editLineAt(px, py, editType, customLines){
         existing.edit.bold = currentBold;
         existing.edit.italic = currentItalic;
         existing.edit.underline = currentUnderline;
+        existing.edit.align = currentAlign;
         // Chỉ số các lệnh vẽ chữ GỐC (Tj/TJ) trong content stream mà dòng này khớp tới — dùng bởi
         // NativeTextEngine lúc xuất file để thử SỬA THẬT trực tiếp trên văn bản gốc thay vì chỉ che
         // + vẽ đè. `line.itemIdxs` chỉ tồn tại với chữ PDF thật (không có với dòng OCR).
@@ -5907,6 +6188,21 @@ function editLineAt(px, py, editType, customLines){
           existing.edit.bg = true;
           existing.edit.bgColor = existing.edit.bgColor || sampleBackgroundColor(existing.edit.x, existing.edit.y, existing.edit.w, existing.edit.h);
         }
+        // Chốt khung NỀN CHE hiện tại vào coverX/coverY/coverW/coverH TRƯỚC khi khung chữ được phép
+        // thu gọn lại bên dưới — nếu không, phần che sẽ co theo khung chữ và làm lộ lại chữ gốc.
+        ensureCoverRect(existing.edit);
+        // Khung che phải phủ ít nhất trọn vẹn dòng chữ gốc vừa bấm vào (phòng trường hợp lần sửa
+        // trước khung còn hẹp hơn dòng gốc).
+        if(line){
+          const fsC = existing.edit.fontSize || line.fontSize || 12;
+          const padYC = Math.max(3, fsC*0.35), padXC = Math.max(2, fsC*0.1);
+          const cX0 = Math.min(existing.edit.coverX, line.x0 - padXC);
+          const cY0 = Math.min(existing.edit.coverY, line.y0 - padYC);
+          const cX1 = Math.max(existing.edit.coverX + existing.edit.coverW, line.x1 + padXC);
+          const cY1 = Math.max(existing.edit.coverY + existing.edit.coverH, line.y1 + padYC);
+          existing.edit.coverX = cX0; existing.edit.coverY = cY0;
+          existing.edit.coverW = cX1 - cX0; existing.edit.coverH = cY1 - cY0;
+        }
         // Nếu chỉnh sửa này được tạo từ trước khi có origLineW (bản cũ hơn), bổ sung ngay bây giờ
         // từ dòng chữ gốc vừa khớp được, để lần vẽ lại này cũng được canh khoảng cách đúng như gốc.
         if(existing.edit.origLineW == null && line){
@@ -5915,13 +6211,14 @@ function editLineAt(px, py, editType, customLines){
         // QUAN TRỌNG (sửa lỗi chữ mới không hiện ra khi xuất PDF): nới khung vừa đủ chứa hết nội
         // dung MỚI (có thể dài hơn khung của dòng chữ gốc rất nhiều) — chỉ nới rộng ra, không thu
         // hẹp lại, để phần nền che vẫn tiếp tục che đúng chỗ chữ cũ. Xem computeAutoBoxSize.
-        const auto = computeAutoBoxSize(val, existing.edit.fontFamily, existing.edit.fontSize, existing.edit.x, existing.edit.bold, existing.edit.italic);
-        // Khung mới = vừa đủ để vẫn che kín chữ gốc (minCover, tính từ srcX0..srcY1 KHÔNG đổi) VÀ
-        // chứa hết nội dung mới (auto) — không còn cộng dồn/giữ mãi phần khung thừa từ các lần sửa
-        // trước có nội dung dài/cao hơn (xem computeMinCoverSize để biết lý do đầy đủ).
-        const minCover = computeMinCoverSize(existing.edit);
-        existing.edit.w = Math.max(minCover.w, auto.w);
-        existing.edit.h = Math.max(minCover.h, auto.h);
+        // Nếu khung này đã được người dùng tự kéo chỉnh bằng công cụ Select (manualBox) thì GIỮ
+        // NGUYÊN — chữ mới chỉ tự ngắt dòng bên trong khung đã canh, không tự phình to ra nữa.
+        if(!existing.edit.manualBox){
+          const auto = computeAutoBoxSize(val, existing.edit.fontFamily, existing.edit.fontSize, existing.edit.x, existing.edit.bold, existing.edit.italic);
+          const minCover = computeMinCoverSize(existing.edit);
+          existing.edit.w = Math.max(minCover.w, auto.w);
+          existing.edit.h = Math.max(minCover.h, auto.h);
+        }
         // Dọn mọi chỉnh sửa khác chồng lấn lên vùng vừa nới rộng, để không có 2 lớp chữ đè nhau.
         removeOverlappingTextEdits(p, existing.edit.x, existing.edit.y, existing.edit.x+existing.edit.w, existing.edit.y+existing.edit.h, existing.edit);
       } else {
@@ -5947,17 +6244,25 @@ function editLineAt(px, py, editType, customLines){
       // PDF chữ bị ngắt dòng tràn ra ngoài trang và biến mất — xem giải thích đầy đủ ở
       // computeAutoBoxSize. Ở đây lấy khung LỚN HƠN giữa kích thước dòng gốc và kích thước vừa đủ
       // cho nội dung mới, để nền che vẫn đúng chỗ chữ cũ mà chữ mới luôn có đủ chỗ để hiện ra.
-      const auto = computeAutoBoxSize(val, currentFontFamily, fontSize, cx0, currentBold, currentItalic);
-      const finalW = Math.max(cw, auto.w);
-      const finalH = Math.max(ch, auto.h);
+      // SỬA LỖI "khung thừa quanh chữ": khung CHỮ nay tách hẳn khỏi khung NỀN CHE (cx0/cy0/cw/ch).
+      //  - Khung chữ: đặt đúng vị trí dòng chữ gốc và chỉ rộng/cao vừa khít nội dung (auto).
+      //    (tx0 lùi 2pt để bù lại phần +2 khi vẽ chữ; ty0 canh cho chữ mới nằm đúng giữa dòng gốc)
+      //  - Khung nền che: giữ nguyên rộng rãi như cũ (cx0/cy0/cw/ch) để chữ gốc bị che kín tuyệt đối.
+      const tx0 = line.x0 - 2;
+      const ty0 = line.y0 + (((line.y1 - line.y0) - fontSize*1.15) / 2);
+      const auto = computeAutoBoxSize(val, currentFontFamily, fontSize, tx0, currentBold, currentItalic);
+      const finalW = auto.w;
+      const finalH = auto.h;
       // Dọn mọi chỉnh sửa khác (kể cả whiteout/text cũ) chồng lấn lên vùng SẮP tạo, để tuyệt đối
       // không có 2 lớp chữ vẽ chồng lên nhau tại cùng một chỗ.
-      removeOverlappingTextEdits(p, cx0, cy0, cx0+finalW, cy0+finalH);
+      removeOverlappingTextEdits(p, Math.min(cx0,tx0), Math.min(cy0,ty0), Math.max(cx0+cw, tx0+finalW), Math.max(cy0+ch, ty0+finalH));
       const newIdx = p.edits.length;
       p.edits.push({
-        type: editType, x: cx0, y: cy0, w: finalW, h: finalH,
+        type: editType, x: tx0, y: ty0, w: finalW, h: finalH,
+        // Khung NỀN CHE cố định (độc lập với khung chữ ở trên) — xem getCoverRect.
+        coverX: cx0, coverY: cy0, coverW: cw, coverH: ch,
         text: val, fontSize, fontFamily: currentFontFamily, color: currentFontColor,
-        bold: currentBold, italic: currentItalic, underline: currentUnderline, bg:true, bgColor,
+        bold: currentBold, italic: currentItalic, underline: currentUnderline, align: currentAlign, bg:true, bgColor,
         // Lưu lại vị trí/kích thước GỐC của dòng chữ (trước khi khung được nới rộng ra cho nội
         // dung mới) — dùng để so khớp ở findOverlappingTextEdit, không đổi kể cả khi ed.x/y/w/h
         // đã phình to hơn nhiều so với dòng gốc lúc ban đầu.
@@ -5981,7 +6286,7 @@ function editLineAt(px, py, editType, customLines){
       p.edits.push({ type:'whiteout', x: cx0, y: cy0, w: cw, h: ch, color:'#ffffff', bgColor });
     }
     redrawOverlay();
-  });
+  }, { fixedBox: !!(existing && existing.edit.manualBox) });
 }
 
 overlayCanvas.addEventListener('dblclick', (e)=>{
@@ -6001,21 +6306,18 @@ overlayCanvas.addEventListener('dblclick', (e)=>{
         ed.text = val;
         // Nới khung vừa đủ chứa hết nội dung mới, không bao giờ hẹp hơn nội dung thực tế
         // (xem computeAutoBoxSize) — tránh chữ bị tràn ra ngoài trang khi xuất PDF.
-        const auto = computeAutoBoxSize(val, ed.fontFamily || 'Arial', ed.fontSize || 12, ed.x, ed.bold, ed.italic);
-        if(ed.bg){
+        if(!ed.manualBox){
+          const auto = computeAutoBoxSize(val, ed.fontFamily || 'Arial', ed.fontSize || 12, ed.x, ed.bold, ed.italic);
           const minCover = computeMinCoverSize(ed);
           ed.w = Math.max(minCover.w, auto.w);
           ed.h = Math.max(minCover.h, auto.h);
-        } else {
-          ed.w = auto.w;
-          ed.h = auto.h;
         }
         // Dọn mọi chỉnh sửa khác chồng lấn lên vùng vừa cập nhật, để không có 2 lớp chữ đè nhau.
         removeOverlappingTextEdits(cur(), ed.x, ed.y, ed.x+ed.w, ed.y+ed.h, ed);
       }
       else { edits.splice(idx,1); selectedEditIndex = -1; }
       redrawOverlay();
-    });
+    }, { fixedBox: !!ed.manualBox });
   }
 });
 
@@ -6028,6 +6330,21 @@ window.addEventListener('keydown', (e)=>{
     cur().edits.splice(selectedEditIndex, 1);
     selectedEditIndex = -1;
     redrawOverlay();
+  }
+  // Phím F: với khối chữ đang chọn bằng công cụ Select — TRẢ LẠI chế độ khung tự động (bỏ kích
+  // thước đã tự canh tay), khung sẽ co lại vừa khít nội dung hiện tại. Dùng khi lỡ kéo khung quá
+  // tay và muốn quay về mặc định.
+  if((e.key === 'f' || e.key === 'F') && !e.ctrlKey && !e.metaKey && !e.altKey &&
+     activeTool === 'select' && selectedEditIndex >= 0 && pages.length){
+    const edF = cur().edits[selectedEditIndex];
+    if(isTextEdit(edF)){
+      e.preventDefault();
+      pushUndo(currentIndex);
+      edF.manualBox = false;
+      resizeTextEditToFitContent(edF);
+      redrawOverlay();
+      if(typeof setStatus === 'function') setStatus('Đã trả khung chữ về chế độ tự động vừa khít nội dung.');
+    }
   }
   // Ctrl/Cmd+C: chỉ bắt khi đang chọn MỘT ẢNH bằng công cụ Select (không đụng tới Ctrl+C mặc định
   // của trình duyệt khi người dùng đang bôi đen văn bản bằng công cụ "Select text to copy").
@@ -6088,6 +6405,38 @@ overlayCanvas.addEventListener('mousemove', (e)=>{
     const w = Math.abs(px-regionDragStart.x), h = Math.abs(py-regionDragStart.y);
     octx.strokeStyle = '#2196f3'; octx.lineWidth = 1.5;
     octx.setLineDash([6,4]); octx.strokeRect(x,y,w,h); octx.setLineDash([]);
+  } else if(resizingImage && resizeTargetEdit && isTextEdit(resizeTargetEdit) && resizeStartBox && resizeStartPdf){
+    // ===== KÉO CHỈNH KHUNG CỦA KHỐI CHỮ (công cụ Select) =====
+    // Kéo TỰ DO theo từng chiều (không ép tỉ lệ như ảnh): tay cầm góc đổi cả 2 chiều, tay cầm giữa
+    // cạnh chỉ đổi 1 chiều. Cạnh ĐỐI DIỆN với tay cầm đang kéo luôn đứng yên.
+    // Sau thao tác này, kích thước khung được GHI NHỚ (ed.manualBox = true) -> từ đó về sau khung
+    // KHÔNG còn tự động phình to/thu nhỏ theo nội dung nữa, đúng như người dùng đã canh.
+    const pdfP2 = toPdfSpace(px, py);
+    const dx = pdfP2.x - resizeStartPdf.x, dy = pdfP2.y - resizeStartPdf.y;
+    const MIN_BOX = 8; // pt
+    let nx = resizeStartBox.x, ny = resizeStartBox.y, nw = resizeStartBox.w, nh = resizeStartBox.h;
+    if(resizeHandleName.indexOf('w') >= 0){
+      const lim = resizeStartBox.x + resizeStartBox.w - MIN_BOX;
+      const x2 = Math.min(resizeStartBox.x + dx, lim);
+      nw = resizeStartBox.x + resizeStartBox.w - x2;
+      nx = x2;
+    }
+    if(resizeHandleName.indexOf('e') >= 0){
+      nw = Math.max(MIN_BOX, resizeStartBox.w + dx);
+    }
+    if(resizeHandleName.indexOf('n') >= 0){
+      const limY = resizeStartBox.y + resizeStartBox.h - MIN_BOX;
+      const y2 = Math.min(resizeStartBox.y + dy, limY);
+      nh = resizeStartBox.y + resizeStartBox.h - y2;
+      ny = y2;
+    }
+    if(resizeHandleName.indexOf('s') >= 0){
+      nh = Math.max(MIN_BOX, resizeStartBox.h + dy);
+    }
+    const edT = resizeTargetEdit;
+    edT.x = nx; edT.y = ny; edT.w = nw; edT.h = nh;
+    edT.manualBox = true; // <- CHỐT kích thước khung tại thời điểm này
+    redrawOverlay();
   } else if(resizingImage && resizeTargetEdit){
     // Kéo tay cầm góc: tính lại w/h mới sao cho góc đối diện (resizeAnchor) đứng yên, và luôn
     // giữ nguyên tỉ lệ khung hình gốc của ảnh (resizeAspect) để ảnh không bị méo.
@@ -6115,11 +6464,12 @@ overlayCanvas.addEventListener('mousemove', (e)=>{
       ed.points = ed.points.map(pt=>({x:pt.x+ddx, y:pt.y+ddy}));
     } else { ed.x = newX; ed.y = newY; }
     redrawOverlay();
-  } else if(activeTool==='select' && selectedEditIndex>=0 && cur().edits[selectedEditIndex] && cur().edits[selectedEditIndex].type==='image'){
-    // Không đang kéo gì cả nhưng có ảnh đang được chọn: đổi con trỏ chuột khi rê qua tay cầm góc,
-    // để người dùng biết có thể kéo để đổi kích thước.
-    const handle = getImageHandleAt(cur().edits[selectedEditIndex], px, py);
-    overlayCanvas.style.cursor = handle ? (handle==='nw'||handle==='se' ? 'nwse-resize' : 'nesw-resize') : '';
+  } else if(activeTool==='select' && selectedEditIndex>=0 && cur().edits[selectedEditIndex] &&
+            (cur().edits[selectedEditIndex].type==='image' || isTextEdit(cur().edits[selectedEditIndex]))){
+    // Không đang kéo gì cả nhưng có ảnh HOẶC khối chữ đang được chọn: đổi con trỏ chuột khi rê qua
+    // tay cầm, để người dùng biết có thể kéo để chỉnh khung (phần thừa quanh chữ).
+    const handle = getResizeHandleAt(cur().edits[selectedEditIndex], px, py);
+    overlayCanvas.style.cursor = cursorForHandle(handle);
   } else if((activeTool==='ocr' || activeTool==='edittext') && !document.getElementById('editInput')){
     // Trỏ chuột tới đâu thì khoanh vùng highlight đúng dòng chữ ở đó, báo hiệu "bấm vào đây để sửa"
     // — giống trải nghiệm sửa văn bản của các phần mềm PDF chuyên dụng.
@@ -6157,6 +6507,7 @@ overlayCanvas.addEventListener('mouseleave', ()=>{
 window.addEventListener('mouseup', (e)=>{
   if(resizingImage){
     resizingImage = false; resizeHandleName = null; resizeAnchor = null; resizeTargetEdit = null;
+    resizeStartBox = null; resizeStartPdf = null;
     overlayCanvas.style.cursor = '';
     redrawOverlay();
   }
