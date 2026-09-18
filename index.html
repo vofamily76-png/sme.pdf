@@ -200,12 +200,39 @@
   #textLayer .endOfContent{
     display:block; position:absolute; inset:100% 0 0; z-index:-1; cursor:default;
   }
+  /* ===== Edit Text: click-sửa TRỰC TIẾP trên DOM (xem buildEditTextClickLayer()) =====
+     Mỗi dòng chữ gốc (PDF thật hoặc OCR) là một <span> trong suốt của #textLayer, nằm ĐÚNG vị
+     trí/khung của dòng chữ đó — bấm THẲNG vào đây để sửa, không còn phải đoán toạ độ trên canvas
+     như trước. Viền cam nhạt khi rê chuột qua để người dùng biết rõ đây là vùng bấm-sửa được. */
+  #textLayer span.editTextSpan{ cursor:text; border-radius:2px; }
+  #textLayer span.editTextSpan:hover{
+    background:rgba(226,64,44,.14);
+    outline:1px dashed rgba(226,64,44,.6);
+    outline-offset:1px;
+  }
   #floatingHighlightBtn{
     position:absolute; z-index:60; display:none; background:var(--accent); color:#fff;
     border:none; border-radius:5px; padding:6px 10px; font-size:12.5px; cursor:pointer;
     box-shadow:0 2px 10px rgba(0,0,0,.35); white-space:nowrap;
   }
   #floatingHighlightBtn:hover{ background:var(--accent-dim); }
+
+  /* Toast báo kết quả "sửa thật" (NativeTextEngine) sau khi lưu PDF — cho người dùng biết rõ
+     bao nhiêu dòng được sửa THẬT trực tiếp trên văn bản gốc (không qua whiteout+vẽ đè) và bao
+     nhiêu dòng phải tự động dùng lại cách che+vẽ đè (do font bị cắt gọn thiếu glyph, có định
+     dạng Đậm/Nghiêng/Gạch chân, hoặc chữ đến từ OCR trên ảnh scan — vốn không có "chữ thật" để
+     sửa trực tiếp). Xem showNativeEditToast()/buildEditedOutDoc() ở phần script bên dưới. */
+  #nativeEditToast{
+    position:fixed; left:50%; bottom:54px; transform:translateX(-50%) translateY(12px);
+    z-index:500; max-width:min(560px,92vw); background:#1c1e22; color:var(--text-light);
+    border:1px solid var(--border); border-radius:8px; padding:10px 14px; font-size:12.5px;
+    line-height:1.5; box-shadow:0 6px 24px rgba(0,0,0,.4); opacity:0; pointer-events:none;
+    transition:opacity .25s ease, transform .25s ease;
+  }
+  #nativeEditToast.show{ opacity:1; transform:translateX(-50%) translateY(0); pointer-events:auto; }
+  #nativeEditToast b{ color:#fff; }
+  #nativeEditToast .dotOk{ color:#4caf50; }
+  #nativeEditToast .dotFallback{ color:#ffb020; }
 
   /* floating edit input */
   /* QUAN TRỌNG (theo yêu cầu "chỉnh trực tiếp lên text gốc, không phải một layer khác"): trước
@@ -1196,6 +1223,11 @@
     </div>
   </div>
 </div>
+
+<!-- Toast: sau khi Lưu PDF, báo cho người dùng biết đã sửa THẬT trực tiếp trên văn bản gốc bao
+     nhiêu dòng (không qua whiteout) và còn bao nhiêu dòng phải tự động rơi về cách che+vẽ đè.
+     Xem showNativeEditToast() trong script. -->
+<div id="nativeEditToast" role="status" aria-live="polite"></div>
 
 <div id="statusbar">
   <span>Trang <input type="number" id="pageNumInput" value="1" min="1"> / <span id="pageCount">0</span></span>
@@ -4190,17 +4222,18 @@ async function renderPage(idx, opts){
   redrawOverlay();
   highlightThumb(idx);
   document.getElementById('ocrText').value = p.ocrText || '';
-  // Nếu đang bật "Edit Text" mà chuyển sang trang khác, tự chuẩn bị sẵn dữ liệu dòng chữ cho trang mới
-  // để khoanh vùng highlight ngay, không cần đợi người dùng bấm trước.
-  if(activeTool === 'edittext' && !p.editTextMode){
-    ensureEditTextReady(idx).then(()=>{ if(activeTool==='edittext' && currentIndex===idx) redrawOverlay(); }).catch(()=>{});
-  }
   // Nếu đang bật công cụ "Chọn văn bản" mà chuyển trang -> dựng lại lớp văn bản có thể chọn/copy
   // cho đúng trang mới (xóa vùng chọn cũ vì nó đã không còn hợp lệ trên trang khác).
   floatingHighlightBtn.style.display = 'none';
   if(activeTool === 'textselect'){
     showTextLayerForCurrentPage(idx);
+  } else if(activeTool === 'edittext'){
+    // Chuyển sang trang khác trong lúc đang bật "Edit Text" -> dựng lại lớp DOM click-sửa
+    // (#textLayer) cho đúng trang mới, tự chuẩn bị sẵn dữ liệu dòng chữ (native/OCR) nếu cần.
+    refreshEditTextDomLayer();
   } else {
+    textLayer.classList.remove('active');
+    textLayer.onmousedown = null;
     textLayer.innerHTML = '';
   }
   if(scrollIntoView) scrollSlotIntoView(idx);
@@ -4776,18 +4809,26 @@ document.querySelectorAll('.tbtn[data-tool]').forEach(btn=>{
       // sửa được ngay đó" hoạt động mượt mà mà không phải đợi tới lần bấm chuột đầu tiên.
       if(tool === 'ocr' && pages.length && cur() && !cur().ocrWords){
         runOcrForPage(currentIndex, true).then(()=>{ if(activeTool==='ocr') redrawOverlay(); }).catch(err=>console.warn('OCR lỗi:', err));
-      } else if(tool === 'edittext' && pages.length && cur() && !cur().editTextMode){
+      } else if(tool === 'edittext' && pages.length && cur()){
         // Nạp sẵn chữ PDF thật ngay (nhanh) để bấm sửa được lập tức; OCR sẽ tự chạy thêm ở nền
         // (xem ensureEditTextReady/kickOffOcrForEditText) và tự merge vào khi xong, không cần đợi.
-        ensureEditTextReady(currentIndex).then(()=>{ if(activeTool==='edittext') redrawOverlay(); }).catch(err=>console.warn('Chuẩn bị Edit Text lỗi:', err));
+        // Luôn gọi lại (kể cả khi trang đã sẵn sàng từ trước) vì #textLayer có thể vừa bị xoá
+        // trắng lúc rời khỏi công cụ Edit Text trước đó — cần dựng lại lớp DOM click-sửa.
+        refreshEditTextDomLayer();
       }
-      // Bật/tắt lớp văn bản có thể chọn-copy tương ứng với công cụ "Chọn văn bản".
+      // Bật/tắt lớp văn bản có thể chọn-copy tương ứng với công cụ "Chọn văn bản". Riêng công cụ
+      // "Edit Text" tự bật class 'active' bên trong buildEditTextClickLayer() (gọi từ
+      // refreshEditTextDomLayer() ở trên) — CHỦ Ý không bật ngay tại đây, để tránh cú bấm ĐẦU
+      // TIÊN (ngay lúc vừa chuyển công cụ, lớp còn rỗng) vô tình rơi vào nhánh "vùng trống" thay
+      // vì chờ đúng lúc dữ liệu dòng chữ (native/OCR) đã sẵn sàng.
       textLayer.classList.toggle('active', tool === 'textselect');
       floatingHighlightBtn.style.display = 'none';
       window.getSelection().removeAllRanges();
       if(tool === 'textselect' && pages.length){
         showTextLayerForCurrentPage(currentIndex).catch(err=>console.warn('Không dựng được lớp chọn văn bản:', err));
-      } else {
+      } else if(tool !== 'edittext'){
+        textLayer.classList.remove('active');
+        textLayer.onmousedown = null;
         textLayer.innerHTML = '';
       }
     }catch(err){
@@ -5662,12 +5703,22 @@ overlayCanvas.addEventListener('mousedown', (e)=>{
       editLineAt(px,py,'ocrfix');
     }
   } else if(activeTool === 'edittext'){
+    // GHI CHÚ: nhánh này chỉ còn là "lưới đỡ" cho đúng CÚ BẤM ĐẦU TIÊN, ngay khoảnh khắc vừa
+    // chuyển sang công cụ "Edit Text" khi lớp DOM click-sửa (#textLayer, xem
+    // buildEditTextClickLayer) chưa kịp dựng xong/bật 'active' (đang chờ ensureEditTextReady()).
+    // Từ cú bấm THỨ HAI trở đi, #textLayer đã phủ lên toàn bộ trang với pointer-events:auto nên
+    // mọi cú bấm sẽ được chính các <span> (hoặc chính #textLayer khi bấm vào chỗ trống) xử lý
+    // trực tiếp, overlayCanvas sẽ không còn nhận được sự kiện mousedown này nữa.
     const idxAtClick = currentIndex;
     if(!cur().editTextMode){
       ensureEditTextReady(idxAtClick).then(()=>{
-        if(activeTool==='edittext' && currentIndex===idxAtClick) editLineAt(px,py,'textfix', editTextLinesFor(cur()));
+        if(activeTool==='edittext' && currentIndex===idxAtClick){
+          buildEditTextClickLayer(idxAtClick);
+          editLineAt(px,py,'textfix', editTextLinesFor(cur()));
+        }
       });
     } else {
+      buildEditTextClickLayer(idxAtClick);
       editLineAt(px,py,'textfix', editTextLinesFor(cur()));
     }
   } else if(activeTool === 'select'){
@@ -6215,10 +6266,99 @@ function kickOffOcrForEditText(idx){
   if(!p || p.type !== 'pdf' || p.ocrWords || ocrPrefetchState[idx]) return;
   ocrPrefetchState[idx] = true;
   runOcrForPage(idx, true).then(()=>{
-    if(activeTool==='edittext' && currentIndex===idx) redrawOverlay();
+    if(activeTool==='edittext' && currentIndex===idx){
+      redrawOverlay();
+      // OCR chạy nền vừa xong -> có thêm dòng chữ mới (nằm trong ảnh/scan) cần được thêm ngay vào
+      // lớp DOM click-sửa (xem buildEditTextClickLayer), không phải chỉ vẽ lại khung cam trên canvas.
+      buildEditTextClickLayer(idx);
+    }
   }).catch(err=>{
     console.warn('OCR chạy nền cho Edit Text thất bại (bỏ qua, vẫn dùng được chữ PDF thật):', err);
   });
+}
+
+// ---------- Edit Text: click-sửa TRỰC TIẾP trên DOM (không còn dò/đoán toạ độ trên canvas) ----
+// TRƯỚC ĐÂY: bấm chuột vào canvas lúc đang bật "Edit Text" chỉ gửi toạ độ điểm bấm (px,py) cho
+// editLineAt() tự DÒ xem gần dòng chữ nào nhất trong danh sách (có "nới lỏng" bán kính bắt dính
+// để đỡ phải bấm chuẩn từng pixel) rồi mới mở ô sửa — nghĩa là việc "bấm trúng chữ nào" chỉ là
+// suy đoán theo khoảng cách hình học trên một tấm ảnh canvas phẳng, không phải bấm THẲNG vào
+// chính phần tử đang thể hiện chữ đó. Giờ dựng hẳn một lớp DOM thật (dùng lại #textLayer — đúng
+// cơ chế renderTextLayer() của pdf.js mà công cụ "Chọn văn bản để copy" đang dùng): mỗi DÒNG chữ
+// gốc (PDF thật hoặc OCR, gộp qua editTextLinesFor()) là một <span> trong suốt nằm CHÍNH XÁC tại
+// khung của dòng chữ đó trên trang -> người dùng bấm THẲNG vào đúng phần tử DOM chứa chữ muốn sửa,
+// không còn phải đoán theo toạ độ/bán kính nữa. Khi bấm trúng một span, ta gọi lại NGUYÊN VẸN hàm
+// editLineAt() đã có sẵn (giữ 100% logic mở ô sửa/lưu/Undo/"sửa thật trực tiếp trên text gốc" của
+// NativeTextEngine khi xuất PDF) — chỉ khác là toạ độ truyền vào là tâm của CHÍNH khung dòng chữ
+// vừa bấm (đã biết chắc chắn là dòng nào, không cần dò/snap nữa), nhờ vậy tái dùng được toàn bộ
+// engine sửa/lưu đã có mà không phải viết lại.
+function buildEditTextClickLayer(idx){
+  if(activeTool !== 'edittext' || currentIndex !== idx) return;
+  const p = pages[idx];
+  if(!p) return;
+  textLayer.classList.add('active');
+  textLayer.innerHTML = '';
+  const w = pdfCanvas.width, h = pdfCanvas.height;
+  textLayer.style.width = w+'px';
+  textLayer.style.height = h+'px';
+  textLayer.style.setProperty('--scale-factor', scale);
+  const lines = editTextLinesFor(p);
+  const frag = document.createDocumentFragment();
+  if(lines && lines.length){
+    for(const line of lines){
+      if(!line || !(line.x1 > line.x0) || !(line.y1 > line.y0)) continue;
+      const span = document.createElement('span');
+      span.className = 'editTextSpan';
+      // Vẫn gán đúng nội dung chữ thật (trong suốt, không hiển thị màu — kế thừa CSS "#textLayer
+      // span{color:transparent}") để hình dạng/độ rộng vùng bấm khớp sát với chữ thật, không phải
+      // một hình chữ nhật trừu tượng vô nghĩa.
+      span.textContent = line.text || '';
+      const x = line.x0*scale, y = line.y0*scale;
+      const bw = Math.max(1, (line.x1-line.x0)*scale), bh = Math.max(1, (line.y1-line.y0)*scale);
+      span.style.left = x+'px';
+      span.style.top = y+'px';
+      span.style.width = bw+'px';
+      span.style.height = bh+'px';
+      span.style.fontSize = Math.max(6, bh*0.85)+'px';
+      span.style.lineHeight = bh+'px';
+      span.addEventListener('mousedown', (ev)=>{
+        // Chặn hành vi mặc định (bôi đen chọn chữ) và không cho lọt xuống overlayCanvas bên dưới —
+        // đây chính là cú bấm "click-sửa trực tiếp" trên phần tử DOM đại diện cho chữ gốc.
+        ev.preventDefault();
+        ev.stopPropagation();
+        if(activeTool !== 'edittext' || currentIndex !== idx) return;
+        const cx = (line.x0 + (line.x1-line.x0)/2) * scale;
+        const cy = (line.y0 + (line.y1-line.y0)/2) * scale;
+        editLineAt(cx, cy, 'textfix', editTextLinesFor(cur()));
+      });
+      frag.appendChild(span);
+    }
+  }
+  textLayer.appendChild(frag);
+  // Bấm vào khoảng TRỐNG giữa/ngoài các dòng chữ đã dò được (không trúng span nào ở trên) -> vẫn
+  // giữ đúng hành vi cũ của editLineAt(): cho gõ chữ MỚI ngay tại điểm bấm, hoặc mở lại một chữ đã
+  // thêm/sửa trước đó nếu điểm bấm rơi đúng vào đó (xem nhánh "if(!line)" trong editLineAt()).
+  textLayer.onmousedown = (ev)=>{
+    if(ev.target !== textLayer) return; // đã có span riêng xử lý phía trên
+    if(activeTool !== 'edittext' || currentIndex !== idx) return;
+    ev.preventDefault();
+    const {x:px, y:py} = clientToCanvasXY_(overlayCanvas, ev.clientX, ev.clientY);
+    editLineAt(px, py, 'textfix', editTextLinesFor(cur()));
+  };
+}
+
+// Chuẩn bị dữ liệu dòng chữ (native + OCR) cho trang đang mở rồi dựng lớp DOM click-sửa ở trên —
+// gọi hàm NÀY (thay vì gọi thẳng ensureEditTextReady/buildEditTextClickLayer riêng lẻ) ở MỌI nơi
+// cần bật/làm mới công cụ "Edit Text" (chuyển công cụ, chuyển trang...) để không bao giờ quên bước
+// nào trong 2 bước "chờ dữ liệu sẵn sàng" rồi "dựng lại lớp DOM".
+function refreshEditTextDomLayer(){
+  if(activeTool !== 'edittext' || !pages.length || !cur()) return;
+  const idx = currentIndex;
+  ensureEditTextReady(idx).then(()=>{
+    if(activeTool === 'edittext' && currentIndex === idx){
+      redrawOverlay();
+      buildEditTextClickLayer(idx);
+    }
+  }).catch(err=>console.warn('Chuẩn bị lớp Edit Text (DOM) lỗi:', err));
 }
 // Kiểm tra 2 khung chữ nhật có trùng phần lớn lên nhau hay không (dùng để loại bỏ dòng OCR
 // trùng vị trí với dòng chữ PDF thật đã có, tránh 2 lớp có thể-bấm-sửa chồng đúng 1 chỗ).
@@ -6543,8 +6683,37 @@ async function saveOutDocWithVietWidthFix(outDoc){
   }
 }
 
+// ---------- Toast báo kết quả NativeTextEngine ("sửa thật" vs "che + vẽ đè") ----------
+// Được điền vào bởi buildEditedOutDoc() (đếm số dòng ed._nativeApplied===true trong tổng số
+// dòng ĐỦ ĐIỀU KIỆN thử sửa thật — tức có nativeItemIdxs, không Đậm/Nghiêng/Gạch chân, thuộc
+// văn bản PDF thật chứ không phải chữ OCR trên ảnh scan), rồi hiển thị cho người dùng ngay sau
+// khi "Lưu PDF" xong, để họ biết rõ lần lưu này có bao nhiêu chỗ THẬT SỰ không qua whiteout.
+function showNativeEditToast(stats){
+  const el = document.getElementById('nativeEditToast');
+  if(!el || !stats || stats.eligible <= 0) return; // không có dòng nào đủ điều kiện thử -> không làm phiền người dùng
+  const { native, eligible } = stats;
+  const fallback = eligible - native;
+  let html;
+  if(fallback === 0){
+    html = `<span class="dotOk">●</span> Đã <b>sửa thật trực tiếp trên văn bản gốc</b> cho toàn bộ ${eligible} dòng vừa chỉnh sửa (không dùng whiteout).`;
+  } else if(native === 0){
+    html = `<span class="dotFallback">●</span> Cả ${eligible} dòng vừa sửa đều phải dùng cách <b>che nền + vẽ chữ mới đè lên</b> (font PDF gốc bị cắt gọn thiếu glyph cần dùng, hoặc có định dạng Đậm/Nghiêng/Gạch chân).`;
+  } else {
+    html = `<span class="dotOk">●</span> <b>${native}/${eligible}</b> dòng được <b>sửa thật trực tiếp trên văn bản gốc</b>. `
+         + `<span class="dotFallback">●</span> <b>${fallback}/${eligible}</b> dòng còn lại tự động dùng cách <b>che + vẽ đè</b> (ký tự mới chưa từng xuất hiện trong font trang này, hoặc có Đậm/Nghiêng/Gạch chân).`;
+  }
+  el.innerHTML = html;
+  el.classList.add('show');
+  clearTimeout(showNativeEditToast._t);
+  showNativeEditToast._t = setTimeout(()=> el.classList.remove('show'), 7000);
+}
+
 async function buildEditedOutDoc(indexes, spinnerLabel){
   const outDoc = await PDFDocument.create();
+  // Thống kê cho showNativeEditToast(): "eligible" = số dòng textfix có nativeItemIdxs, không
+  // Đậm/Nghiêng/Gạch chân (tức ĐỦ ĐIỀU KIỆN để NativeTextEngine thử sửa thật — xem lọc nativeEdits
+  // bên dưới); "native" = trong số đó, bao nhiêu dòng thực sự sửa thật thành công (_nativeApplied).
+  const nativeStats = { eligible: 0, native: 0 };
   const imageEmbedCache = new Map(); // cache ảnh đã nhúng (theo từng edit) trong lượt xuất file này
   // Font dự phòng CHẮC CHẮN dùng được (chuẩn PDF, không cần tải/nhúng gì thêm) — dùng khi font
   // Việt hoá nhúng sẵn vì lý do gì đó không vẽ được (xem safeDrawText), để chữ luôn hiện ra được
@@ -6651,11 +6820,12 @@ async function buildEditedOutDoc(indexes, spinnerLabel){
         // rơi về cách "che nền + vẽ chữ mới đè lên" (drawEditOnPdfPage) để áp dụng đúng định dạng.
         const nativeEdits = p.edits.filter(ed => ed.type==='textfix' && ed.nativeItemIdxs && ed.nativeItemIdxs.length && !ed.bold && !ed.italic && !ed.underline);
         if(nativeEdits.length){
+          nativeStats.eligible += nativeEdits.length;
           const pdfjsPage = await p.doc.getPage(p.srcPage);
           const nativeCtx = await NativeTextEngine.preparePage(outDoc, pageObj, pdfjsPage);
           for(const ed of nativeEdits){
             const res = NativeTextEngine.tryReplaceLine(nativeCtx, ed.nativeItemIdxs, ed.text);
-            if(res.success) ed._nativeApplied = true;
+            if(res.success){ ed._nativeApplied = true; nativeStats.native++; }
           }
           NativeTextEngine.finalizePage(outDoc, pageObj, nativeCtx);
         }
@@ -6692,6 +6862,9 @@ async function buildEditedOutDoc(indexes, spinnerLabel){
       pageObj.setRotation(degrees(normalizeRotation_(baseRotation + extraRotation)));
     }
   }
+  // Gắn thống kê vào outDoc (đối tượng JS thường, cho phép thêm thuộc tính tuỳ ý) để nơi gọi
+  // buildEditedOutDoc() (exportPdfAs...) lấy ra hiển thị cho người dùng qua showNativeEditToast().
+  outDoc.__nativeEditStats = nativeStats;
   return outDoc;
 }
 
@@ -6715,6 +6888,9 @@ async function exportPdfAs(filename, pageIndexes){
     const blob = new Blob([bytes], {type:'application/pdf'});
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
     a.download = filename; a.click();
+    // Báo cho người dùng biết rõ lần lưu này có bao nhiêu dòng được SỬA THẬT trực tiếp trên
+    // văn bản gốc (không qua whiteout+vẽ đè) và bao nhiêu dòng phải tự động dùng cách che+vẽ đè.
+    showNativeEditToast(outDoc.__nativeEditStats);
   }catch(err){
     console.error('Lỗi khi lưu PDF:', err);
     alert('Lỗi khi xuất PDF: '+err.message+'\n\nGợi ý: nếu vừa tải lại trang trình duyệt, dữ liệu file gốc trong bộ nhớ có thể đã mất — hãy mở lại file PDF rồi thực hiện chỉnh sửa lại.');
