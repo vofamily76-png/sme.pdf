@@ -2586,7 +2586,12 @@ let activeEditInputEl = null;
 function refreshActiveEditInputFont(){
   if(!activeEditInputEl) return;
   activeEditInputEl.style.fontFamily = pdfFontFamilyStack(currentFontFamily);
-  const fontPx = Math.max(11, currentFontSize*scale);
+  // SỬA LỖI "size chữ khi sửa to hơn size chữ gốc": trước đây ép cứng tối thiểu 11px
+  // (Math.max(11, ...)) khiến các đoạn chữ có cỡ nhỏ (khi quy đổi theo scale hiện tại cho
+  // ra dưới 11px) bị hiển thị TO HƠN hẳn so với chữ gốc thật trên trang. Giờ dùng đúng
+  // currentFontSize*scale (chỉ chặn ở mức rất nhỏ để không bao giờ ra giá trị 0/âm), để
+  // chữ trong ô đang sửa luôn khớp ĐÚNG kích thước với chữ gốc hiện có trên tài liệu.
+  const fontPx = Math.max(1, currentFontSize*scale);
   activeEditInputEl.style.fontSize = fontPx+'px';
   activeEditInputEl.style.color = currentFontColor;
   activeEditInputEl.style.fontWeight = currentBold ? 'bold' : 'normal';
@@ -5282,6 +5287,33 @@ document.getElementById('btnSnapshot').onclick = ()=>{ captureRegionSnapshot().c
 // được nhận ra, 2 từ sẽ bị dính liền không dấu cách. Hàm dưới đây chỉ chèn dấu cách giữa 2 item khi
 // khoảng trống NGANG thực tế giữa chúng (x0 của item sau − x1 của item trước) đủ lớn so với cỡ chữ —
 // đúng với cách các trình soạn thảo PDF khác (Acrobat...) suy ra ranh giới từ, thay vì đoán mò cố định.
+// SỬA LỖI "size chữ khi sửa NHỎ HƠN size chữ gốc" (đặc biệt với câu tiếng Việt nhiều dấu, ví dụ
+// "Trước tiên, Công ty Cổ phần Hàng hải và Năng lượng Hải Mã..."): trước đây cỡ chữ đại diện của
+// CẢ DÒNG được tính bằng trung bình cộng ĐỒNG ĐỀU qua mọi item chữ trích ra từ PDF
+// (group.reduce((s,i)=>s+i.fontSize,0)/group.length). Nhiều PDF (đặc biệt PDF xuất từ Word có
+// dùng dấu tổ hợp) tách RIÊNG từng dấu thanh/dấu mũ tiếng Việt (dấu sắc, huyền, hỏi, ngã, nặng,
+// dấu mũ ă/â/ê/ô/ơ/ư...) thành các "item" cực nhỏ, có khi kích thước font đo được chỉ bằng một
+// phần nhỏ so với chữ cái chính — một dòng có thể có RẤT NHIỀU dấu như vậy (gần như mỗi âm tiết
+// tiếng Việt đều có ít nhất 1 dấu), nên khi cộng trung bình đồng đều, các item dấu tí hon này kéo
+// tụt hẳn cỡ chữ trung bình của CẢ DÒNG xuống thấp hơn nhiều so với cỡ chữ thật của chữ cái chính
+// -> khi bấm sửa, ô nhập hiển thị chữ NHỎ HƠN HẲN so với chữ gốc trên trang. Cách sửa đúng gốc:
+// tính cỡ chữ đại diện theo TRỌNG SỐ ĐỘ DÀI KÝ TỰ của từng item (item càng nhiều ký tự — tức càng
+// là phần "thân chữ" chính chứ không phải 1 dấu lẻ — càng có trọng số cao), thay vì cộng ngang
+// hàng bất kể độ dài. Các item chỉ có 1 ký tự (thường là dấu tách rời) vẫn được tính (trọng số tối
+// thiểu 1) để không bỏ sót hoàn toàn, nhưng không còn lấn át được các item nhiều ký tự nữa.
+function representativeFontSize_(group){
+  if(!group || !group.length) return 12;
+  let wsum = 0, sum = 0;
+  for(const it of group){
+    const fs = it.fontSize || 10;
+    // Trọng số = số ký tự KHÔNG PHẢI khoảng trắng của item (tối thiểu 1) — item càng dài (càng
+    // chắc chắn là thân chữ, không phải 1 dấu lẻ) càng ảnh hưởng nhiều tới cỡ chữ đại diện.
+    const len = Math.max(1, String(it.text || '').replace(/\s+/g,'').length);
+    wsum += len;
+    sum += fs*len;
+  }
+  return wsum>0 ? sum/wsum : (group.reduce((s,i)=>s+(i.fontSize||10),0)/group.length);
+}
 function joinLineItemsText(group){
   let text = '';
   let prevX1 = null, prevFs = null;
@@ -5345,10 +5377,10 @@ function collectRegionLines(items, region){
       x1: Math.max(...group.map(i=>i.x1)),
       y0: Math.min(...group.map(i=>i.y0)),
       y1: Math.max(...group.map(i=>i.y1)),
-      fontSize: group.reduce((s,i)=> s+(i.fontSize||10), 0) / group.length
+      fontSize: representativeFontSize_(group)
     };
   });
-  const avgFontSize = matched.reduce((s,i)=> s+(i.fontSize||10), 0) / matched.length;
+  const avgFontSize = representativeFontSize_(matched);
   return { lines, avgFontSize };
 }
 
@@ -5427,7 +5459,7 @@ function computePageLines(items){
       x1: Math.max(...group.map(i=>i.x1)),
       y0: Math.min(...group.map(i=>i.y0)),
       y1: Math.max(...group.map(i=>i.y1)),
-      fontSize: group.reduce((s,i)=> s+(i.fontSize||10), 0) / group.length,
+      fontSize: representativeFontSize_(group),
       // Danh sách item gốc (trước khi ghép thành 1 dòng), giữ lại toạ độ x0/x1 riêng của từng
       // mảnh chữ. Dùng cho việc XUẤT WORD: khi dòng này vô tình gộp chung chữ của HAI Ô BẢNG
       // khác nhau (vì khoảng cách giữa chúng tình cờ hẹp hơn ngưỡng tách "segments" ở trên, ví
@@ -5855,7 +5887,12 @@ function openEditInput(screenX, screenY, screenW, screenH, initialText, onCommit
   // thay vì luôn cứng Arial — nhờ đó ô nhập liệu hiển thị đúng như chữ sẽ được lưu, và nếu người
   // dùng đổi 2 ô "Font chữ"/"Cỡ chữ" trong lúc đang gõ, chữ trong ô sẽ đổi theo NGAY LẬP TỨC
   // (xem refreshActiveEditInputFont, được gọi từ sự kiện onchange của 2 ô đó).
-  const fontPx = Math.max(11, currentFontSize*scale);
+  // SỬA LỖI "size chữ khi sửa to hơn size chữ gốc": trước đây ép cứng tối thiểu 11px
+  // (Math.max(11, ...)) khiến các đoạn chữ cỡ nhỏ (quy đổi theo scale hiện tại ra dưới 11px)
+  // bị phóng to hơn hẳn so với chữ gốc thật trên trang ngay khi vừa bấm vào để sửa. Giờ dùng
+  // đúng currentFontSize*scale (chỉ chặn ở mức rất nhỏ để không bao giờ ra 0/âm), để cỡ chữ
+  // trong ô đang sửa luôn khớp ĐÚNG với cỡ chữ gốc hiện có trên tài liệu.
+  const fontPx = Math.max(1, currentFontSize*scale);
   inp.style.fontFamily = pdfFontFamilyStack(currentFontFamily);
   inp.style.fontSize = fontPx+'px';
   inp.style.fontWeight = currentBold ? 'bold' : 'normal';
@@ -5891,7 +5928,7 @@ function openEditInput(screenX, screenY, screenW, screenH, initialText, onCommit
       return;
     }
     const text = inp.value || initialText || '';
-    const measureFont = `${currentItalic?'italic ':''}${currentBold?'bold ':''}${Math.max(11, currentFontSize*scale)}px ${pdfFontFamilyStack(currentFontFamily)}`;
+    const measureFont = `${currentItalic?'italic ':''}${currentBold?'bold ':''}${Math.max(1, currentFontSize*scale)}px ${pdfFontFamilyStack(currentFontFamily)}`;
     const neededW = Math.min(pageMaxW, Math.max(screenW, measureTextWidth(text, measureFont) + 10));
     inp.style.width = neededW+'px';
     inp.style.height = 'auto';
