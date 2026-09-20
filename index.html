@@ -141,6 +141,44 @@
   .menu-dropdown .tbtn{width:100%;justify-content:flex-start;}
   .menu-dropdown .sep{width:auto;height:1px;align-self:stretch;margin:4px 2px;}
 
+  /* ===== THÊM TÍNH NĂNG: nút Opacity (độ mờ đục của CHỮ và HÌNH ẢNH) =====
+     Dùng lại đúng cơ chế menu thả xuống (.menu-wrap/.menu-dropdown + setupToolbarMenu_) của các menu
+     Document/Edit/Export/Tool. Bên trong menu là thanh trượt + ô nhập số + các nút chọn nhanh. Các
+     phần tử bên trong CỐ TÌNH KHÔNG dùng class .tbtn để bấm vào chúng KHÔNG làm menu tự đóng lại
+     (setupToolbarMenu_ chỉ tự đóng khi bấm vào .tbtn) — người dùng kéo thanh trượt liên tục được. */
+  .opacity-ic{
+    display:inline-block;width:14px;height:14px;border-radius:50%;border:1.5px solid currentColor;
+    background:linear-gradient(90deg,currentColor 50%,transparent 50%);flex-shrink:0;box-sizing:border-box;
+  }
+  #opacityBadge{font-size:11px;color:var(--text-dim);min-width:30px;text-align:right;font-variant-numeric:tabular-nums;}
+  .menu-dropdown.opacity-panel{min-width:260px;padding:10px 12px;gap:9px;}
+  .opacity-panel .op-head{display:flex;align-items:center;justify-content:space-between;gap:10px;}
+  .opacity-panel .op-title{font-size:12.5px;font-weight:600;color:var(--text-light);}
+  .opacity-panel .op-target{font-size:11.5px;color:var(--text-dim);line-height:1.4;}
+  .opacity-panel .op-row{display:flex;align-items:center;gap:8px;}
+  .opacity-panel .op-unit{font-size:12px;color:var(--text-dim);}
+  #opacityRange{flex:1;min-width:0;accent-color:var(--accent);cursor:pointer;}
+  #opacityNumber{
+    width:58px;background:#1c1e22;color:var(--text-light);border:1px solid var(--border);
+    border-radius:5px;padding:4px 6px;font-size:12px;
+  }
+  /* Ô xem trước: nền caro (để thấy rõ độ trong suốt) + 1 khối đen có độ mờ đục đúng bằng giá trị đang chọn. */
+  .op-swatch{
+    position:relative;width:34px;height:20px;border-radius:4px;border:1px solid var(--border);overflow:hidden;flex-shrink:0;
+    background-color:#fff;
+    background-image:linear-gradient(45deg,#c9c9c9 25%,transparent 25%,transparent 75%,#c9c9c9 75%),
+                     linear-gradient(45deg,#c9c9c9 25%,transparent 25%,transparent 75%,#c9c9c9 75%);
+    background-size:8px 8px;background-position:0 0,4px 4px;
+  }
+  .op-swatch i{position:absolute;inset:0;background:#111;opacity:1;}
+  .op-presets{display:flex;gap:4px;}
+  .op-presets button{
+    flex:1;background:#2c3037;color:var(--text-light);border:1px solid var(--border);border-radius:5px;
+    padding:4px 0;font-size:11.5px;cursor:pointer;
+  }
+  .op-presets button:hover{background:#4a5058;}
+  .op-presets button.on{background:var(--tool-active);border-color:#6a7fa0;}
+
   .tbtn.primary:hover{background:var(--accent-dim);}
   #colorSwatch, #whiteoutColorSwatch, #fontColorSwatch{width:20px;height:20px;border-radius:4px;border:1px solid var(--border);cursor:pointer;padding:0;}
   #fontFamilySelect, #fontSizeInput{
@@ -1210,6 +1248,35 @@
   <button class="tbtn" id="btnAlignCenter" title="Canh giữa (áp dụng cho chữ đang chọn hoặc chữ sắp gõ tiếp theo)"><span class="align-ic al-center"><span></span><span></span><span></span></span></button>
   <button class="tbtn" id="btnAlignRight" title="Canh phải (áp dụng cho chữ đang chọn hoặc chữ sắp gõ tiếp theo)"><span class="align-ic al-right"><span></span><span></span><span></span></span></button>
   <button class="tbtn" id="btnAlignJustify" title="Canh đều 2 bên (áp dụng cho chữ đang chọn hoặc chữ sắp gõ tiếp theo) — dòng cuối cùng của đoạn vẫn canh trái như quy ước thông thường"><span class="align-ic al-justify"><span></span><span></span><span></span></span></button>
+  <div class="sep"></div>
+
+  <!-- ===== THÊM TÍNH NĂNG: nút Opacity — điều chỉnh ĐỘ MỜ ĐỤC (0% = trong suốt hoàn toàn, 100% = đặc) của
+       CHỮ và HÌNH ẢNH. Cách dùng: dùng công cụ Select bấm chọn 1 khối chữ hoặc 1 ảnh đã chèn rồi kéo thanh
+       trượt (hoặc gõ số/bấm nút chọn nhanh). Khi KHÔNG chọn gì, giá trị này là độ mờ đục mặc định cho chữ
+       gõ mới (giống cách B/I/U/canh chữ hoạt động). Xem opacitySupported_/applyOpacityPct_/
+       refreshOpacityControl ở phần script bên dưới. -->
+  <div class="menu-wrap" id="opacityMenuWrap">
+    <button class="tbtn" id="btnOpacityMenu" title="Opacity — chỉnh độ mờ đục của chữ / hình ảnh đang chọn (công cụ Select). Khi không chọn gì: áp dụng cho chữ gõ mới"><span class="opacity-ic"></span>Opacity <span id="opacityBadge">100%</span></button>
+    <div class="menu-dropdown opacity-panel" id="opacityMenuDropdown">
+      <div class="op-head">
+        <span class="op-title">Độ mờ đục (Opacity)</span>
+        <span class="op-swatch" title="Xem trước"><i id="opacitySwatchFill"></i></span>
+      </div>
+      <div class="op-target" id="opacityTargetLabel"></div>
+      <div class="op-row">
+        <input type="range" id="opacityRange" min="0" max="100" step="1" value="100" title="Kéo để chỉnh độ mờ đục">
+        <input type="number" id="opacityNumber" min="0" max="100" step="1" value="100" title="Gõ độ mờ đục (0–100)">
+        <span class="op-unit">%</span>
+      </div>
+      <div class="op-presets" id="opacityPresets">
+        <button type="button" data-op="100">100%</button>
+        <button type="button" data-op="75">75%</button>
+        <button type="button" data-op="50">50%</button>
+        <button type="button" data-op="25">25%</button>
+        <button type="button" data-op="10">10%</button>
+      </div>
+    </div>
+  </div>
   <div class="sep"></div>
 
   <button class="tbtn" id="btnUndo" title="Hoàn tác"><span class="ic">↩️</span>Undo</button>
@@ -2325,7 +2392,9 @@ function computeWordSpacingExtraForPdf(font, ed){
 // này (đúng chiều đọc trái->phải tự nhiên trên màn hình, không phụ thuộc trang có xoay hay không) —
 // chỉ tới đúng lúc vẽ TỪNG TỪ mới quy đổi điểm neo của từ đó sang hệ toạ độ thật của trang qua
 // rotInfo.toRaw(), kèm rotate=rot để chữ luôn đọc đúng chiều sau khi trình xem PDF áp dụng /Rotate.
-function drawLineWithWordSpacing(page, line, startX, y, fontSize, font, color, fallbackFont, extra, bold, xSkew, rotInfo){
+function drawLineWithWordSpacing(page, line, startX, y, fontSize, font, color, fallbackFont, extra, bold, xSkew, rotInfo, opacity){
+  // THÊM TÍNH NĂNG Opacity: chỉ truyền "opacity" cho pdf-lib khi < 1 để đầu ra của chữ đặc giữ NGUYÊN như cũ.
+  const opacityOpt = (typeof opacity === 'number' && opacity < 1) ? { opacity } : {};
   const words = String(line).split(' ');
   let x = startX;
   let lastWordEndX = startX;
@@ -2334,7 +2403,7 @@ function drawLineWithWordSpacing(page, line, startX, y, fontSize, font, color, f
     const w = words[i];
     if(w){
       const pivot = rotInfo ? rotInfo.toRaw(x, y) : { x, y };
-      drawStyledText(page, w, { x: pivot.x, y: pivot.y, size: fontSize, font, color, xSkew, rotate: rotDeg }, fallbackFont, bold);
+      drawStyledText(page, w, { x: pivot.x, y: pivot.y, size: fontSize, font, color, xSkew, rotate: rotDeg, ...opacityOpt }, fallbackFont, bold);
     }
     let ww, sw;
     try{ ww = font.widthOfTextAtSize(w, fontSize); }catch(e){ ww = w.length*fontSize*0.55; }
@@ -2351,7 +2420,8 @@ function drawLineWithWordSpacing(page, line, startX, y, fontSize, font, color, f
 // lines.starts[] do wrapTextForPdfFont() trả về). Vẫn tự cộng dồn toạ độ X giữa các cụm màu, và vẫn
 // cộng thêm "extra" (bù khoảng cách canvas<->pdf, xem computeWordSpacingExtraForPdf) sau mỗi dấu
 // cách gặp trong cụm, để khớp đúng với cách vẽ có word-spacing ở drawLineWithWordSpacing.
-function drawLineColored(page, line, lineStartOffset, colorAt, fallbackColor, startX, y, fontSize, font, fallbackFont, extra, bold, xSkew, rotInfo){
+function drawLineColored(page, line, lineStartOffset, colorAt, fallbackColor, startX, y, fontSize, font, fallbackFont, extra, bold, xSkew, rotInfo, opacity){
+  const opacityOpt = (typeof opacity === 'number' && opacity < 1) ? { opacity } : {}; // xem drawLineWithWordSpacing
   let x = startX;
   let widthDrawn = 0;
   const rotDeg = rotInfo && rotInfo.rot ? degrees(rotInfo.rot) : undefined;
@@ -2366,7 +2436,7 @@ function drawLineColored(page, line, lineStartOffset, colorAt, fallbackColor, st
     if(sub){
       const [r,g,b] = hexToRgbFloats(col);
       const pivot = rotInfo ? rotInfo.toRaw(x, y) : { x, y };
-      drawStyledText(page, sub, { x: pivot.x, y: pivot.y, size: fontSize, font, color: rgb(r,g,b), xSkew, rotate: rotDeg }, fallbackFont, bold);
+      drawStyledText(page, sub, { x: pivot.x, y: pivot.y, size: fontSize, font, color: rgb(r,g,b), xSkew, rotate: rotDeg, ...opacityOpt }, fallbackFont, bold);
     }
     let subW;
     try{ subW = font.widthOfTextAtSize(sub, fontSize); }catch(e){ subW = sub.length*fontSize*0.55; }
@@ -2462,7 +2532,9 @@ async function drawEditOnPdfPage(page, ed, rotInfo, font, fallbackFont, outDoc, 
     // Ảnh có "chiều" (không được để bị xoay lệch) -> dùng góc dưới-trái (hệ hiển thị) làm điểm neo,
     // giữ nguyên width/height gốc (không tráo) và vẽ với rotate=rot để bù lại đúng góc /Rotate.
     const pivot = rotInfo.toRaw(ed.x, ed.y + ed.h);
-    page.drawImage(embedded, { x: pivot.x, y: pivot.y, width: ed.w, height: ed.h, rotate: rotDeg });
+    // THÊM TÍNH NĂNG Opacity: ảnh mờ đục < 100% -> ghi ExtGState /ca thật của PDF (mọi trình xem đều thấy đúng).
+    const imgOpacity_ = editOpacity_(ed);
+    page.drawImage(embedded, { x: pivot.x, y: pivot.y, width: ed.w, height: ed.h, rotate: rotDeg, ...(imgOpacity_ < 1 ? { opacity: imgOpacity_ } : {}) });
   } else if(ed.type === 'highlight'){
     const [r,g,b] = hexToRgbFloats(ed.color);
     const rr = rawRectFromDisplay_(rotInfo, ed.x, ed.y, ed.w, ed.h);
@@ -2531,6 +2603,10 @@ async function drawEditOnPdfPage(page, ed, rotInfo, font, fallbackFont, outDoc, 
     // gấp đôi/dày bất thường so với dáng Bold thật. fauxBold (truyền từ buildEditedOutDoc) chỉ còn
     // true khi ed.bold=true NHƯNG đang phải dùng font Việt hoá dùng chung (không có bản Bold thật).
     const boldForDraw = (fauxBold !== undefined) ? fauxBold : ed.bold;
+    // THÊM TÍNH NĂNG Opacity: độ mờ đục của CHỮ (nền che ed.bg ở trên vẫn đặc 100%). Chỉ đưa vào các lệnh
+    // vẽ khi < 1 để chữ đặc (trường hợp phổ biến) cho ra file PDF y hệt như trước.
+    const textOpacity = editOpacity_(ed);
+    const textOpacityOpt = textOpacity < 1 ? { opacity: textOpacity } : {};
     let baseYDisp = ed.y + fontSize*0.85;
     for(let li=0; li<lines.length; li++){
       const line = lines[li];
@@ -2556,12 +2632,12 @@ async function drawEditOnPdfPage(page, ed, rotInfo, font, fallbackFont, outDoc, 
       let lineWidth = 0;
       if(colorAtMap){
         const lineStart = lines.starts ? lines.starts[li] : 0;
-        lineWidth = drawLineColored(page, line, lineStart, colorAtMap, (ed.color||'#000000'), startXDisp, baseYDisp, fontSize, font, fallbackFont, lineExtra, boldForDraw, italicSkew, rotInfo);
+        lineWidth = drawLineColored(page, line, lineStart, colorAtMap, (ed.color||'#000000'), startXDisp, baseYDisp, fontSize, font, fallbackFont, lineExtra, boldForDraw, italicSkew, rotInfo, textOpacity);
       } else if(lineExtra){
-        lineWidth = drawLineWithWordSpacing(page, line, startXDisp, baseYDisp, fontSize, font, rgb(r,g,b), fallbackFont, lineExtra, boldForDraw, italicSkew, rotInfo);
+        lineWidth = drawLineWithWordSpacing(page, line, startXDisp, baseYDisp, fontSize, font, rgb(r,g,b), fallbackFont, lineExtra, boldForDraw, italicSkew, rotInfo, textOpacity);
       } else {
         const pivot = rotInfo.toRaw(startXDisp, baseYDisp);
-        drawStyledText(page, line, { x: pivot.x, y: pivot.y, size: fontSize, font, color: rgb(r,g,b), xSkew: italicSkew, rotate: rotDeg }, fallbackFont, boldForDraw);
+        drawStyledText(page, line, { x: pivot.x, y: pivot.y, size: fontSize, font, color: rgb(r,g,b), xSkew: italicSkew, rotate: rotDeg, ...textOpacityOpt }, fallbackFont, boldForDraw);
         lineWidth = naturalWidth;
       }
       // Gạch chân: vẽ 1 đường thẳng ngay dưới dòng chữ vừa vẽ, dài đúng bằng độ rộng dòng đó (kể cả
@@ -2576,7 +2652,8 @@ async function drawEditOnPdfPage(page, ed, rotInfo, font, fallbackFont, outDoc, 
           start: { x: p1.x, y: p1.y },
           end: { x: p2.x, y: p2.y },
           thickness: Math.max(0.6, fontSize*0.055),
-          color: rgb(r,g,b)
+          color: rgb(r,g,b),
+          ...textOpacityOpt
         });
       }
       baseYDisp += fontSize*1.15;
@@ -2647,6 +2724,10 @@ let currentUnderline = false;
 // được đồng bộ (syncFontControlsToSelection) theo đúng kiểu canh của khối chữ đang được chọn.
 // Chỉ nhận 1 trong 4 giá trị: 'left' | 'center' | 'right' | 'justify'.
 let currentAlign = 'left';
+// THÊM TÍNH NĂNG: Opacity (đơn vị %, 0–100). Đây là độ mờ đục MẶC ĐỊNH cho chữ MỚI gõ vào khi KHÔNG có
+// khối chữ/ảnh nào đang được chọn. Khi có 1 khối chữ hoặc ảnh đang được chọn (công cụ Select), thanh
+// trượt Opacity đọc/ghi trực tiếp giá trị riêng (ed.opacity, 0–1) của khối đó thay vì biến này.
+let currentOpacity = 100;
 // Tham chiếu tới ô nhập liệu (textarea) nổi đang mở, nếu có — dùng để cập nhật font/cỡ chữ
 // NGAY LẬP TỨC khi người dùng đổi 2 ô "Font chữ"/"Cỡ chữ" trong lúc đang gõ sửa, thay vì
 // phải gõ xong rồi mới thấy đổi (hoặc tệ hơn là không đổi được gì cả).
@@ -3323,7 +3404,12 @@ async function addImageEditToPage_(idx, pngDataUrl, naturalW, naturalH, opts){
   const size = await getPageSizePt_(idx);
   const box = computeImagePlacement_(size.w, size.h, naturalW, naturalH, opts);
   pushUndo(idx);
-  p.edits.push({ type:'image', x: box.x, y: box.y, w: box.w, h: box.h, imageDataUrl: pngDataUrl });
+  const imgEdit = { type:'image', x: box.x, y: box.y, w: box.w, h: box.h, imageDataUrl: pngDataUrl };
+  // THÊM TÍNH NĂNG Opacity: ảnh dán lại từ Copy trong app giữ nguyên độ mờ đục của ảnh gốc.
+  if(opts && typeof opts.opacity === 'number' && isFinite(opts.opacity) && opts.opacity < 1){
+    imgEdit.opacity = Math.max(0, opts.opacity);
+  }
+  p.edits.push(imgEdit);
   return p.edits.length - 1;
 }
 
@@ -3614,7 +3700,7 @@ async function copySelectedImage(){
     console.warn('Không tạo được ảnh chụp theo kích thước hiện tại, dùng ảnh gốc:', err);
   }
 
-  appImageClipboard = { dataUrl: snapshotDataUrl, w: ed.w, h: ed.h, pxW, pxH };
+  appImageClipboard = { dataUrl: snapshotDataUrl, w: ed.w, h: ed.h, pxW, pxH, opacity: (editOpacity_(ed) < 1 ? editOpacity_(ed) : undefined) };
 
   try{
     if(navigator.clipboard && window.ClipboardItem){
@@ -3663,7 +3749,7 @@ async function pasteImage(){
             const own = appImageClipboard && appImageClipboard.pxW === w && appImageClipboard.pxH === h;
             if(own){
               await insertImageDataUrl_(pngDataUrl, w, h,
-                { offset: 14, exactW: appImageClipboard.w, exactH: appImageClipboard.h });
+                { offset: 14, exactW: appImageClipboard.w, exactH: appImageClipboard.h, opacity: appImageClipboard.opacity });
             } else {
               await insertImageDataUrl_(pngDataUrl, w, h);
             }
@@ -3683,7 +3769,7 @@ async function pasteImage(){
     if(appImageClipboard){
       await insertImageDataUrl_(appImageClipboard.dataUrl, appImageClipboard.pxW || appImageClipboard.w,
         appImageClipboard.pxH || appImageClipboard.h,
-        { offset: 14, exactW: appImageClipboard.w, exactH: appImageClipboard.h });
+        { offset: 14, exactW: appImageClipboard.w, exactH: appImageClipboard.h, opacity: appImageClipboard.opacity });
       showToast_('📌 Đã dán ảnh (từ clipboard trong PDF này).');
       return;
     }
@@ -4629,6 +4715,8 @@ function redrawOverlay(){
     if(lines && lines.length) drawAllTextLineBoxes(lines);
   }
   if((activeTool==='ocr' || activeTool==='edittext') && hoverLine) drawHoverLineBox(hoverLine);
+  // Đồng bộ thanh Opacity theo khối chữ/ảnh đang chọn (nếu có) — xem refreshOpacityControl.
+  refreshOpacityControl();
 }
 
 // Khi bật công cụ "Edit Text": khoanh nhẹ TẤT CẢ các dòng chữ có thể sửa trên trang (viền xanh mờ),
@@ -4816,6 +4904,12 @@ function hitTestEdits(px, py){
   return -1;
 }
 
+// Độ mờ đục (0–1) của 1 edit; không có thuộc tính opacity (mọi edit/file cũ) = 1 (đặc hoàn toàn).
+function editOpacity_(e){
+  const o = (e && typeof e.opacity === 'number' && isFinite(e.opacity)) ? e.opacity : 1;
+  return Math.max(0, Math.min(1, o));
+}
+
 function drawEdit(ctx, e, s){
   if(e.type === 'highlight'){
     ctx.fillStyle = hexToRgba(e.color, 0.35);
@@ -4834,7 +4928,15 @@ function drawEdit(ctx, e, s){
     // THÊM TÍNH NĂNG (tô màu từng phần chữ): truyền thêm e.colorRuns (nếu có, xem openEditInput/
     // extractRunsFromEditable_) để wrapText() vẽ từng cụm ký tự đúng theo màu riêng của nó thay vì
     // luôn 1 màu duy nhất (e.color) cho cả đoạn.
-    wrapText(ctx, e.text, e.x*s+2, e.y*s+1, e.w*s-4, e.fontSize*s*1.15, e.underline, e.align, e.colorRuns, e.color || '#000000');
+    // THÊM TÍNH NĂNG Opacity: chỉ áp độ mờ đục cho CHỮ (nền che ở trên vẫn đặc 100%, để chữ gốc bên dưới
+    // không lòi ra). Luôn trả lại globalAlpha cũ (try/finally) để không làm mờ nhầm các edit vẽ sau.
+    const prevAlpha_ = ctx.globalAlpha;
+    ctx.globalAlpha = prevAlpha_ * editOpacity_(e);
+    try{
+      wrapText(ctx, e.text, e.x*s+2, e.y*s+1, e.w*s-4, e.fontSize*s*1.15, e.underline, e.align, e.colorRuns, e.color || '#000000');
+    } finally {
+      ctx.globalAlpha = prevAlpha_;
+    }
     ctx.wordSpacing = '0px';
   } else if(e.type === 'draw'){
     ctx.strokeStyle = e.color; ctx.lineWidth = e.width*s; ctx.lineCap='round'; ctx.lineJoin='round';
@@ -4869,7 +4971,14 @@ function getOrLoadImageEl_(dataUrl){
 function drawImageEdit(ctx, e, s){
   const img = getOrLoadImageEl_(e.imageDataUrl);
   if(img.complete && img.naturalWidth > 0){
-    ctx.drawImage(img, e.x*s, e.y*s, e.w*s, e.h*s);
+    // THÊM TÍNH NĂNG Opacity cho ảnh chèn.
+    const prevAlpha_ = ctx.globalAlpha;
+    ctx.globalAlpha = prevAlpha_ * editOpacity_(e);
+    try{
+      ctx.drawImage(img, e.x*s, e.y*s, e.w*s, e.h*s);
+    } finally {
+      ctx.globalAlpha = prevAlpha_;
+    }
   } else {
     ctx.save();
     ctx.strokeStyle = '#9aa0a8'; ctx.setLineDash([4,3]);
@@ -5351,6 +5460,127 @@ document.getElementById('btnAlignLeft').onclick = ()=> setTextAlign('left');
 document.getElementById('btnAlignCenter').onclick = ()=> setTextAlign('center');
 document.getElementById('btnAlignRight').onclick = ()=> setTextAlign('right');
 document.getElementById('btnAlignJustify').onclick = ()=> setTextAlign('justify');
+
+// ===== THÊM TÍNH NĂNG: nút Opacity (độ mờ đục của chữ và hình ảnh) =====
+// Dữ liệu: mỗi edit chữ ('text'/'ocrfix'/'textfix') hoặc ảnh ('image') có thể có thêm thuộc tính
+// "opacity" (số 0–1). KHÔNG có thuộc tính này = 1 (đặc hoàn toàn) nên mọi file/edit cũ vẫn hiển thị
+// và xuất y như trước. Khi người dùng đưa về 100% thì thuộc tính bị xoá hẳn (không lưu opacity:1).
+// Vẽ: xem drawEdit/drawImageEdit (màn hình) và drawEditOnPdfPage (xuất PDF). Nền che chữ gốc (bg) LUÔN
+// giữ đặc 100% — chỉ phần CHỮ mới mờ đi — để chữ gốc bên dưới không bao giờ lòi ra.
+function opacitySupported_(ed){
+  return !!ed && (isTextEdit(ed) || ed.type === 'image');
+}
+// Đối tượng mà thanh Opacity đang điều khiển: khối chữ/ảnh đang chọn trên trang hiện tại (hoặc null).
+function getOpacityTargetEdit_(){
+  if(!pages.length || selectedEditIndex < 0) return null;
+  const ed = cur().edits[selectedEditIndex];
+  return opacitySupported_(ed) ? ed : null;
+}
+function currentOpacityPct_(){
+  const t = getOpacityTargetEdit_();
+  return t ? Math.round(editOpacity_(t) * 100) : currentOpacity;
+}
+let opacityUndoPushed_ = false; // mỗi lần kéo thanh trượt chỉ ghi 1 bước Undo (không phải mỗi pixel kéo)
+// Đồng bộ toàn bộ giao diện Opacity (thanh trượt, ô số, nhãn trên nút, ô xem trước, nút chọn nhanh, dòng
+// mô tả đối tượng đang chỉnh) theo đúng giá trị hiện tại. Được gọi cuối redrawOverlay() nên tự cập nhật
+// mỗi khi người dùng chọn/bỏ chọn/đổi trang/Undo... Không ghi đè ô đang được gõ/kéo dở (activeElement).
+let _opEls = null;
+function refreshOpacityControl(){
+  if(!_opEls){
+    const rangeEl = document.getElementById('opacityRange');
+    if(!rangeEl) return;
+    _opEls = {
+      range: rangeEl,
+      num: document.getElementById('opacityNumber'),
+      badge: document.getElementById('opacityBadge'),
+      label: document.getElementById('opacityTargetLabel'),
+      swatch: document.getElementById('opacitySwatchFill'),
+      presets: Array.from(document.querySelectorAll('#opacityPresets button'))
+    };
+  }
+  const el = _opEls;
+  const target = getOpacityTargetEdit_();
+  const pct = target ? Math.round(editOpacity_(target) * 100) : currentOpacity;
+  const str = String(pct);
+  if(document.activeElement !== el.range && el.range.value !== str) el.range.value = str;
+  if(document.activeElement !== el.num && el.num.value !== str) el.num.value = str;
+  el.badge.textContent = pct + '%';
+  el.swatch.style.opacity = String(pct / 100);
+  for(const b of el.presets) b.classList.toggle('on', Number(b.dataset.op) === pct);
+  const lbl = target
+    ? (target.type === 'image' ? 'Đang chỉnh: hình ảnh đang chọn.' : 'Đang chỉnh: khối chữ đang chọn.')
+    : 'Chưa chọn chữ/ảnh nào (công cụ Select) — giá trị này áp dụng cho chữ gõ mới.';
+  if(el.label.textContent !== lbl) el.label.textContent = lbl;
+}
+// Áp dụng độ mờ đục (%, 0–100) lên khối chữ/ảnh đang chọn; nếu không chọn gì thì lưu làm mặc định cho chữ mới.
+function applyOpacityPct_(raw){
+  let pct = Number(raw);
+  if(!isFinite(pct)) return;
+  pct = Math.max(0, Math.min(100, Math.round(pct)));
+  const target = getOpacityTargetEdit_();
+  if(target){
+    if(Math.round(editOpacity_(target) * 100) === pct){ refreshOpacityControl(); return; }
+    if(!opacityUndoPushed_){ pushUndo(currentIndex); opacityUndoPushed_ = true; }
+    if(pct >= 100) delete target.opacity; else target.opacity = pct / 100;
+    redrawOverlay(); // đã gọi refreshOpacityControl() ở cuối
+  } else {
+    currentOpacity = pct;
+    refreshOpacityControl();
+  }
+}
+// Độ mờ đục dùng khi TẠO chữ mới (xem các nơi push edit type text/textfix/ocrfix).
+function newTextOpacityProps_(){
+  return currentOpacity < 100 ? { opacity: currentOpacity / 100 } : {};
+}
+(function setupOpacityControls_(){
+  const rangeEl = document.getElementById('opacityRange');
+  const numEl = document.getElementById('opacityNumber');
+  const btn = document.getElementById('btnOpacityMenu');
+  const dd = document.getElementById('opacityMenuDropdown');
+  if(!rangeEl || !numEl || !btn || !dd) return;
+  setupToolbarMenu_('opacityMenuWrap', 'btnOpacityMenu', 'opacityMenuDropdown');
+  // Mở menu: đồng bộ giá trị mới nhất, và nếu bảng bị tràn ra mép phải cửa sổ thì canh sang mép phải nút.
+  btn.addEventListener('click', ()=>{
+    refreshOpacityControl();
+    requestAnimationFrame(()=>{
+      dd.style.left = ''; dd.style.right = '';
+      if(!dd.classList.contains('open')) return;
+      const r = dd.getBoundingClientRect();
+      if(r.right > window.innerWidth - 8){ dd.style.left = 'auto'; dd.style.right = '0'; }
+    });
+  });
+  // Thanh trượt: cập nhật SỐNG khi kéo (input), chốt 1 bước Undo cho cả lần kéo (reset ở pointerup/change).
+  rangeEl.addEventListener('input', ()=> applyOpacityPct_(rangeEl.value));
+  rangeEl.addEventListener('change', ()=>{ opacityUndoPushed_ = false; });
+  rangeEl.addEventListener('pointerup', ()=>{
+    opacityUndoPushed_ = false;
+    // Trả focus về trang sau khi kéo xong bằng chuột: phím Delete/Ctrl+C/Ctrl+V của trình soạn thảo
+    // (window keydown) bỏ qua khi focus đang nằm trong ô INPUT, nên nếu để thanh trượt giữ focus thì các
+    // phím tắt đó sẽ không hoạt động cho tới khi bấm ra chỗ khác.
+    setTimeout(()=> rangeEl.blur(), 0);
+  });
+  // Ô số: áp dụng ngay khi gõ (bỏ qua lúc ô đang trống), chuẩn hoá lại giá trị khi rời ô/nhấn Enter.
+  numEl.addEventListener('input', ()=>{
+    if(numEl.value.trim() === '') return;
+    applyOpacityPct_(numEl.value);
+  });
+  numEl.addEventListener('change', ()=>{
+    opacityUndoPushed_ = false;
+    const v = Number(numEl.value);
+    if(numEl.value.trim() !== '' && isFinite(v)) applyOpacityPct_(v);
+    numEl.value = String(currentOpacityPct_());
+  });
+  numEl.addEventListener('keydown', (e)=>{ if(e.key === 'Enter'){ e.preventDefault(); numEl.blur(); } });
+  // Các nút chọn nhanh 100/75/50/25/10 %.
+  document.querySelectorAll('#opacityPresets button').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      opacityUndoPushed_ = false;
+      applyOpacityPct_(b.dataset.op);
+      opacityUndoPushed_ = false;
+    });
+  });
+  refreshOpacityControl();
+})();
 // Khi chọn (select) một khối văn bản trên trang, đồng bộ 2 ô Font chữ / Cỡ chữ theo khối đó
 // để người dùng biết đang chỉnh sửa với thông số nào.
 function syncFontControlsToSelection(){
@@ -5782,7 +6012,7 @@ function buildRegionEdits(mode, region, originalLines, editedText, fallbackFontS
         // sau này người dùng có thể kéo thu nhỏ khung chữ mà không lộ lại chữ gốc.
         coverX: region.x, coverY: cy0, coverW: region.w, coverH: ch,
         text: newTextJoined, fontSize, fontFamily: currentFontFamily, color: currentFontColor,
-        bold: currentBold, italic: currentItalic, underline: currentUnderline, bg:true, bgColor,
+        bold: currentBold, italic: currentItalic, underline: currentUnderline, bg:true, bgColor, ...newTextOpacityProps_(),
         // Chỉ đặt origLineW khi hunk này khớp với ĐÚNG MỘT dòng gốc (trường hợp phổ biến nhất khi
         // sửa nhanh theo vùng) — để applyOriginalSpacing() có thể canh khoảng cách chữ mới cho khớp
         // với độ rộng thật của dòng gốc, giống hệt cách xử lý ở editLineAt().
@@ -5833,7 +6063,7 @@ async function bulkEditRegion(mode){
         if(newVal.trim()){
           const bgColor = sampleBackgroundColor(region.x, region.y, region.w, region.h);
           removeOverlappingTextEdits(cur(), region.x, region.y, region.x+region.w, region.y+region.h);
-          cur().edits.push({ type: mode==='ocr' ? 'ocrfix' : 'textfix', x:region.x, y:region.y, w:region.w, h:region.h, coverX:region.x, coverY:region.y, coverW:region.w, coverH:region.h, text:newVal, fontSize, fontFamily: currentFontFamily, color: currentFontColor, bold: currentBold, italic: currentItalic, underline: currentUnderline, bg:true, bgColor });
+          cur().edits.push({ type: mode==='ocr' ? 'ocrfix' : 'textfix', x:region.x, y:region.y, w:region.w, h:region.h, coverX:region.x, coverY:region.y, coverW:region.w, coverH:region.h, text:newVal, fontSize, fontFamily: currentFontFamily, color: currentFontColor, bold: currentBold, italic: currentItalic, underline: currentUnderline, bg:true, bgColor, ...newTextOpacityProps_() });
         }
       } else {
         const newEdits = buildRegionEdits(mode, region, originalLines, newVal, fontSize);
@@ -6391,7 +6621,7 @@ overlayCanvas.addEventListener('mousedown', (e)=>{
         pushUndo(currentIndex);
         const newIdx = cur().edits.length;
         const auto = computeAutoBoxSize(val, currentFontFamily, currentFontSize, pdfP.x, currentBold, currentItalic);
-        cur().edits.push({type:'text', x:pdfP.x, y:pdfP.y, w:auto.w, h:auto.h, text:val, fontSize:currentFontSize, fontFamily: currentFontFamily, color: currentFontColor, colorRuns, bold: currentBold, italic: currentItalic, underline: currentUnderline, align: currentAlign, bg:false});
+        cur().edits.push({type:'text', x:pdfP.x, y:pdfP.y, w:auto.w, h:auto.h, text:val, fontSize:currentFontSize, fontFamily: currentFontFamily, color: currentFontColor, colorRuns, bold: currentBold, italic: currentItalic, underline: currentUnderline, align: currentAlign, bg:false, ...newTextOpacityProps_()});
         selectedEditIndex = newIdx;
         redrawOverlay();
       }
@@ -6553,7 +6783,8 @@ function editLineAt(px, py, editType, customLines){
         p.edits.push({
           type:'text', x:pdfP.x, y:pdfP.y, w:auto.w, h:auto.h,
           text:val, fontSize: currentFontSize, fontFamily: currentFontFamily, color: currentFontColor, colorRuns,
-          bold: currentBold, italic: currentItalic, underline: currentUnderline, align: currentAlign, bg:false
+          bold: currentBold, italic: currentItalic, underline: currentUnderline, align: currentAlign, bg:false,
+          ...newTextOpacityProps_()
         });
         selectedEditIndex = newIdx;
         redrawOverlay();
@@ -6703,6 +6934,7 @@ function editLineAt(px, py, editType, customLines){
         coverX: cx0, coverY: cy0, coverW: cw, coverH: ch,
         text: val, fontSize, fontFamily: currentFontFamily, color: currentFontColor, colorRuns,
         bold: currentBold, italic: currentItalic, underline: currentUnderline, align: currentAlign, bg:true, bgColor,
+        ...newTextOpacityProps_(),
         // Lưu lại vị trí/kích thước GỐC của dòng chữ (trước khi khung được nới rộng ra cho nội
         // dung mới) — dùng để so khớp ở findOverlappingTextEdit, không đổi kể cả khi ed.x/y/w/h
         // đã phình to hơn nhiều so với dòng gốc lúc ban đầu.
@@ -7614,7 +7846,7 @@ async function buildEditedOutDoc(indexes, spinnerLabel){
         // NativeTextEngine chỉ thay glyph chữ trong content stream gốc, giữ nguyên đúng 1 màu chữ có
         // sẵn của PDF gốc, không thể tô riêng từng phần; những dòng này cần rơi về cách "che nền + vẽ
         // chữ mới đè lên" (drawEditOnPdfPage, đã hỗ trợ colorRuns ở trên) mới hiện đúng nhiều màu.
-        const nativeEdits = p.edits.filter(ed => ed.type==='textfix' && ed.nativeItemIdxs && ed.nativeItemIdxs.length && !ed.bold && !ed.italic && !ed.underline && !(ed.colorRuns && ed.colorRuns.length));
+        const nativeEdits = p.edits.filter(ed => ed.type==='textfix' && ed.nativeItemIdxs && ed.nativeItemIdxs.length && !ed.bold && !ed.italic && !ed.underline && !(ed.colorRuns && ed.colorRuns.length) && !(editOpacity_(ed) < 1));
         if(nativeEdits.length){
           nativeStats.eligible += nativeEdits.length;
           const pdfjsPage = await p.doc.getPage(p.srcPage);
@@ -8545,6 +8777,16 @@ async function extractPageImagesForWord(idx, W, H){
   return images;
 }
 
+// Pha màu hex (#rrggbb) với màu trắng theo độ mờ đục alpha (0–1): alpha=1 giữ nguyên màu, alpha=0 ra trắng.
+function blendHexWithWhite_(hex, alpha){
+  if(!(alpha < 1)) return hex;
+  const m = /^#?([0-9a-f]{6})$/i.exec(String(hex||'').trim());
+  if(!m) return hex;
+  const v = parseInt(m[1], 16);
+  const ch = [(v>>16)&255, (v>>8)&255, v&255].map(c => Math.round(c*alpha + 255*(1-alpha)));
+  return '#' + ch.map(c => c.toString(16).padStart(2,'0')).join('');
+}
+
 // Trả về danh sách "dòng đang hiển thị" của một trang, kèm toạ độ (điểm/point,
 // gốc góc trên-trái trang — giống hệ toạ độ đã dùng cho Edit Text) + cỡ chữ +
 // màu chữ. Danh sách này GỘP CẢ: (1) chữ PDF thật / chữ OCR còn nguyên (chưa bị
@@ -8593,7 +8835,9 @@ async function getPageVisualLinesForWord(idx){
   for(const ed of (p.edits||[])){
     if(!isTextEdit(ed) || !ed.text || !ed.text.trim()) continue;
     const x1 = ed.x + (ed.w || (ed.text.length*(ed.fontSize||12)*0.5));
-    lines.push({ x0:ed.x, x1, y0:ed.y, fontSize: ed.fontSize||12, text: ed.text, color: ed.color||'#000000' });
+    // THÊM TÍNH NĂNG Opacity: file Word xuất ra là chữ thường (không có khái niệm độ trong suốt) nên
+    // chữ mờ đục được pha sẵn với màu nền trắng của trang để trông đúng độ nhạt đã chỉnh.
+    lines.push({ x0:ed.x, x1, y0:ed.y, fontSize: ed.fontSize||12, text: ed.text, color: blendHexWithWhite_(ed.color||'#000000', editOpacity_(ed)) });
   }
   lines.sort((a,b)=> a.y0-b.y0 || a.x0-b.x0);
   return { lines, W: W||612, H: H||792 };
