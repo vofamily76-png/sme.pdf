@@ -9432,7 +9432,7 @@ async function buildWordPageHtml(idx){
 }
 
 // Xuất Word cho ĐÚNG danh sách chỉ số trang được chọn (theo thứ tự tăng dần trong tài liệu).
-async function exportWordSelected(indices){
+async function exportWordSelectedLegacy_(indices){
   if(!indices || !indices.length){ alert('Hãy chọn ít nhất một trang để xuất.'); return; }
   flushPendingEdit(); // chốt chỉnh sửa dang dở trước khi đọc nội dung để xuất Word
   const spinner = document.getElementById('spinner');
@@ -10593,6 +10593,1836 @@ document.getElementById('ppConfirmBtn').addEventListener('click', async () => {
   closeExportPptxModal();
   await exportPptxSelected(selected);
 });
+
+</script>
+
+<!-- ===== Xuất Word mới: phân tích bố cục ảnh + tạo .docx thật (OOXML). Ghi đè exportWordSelected; bản cũ còn lại làm dự phòng (exportWordSelectedLegacy_). ===== -->
+<script id="wx-word-export">
+/* ===== WX image analysis — hàm thuần (không DOM), chạy được cả trong Node lẫn trình duyệt ===== */
+const WXI = (function(){
+  'use strict';
+
+  // ---- Tiện ích cơ bản ----
+  function grayOf(rgba, w, h){
+    const g = new Uint8Array(w*h);
+    for(let i=0,j=0;i<g.length;i++,j+=4) g[i] = (rgba[j]*299 + rgba[j+1]*587 + rgba[j+2]*114)/1000 | 0;
+    return g;
+  }
+  function otsu(hist, total){
+    let sum=0; for(let i=0;i<256;i++) sum += i*hist[i];
+    let sumB=0, wB=0, best=128, bestVar=-1;
+    for(let t=0;t<256;t++){
+      wB += hist[t]; if(!wB) continue;
+      const wF = total - wB; if(wF<=0) break;
+      sumB += t*hist[t];
+      const mB=sumB/wB, mF=(sum-sumB)/wF;
+      const v = wB*wF*(mB-mF)*(mB-mF);
+      if(v>bestVar){ bestVar=v; best=t; }
+    }
+    return best;
+  }
+
+  // ---- Tách mực THƯỜNG (đen/xám) khỏi mực MÀU (con dấu đỏ, chữ ký xanh...) ----
+  // Trả về: { gray, ink (1=mực đen/xám), color (1=mực màu, đủ đậm), thr, paper }
+  function separateInk(rgba, w, h){
+    const n = w*h;
+    const gray = grayOf(rgba, w, h);
+    const hist = new Int32Array(256);
+    for(let i=0;i<n;i++) hist[gray[i]]++;
+    let paper=255, pc=-1;
+    for(let g=170; g<256; g++) if(hist[g]>pc){ pc=hist[g]; paper=g; }
+    const color = new Uint8Array(n);
+    // mực màu: độ bão hoà cao + không quá sáng (loại bỏ vệt hồng nhạt của nền)
+    for(let i=0,j=0;i<n;i++,j+=4){
+      const r=rgba[j], g=rgba[j+1], b=rgba[j+2];
+      const mx = r>g ? (r>b?r:b) : (g>b?g:b);
+      const mn = r<g ? (r<b?r:b) : (g<b?g:b);
+      if(mx-mn >= 40 && gray[i] < 235) color[i] = 1;
+    }
+    // Histogram chỉ tính trên điểm KHÔNG màu để ngưỡng mực đen không bị con dấu/chữ ký kéo lệch
+    const h2 = new Int32Array(256); let tot2=0;
+    for(let i=0;i<n;i++) if(!color[i]){ h2[gray[i]]++; tot2++; }
+    let thr = otsu(h2, tot2) + 35;
+    thr = Math.min(thr, paper-22);
+    thr = Math.max(105, Math.min(thr, 205));
+    const ink = new Uint8Array(n);
+    for(let i=0;i<n;i++) if(!color[i] && gray[i] < thr) ink[i] = 1;
+    // Giãn mặt nạ màu (hộp 7x7, tách 2 chiều) rồi xoá mực đen trong vùng đó: viền tối/khử răng cưa của
+    // con dấu, chữ ký không bị nhận nhầm thành chữ. Chỉ giãn quanh vùng màu ĐỦ LỚN (loại nhiễu lẻ).
+    const R=3;
+    const tmp=new Uint8Array(n), dil=new Uint8Array(n);
+    for(let y=0;y<h;y++){ const row=y*w; for(let x=0;x<w;x++){ if(color[row+x]){ const a=Math.max(0,x-R), b=Math.min(w-1,x+R); for(let xx=a;xx<=b;xx++) tmp[row+xx]=1; } } }
+    for(let x=0;x<w;x++){ for(let y=0;y<h;y++){ if(tmp[y*w+x]){ const a=Math.max(0,y-R), b=Math.min(h-1,y+R); for(let yy=a;yy<=b;yy++) dil[yy*w+x]=1; } } }
+    for(let i=0;i<n;i++) if(dil[i]) ink[i]=0;
+    return { gray, ink, color, colorDil: dil, thr, paper };
+  }
+
+  // ---- Ước lượng góc nghiêng (độ) từ mặt nạ mực: cực đại hoá "độ gai" của biểu đồ chiếu ngang ----
+  function estimateSkewDeg(mask, w, h){
+    // lấy mẫu thưa
+    let cnt=0; for(let i=0;i<mask.length;i++) if(mask[i]) cnt++;
+    if(cnt<500) return 0;
+    const stride = Math.max(1, Math.ceil(cnt/120000));
+    const xs = new Int32Array(Math.ceil(cnt/stride)+1), ys = new Int32Array(xs.length);
+    let k=0, c=0;
+    for(let y=0;y<h;y++){ const row=y*w; for(let x=0;x<w;x++){ if(mask[row+x]){ if((c++ % stride)===0){ xs[k]=x; ys[k]=y; k++; } } } }
+    function score(deg){
+      const t = Math.tan(deg*Math.PI/180);
+      const off = Math.ceil(Math.abs(t)*w)+2, size = h+2*off;
+      const acc = new Int32Array(size);
+      const cx = w/2;
+      for(let i=0;i<k;i++){
+        const b = (ys[i] + Math.round((xs[i]-cx)*t) + off)|0;
+        if(b>=0 && b<size) acc[b]++;
+      }
+      let s=0; for(let i=0;i<size;i++) s += acc[i]*acc[i];
+      return s;
+    }
+    let best=0, bs=-1;
+    for(let d=-3; d<=3.0001; d+=0.25){ const s=score(d); if(s>bs){bs=s;best=d;} }
+    for(let d=best-0.25; d<=best+0.2501; d+=0.05){ const s=score(d); if(s>bs){bs=s;best=d;} }
+    for(let d=best-0.05; d<=best+0.0501; d+=0.01){ const s=score(d); if(s>bs){bs=s;best=d;} }
+    return best;
+  }
+
+  // Xoay ảnh RGBA quanh tâm (deg > 0: xoay ngược chiều kim đồng hồ theo hệ toạ độ ảnh y-xuống) — nội suy song tuyến tính,
+  // nền ngoài mép = màu giấy.
+  function rotateRGBA(rgba, w, h, deg, bg){
+    const out = new Uint8ClampedArray(rgba.length);
+    const t = deg*Math.PI/180, cs=Math.cos(t), sn=Math.sin(t);
+    const cx=w/2, cy=h/2;
+    const br=bg[0], bgc=bg[1], bb=bg[2];
+    for(let y=0;y<h;y++){
+      for(let x=0;x<w;x++){
+        // điểm nguồn tương ứng (xoay ngược)
+        const dx=x-cx, dy=y-cy;
+        const sx = cs*dx + sn*dy + cx;
+        const sy = -sn*dx + cs*dy + cy;
+        const o = (y*w+x)*4;
+        if(sx<0||sy<0||sx>=w-1||sy>=h-1){ out[o]=br; out[o+1]=bgc; out[o+2]=bb; out[o+3]=255; continue; }
+        const x0=sx|0, y0=sy|0, fx=sx-x0, fy=sy-y0;
+        const i00=(y0*w+x0)*4, i10=i00+4, i01=i00+w*4, i11=i01+4;
+        for(let c=0;c<3;c++){
+          const a = rgba[i00+c]*(1-fx)+rgba[i10+c]*fx;
+          const b = rgba[i01+c]*(1-fx)+rgba[i11+c]*fx;
+          out[o+c] = a*(1-fy)+b*fy;
+        }
+        out[o+3]=255;
+      }
+    }
+    return out;
+  }
+
+  // ---- Dò các đoạn thẳng dài (đường kẻ bảng) bằng run-length trên mặt nạ nhị phân ----
+  // trả về mặt nạ điểm thuộc đường ngang (hMask) / dọc (vMask)
+  function ruleMasks(ink, w, h, minLenH, minLenV, gap){
+    const hMask = new Uint8Array(w*h), vMask = new Uint8Array(w*h);
+    // ngang
+    for(let y=0;y<h;y++){
+      const row=y*w; let x=0;
+      while(x<w){
+        if(!ink[row+x]){ x++; continue; }
+        let s=x, e=x, miss=0;
+        while(x<w){
+          if(ink[row+x]){ e=x; miss=0; }
+          else { miss++; if(miss>gap) break; }
+          x++;
+        }
+        if(e-s+1 >= minLenH){ for(let xx=s; xx<=e; xx++) hMask[row+xx]=1; }
+      }
+    }
+    // dọc
+    for(let x=0;x<w;x++){
+      let y=0;
+      while(y<h){
+        if(!ink[y*w+x]){ y++; continue; }
+        let s=y, e=y, miss=0;
+        while(y<h){
+          if(ink[y*w+x]){ e=y; miss=0; }
+          else { miss++; if(miss>gap) break; }
+          y++;
+        }
+        if(e-s+1 >= minLenV){ for(let yy=s; yy<=e; yy++) vMask[yy*w+x]=1; }
+      }
+    }
+    return { hMask, vMask };
+  }
+
+  // Nhãn thành phần liên thông (8-lân cận) — trả về mảng hộp {x0,y0,x1,y1,area} và bản đồ nhãn
+  function components(mask, w, h){
+    const lab = new Int32Array(w*h);
+    const parent = [0];
+    function find(a){ while(parent[a]!==a){ parent[a]=parent[parent[a]]; a=parent[a]; } return a; }
+    let next=1;
+    for(let y=0;y<h;y++){
+      for(let x=0;x<w;x++){
+        const i=y*w+x;
+        if(!mask[i]) continue;
+        let a=0,b=0,c=0,d=0;
+        if(x>0) a=lab[i-1];
+        if(y>0){ b=lab[i-w]; if(x>0) c=lab[i-w-1]; if(x<w-1) d=lab[i-w+1]; }
+        let m = a||b||c||d;
+        if(!m){ lab[i]=next; parent.push(next); next++; continue; }
+        // hợp nhất
+        const ls=[a,b,c,d].filter(v=>v);
+        let r=find(ls[0]);
+        for(let k=1;k<ls.length;k++){ const r2=find(ls[k]); if(r2!==r){ if(r2<r){ parent[r]=r2; r=r2; } else parent[r2]=r; } }
+        lab[i]=r;
+      }
+    }
+    const boxes = new Map();
+    for(let y=0;y<h;y++){
+      for(let x=0;x<w;x++){
+        const i=y*w+x; const l=lab[i]; if(!l) continue;
+        const r=find(l); lab[i]=r;
+        let b=boxes.get(r);
+        if(!b){ b={id:r,x0:x,y0:y,x1:x,y1:y,area:0}; boxes.set(r,b); }
+        if(x<b.x0)b.x0=x; if(x>b.x1)b.x1=x; if(y<b.y0)b.y0=y; if(y>b.y1)b.y1=y; b.area++;
+      }
+    }
+    return { boxes:[...boxes.values()], lab };
+  }
+
+  // ---- Gom nhóm các giá trị 1 chiều gần nhau (đường kẻ sát nhau) ----
+  function groupRows(counts, from, to, minCount){
+    // counts[i] >= minCount thuộc "vạch"; gom các i liên tiếp (cho phép hở 1)
+    const groups=[]; let s=-1, last=-9;
+    for(let i=from;i<=to;i++){
+      if(counts[i]>=minCount){ if(s<0) s=i; last=i; }
+      else if(s>=0 && i-last>1){ groups.push({a:s,b:last,c:(s+last)/2}); s=-1; }
+    }
+    if(s>=0) groups.push({a:s,b:last,c:(s+last)/2});
+    return groups;
+  }
+
+  // ---- Dò BẢNG: thành phần liên thông của (đường ngang ∪ đường dọc) -> lưới hàng/cột + ô gộp ----
+  function detectTables(hMask, vMask, w, h){
+    const U = new Uint8Array(w*h);
+    for(let i=0;i<U.length;i++) if(hMask[i]||vMask[i]) U[i]=1;
+    const { boxes, lab } = components(U, w, h);
+    const tables=[];
+    for(const b of boxes){
+      const bw=b.x1-b.x0+1, bh=b.y1-b.y0+1;
+      if(bw<80 || bh<40) continue;
+      // đếm điểm đường ngang theo hàng, đường dọc theo cột — chỉ tính điểm thuộc thành phần này
+      const rowCnt=new Int32Array(h), colCnt=new Int32Array(w);
+      const rowMin=new Int32Array(h).fill(1<<30), rowMax=new Int32Array(h).fill(-1);
+      const colMin=new Int32Array(w).fill(1<<30), colMax=new Int32Array(w).fill(-1);
+      for(let y=b.y0;y<=b.y1;y++){
+        for(let x=b.x0;x<=b.x1;x++){
+          const i=y*w+x; if(lab[i]!==b.id) continue;
+          if(hMask[i]){ rowCnt[y]++; if(x<rowMin[y])rowMin[y]=x; if(x>rowMax[y])rowMax[y]=x; }
+          if(vMask[i]){ colCnt[x]++; if(y<colMin[x])colMin[x]=y; if(y>colMax[x])colMax[x]=y; }
+        }
+      }
+      const hl = groupRows(rowCnt, b.y0, b.y1, Math.max(50, 0.2*bw));
+      const vl = groupRows(colCnt, b.x0, b.x1, Math.max(40, 0.2*bh));
+      if(hl.length<2 || vl.length<2) continue;
+      // lưới: gộp vạch cách nhau < 8px
+      const Y = mergeClose(hl.map(g=>g.c), 8), X = mergeClose(vl.map(g=>g.c), 8);
+      if(Y.length<2 || X.length<2) continue;
+      const thick = Math.max(2, Math.round(median(hl.map(g=>g.b-g.a+1).concat(vl.map(g=>g.b-g.a+1)))));
+      tables.push({ bbox:{x0:X[0],y0:Y[0],x1:X[X.length-1],y1:Y[Y.length-1]}, X, Y, thick, id:b.id, _lab:lab });
+    }
+    // Sắp ô + gộp ô theo sự tồn tại của cạnh
+    for(const t of tables) buildCells(t, hMask, vMask, w, h);
+    return tables;
+  }
+  function median(a){ if(!a.length) return 0; const s=a.slice().sort((x,y)=>x-y); return s[s.length>>1]; }
+  function mergeClose(vals, tol){
+    const s=vals.slice().sort((a,b)=>a-b); const out=[];
+    for(const v of s){ if(out.length && v-out[out.length-1].last<=tol){ const o=out[out.length-1]; o.sum+=v; o.n++; o.last=v; } else out.push({sum:v,n:1,last:v}); }
+    return out.map(o=>o.sum/o.n);
+  }
+  // Tỉ lệ điểm mặt nạ nằm dọc một đoạn (trong dải ±tol quanh vị trí)
+  function edgeCoverH(hMask, w, h, y, xa, xb, tol){
+    let hit=0, tot=0;
+    for(let x=Math.round(xa); x<=Math.round(xb); x++){
+      tot++;
+      for(let dy=-tol; dy<=tol; dy++){ const yy=Math.round(y)+dy; if(yy>=0&&yy<h&&hMask[yy*w+x]){ hit++; break; } }
+    }
+    return tot? hit/tot : 0;
+  }
+  function edgeCoverV(vMask, w, h, x, ya, yb, tol){
+    let hit=0, tot=0;
+    for(let y=Math.round(ya); y<=Math.round(yb); y++){
+      tot++;
+      for(let dx=-tol; dx<=tol; dx++){ const xx=Math.round(x)+dx; if(xx>=0&&xx<w&&vMask[y*w+xx]){ hit++; break; } }
+    }
+    return tot? hit/tot : 0;
+  }
+  function buildCells(t, hMask, vMask, w, h){
+    const nR=t.Y.length-1, nC=t.X.length-1, tol=Math.max(3, t.thick+1);
+    // vEdge[r][c]: có vạch dọc ở X[c] giữa Y[r]..Y[r+1] (c=0..nC); hEdge[r][c]: vạch ngang ở Y[r] giữa X[c]..X[c+1]
+    const vEdge=[], hEdge=[];
+    for(let r=0;r<nR;r++){ vEdge[r]=[]; for(let c=0;c<=nC;c++){
+      const ya=t.Y[r]+t.thick+1, yb=t.Y[r+1]-t.thick-1;
+      vEdge[r][c] = (c===0||c===nC) ? true : edgeCoverV(vMask,w,h,t.X[c],ya,Math.max(ya,yb),tol) >= 0.6;
+    } }
+    for(let r=0;r<=nR;r++){ hEdge[r]=[]; for(let c=0;c<nC;c++){
+      const xa=t.X[c]+t.thick+1, xb=t.X[c+1]-t.thick-1;
+      hEdge[r][c] = (r===0||r===nR) ? true : edgeCoverH(hMask,w,h,t.Y[r],xa,Math.max(xa,xb),tol) >= 0.6;
+    } }
+    // gộp ô: union-find trên lưới nR x nC khi cạnh chung KHÔNG tồn tại
+    const par=[]; for(let i=0;i<nR*nC;i++) par[i]=i;
+    const f=a=>{ while(par[a]!==a){ par[a]=par[par[a]]; a=par[a]; } return a; };
+    const u=(a,b)=>{ a=f(a); b=f(b); if(a!==b) par[b]=a; };
+    for(let r=0;r<nR;r++) for(let c=0;c<nC;c++){
+      if(c+1<nC && !vEdge[r][c+1]) u(r*nC+c, r*nC+c+1);
+      if(r+1<nR && !hEdge[r+1][c]) u(r*nC+c, (r+1)*nC+c);
+    }
+    const groups=new Map();
+    for(let r=0;r<nR;r++) for(let c=0;c<nC;c++){ const g=f(r*nC+c); if(!groups.has(g)) groups.set(g,{r0:r,r1:r,c0:c,c1:c}); const o=groups.get(g); o.r0=Math.min(o.r0,r);o.r1=Math.max(o.r1,r);o.c0=Math.min(o.c0,c);o.c1=Math.max(o.c1,c); }
+    const cells=[]; let ok=true;
+    for(const g of groups.values()){
+      // kiểm tra nhóm là hình chữ nhật đầy đủ
+      const cnt=(g.r1-g.r0+1)*(g.c1-g.c0+1);
+      let real=0; for(let r=g.r0;r<=g.r1;r++) for(let c=g.c0;c<=g.c1;c++) if(f(r*nC+c)===f(g.r0*nC+g.c0)) real++;
+      if(real!==cnt) ok=false;
+      const half=t.thick/2+1;
+      cells.push({ r0:g.r0, r1:g.r1, c0:g.c0, c1:g.c1,
+        x0:t.X[g.c0]+half, x1:t.X[g.c1+1]-half, y0:t.Y[g.r0]+half, y1:t.Y[g.r1+1]-half });
+    }
+    if(!ok){ // lưới không hình chữ nhật -> không gộp ô, mỗi ô lưới là một ô
+      cells.length=0;
+      for(let r=0;r<nR;r++) for(let c=0;c<nC;c++){ const half=t.thick/2+1; cells.push({r0:r,r1:r,c0:c,c1:c,x0:t.X[c]+half,x1:t.X[c+1]-half,y0:t.Y[r]+half,y1:t.Y[r+1]-half}); }
+    }
+    cells.sort((a,b)=>a.r0-b.r0||a.c0-b.c0);
+    t.cells=cells; t.nR=nR; t.nC=nC;
+  }
+
+  // ---- Mặt nạ chữ: mực đen trừ đi đường kẻ bảng và các vệt thẳng dài (mép giấy scan) ----
+  function buildTextMask(ink, hMask, vMask, tables, w, h){
+    const T = new Uint8Array(ink);
+    for(const t of tables){
+      const lab=t._lab, b=t.bbox, m=t.thick+3;
+      const y0=Math.max(0,Math.floor(b.y0-m)), y1=Math.min(h-1,Math.ceil(b.y1+m));
+      const x0=Math.max(0,Math.floor(b.x0-m)), x1=Math.min(w-1,Math.ceil(b.x1+m));
+      for(let y=y0;y<=y1;y++) for(let x=x0;x<=x1;x++){ const i=y*w+x; if(lab[i]===t.id && (hMask[i]||vMask[i])) T[i]=0; }
+      // giãn 1px quanh vạch để không sót viền răng cưa
+      for(let y=y0;y<=y1;y++) for(let x=x0;x<=x1;x++){
+        const i=y*w+x; if(!T[i]) continue;
+        // điểm ink kề một điểm vạch của bảng (đã bị xoá) và bản thân nó nằm ngay trên đường lưới -> xoá
+      }
+    }
+    // vạch dọc/ngang rất dài nằm NGOÀI bảng (vệt mép giấy, nếp gấp) -> xoá
+    const vc = components(vMask, w, h);
+    for(const b of vc.boxes){ if(b.y1-b.y0+1>=350 && b.x1-b.x0+1<=10){ for(let y=b.y0;y<=b.y1;y++) for(let x=b.x0;x<=b.x1;x++){ const i=y*w+x; if(vc.lab[i]===b.id) T[i]=0; } } }
+    return T;
+  }
+
+  // ---- Chiều cao ký tự tiêu biểu ----
+  function typicalCharH(boxes){
+    const hs = boxes.filter(b=>b.area>=12).map(b=>b.y1-b.y0+1).filter(v=>v>=8 && v<=90).sort((a,b)=>a-b);
+    if(!hs.length) return 24;
+    return hs[Math.floor(hs.length*0.6)];
+  }
+
+  // ---- Tách DÒNG chữ trong một vùng (ô bảng / phần ngoài bảng) ----
+  // comps: hộp thành phần {x0,y0,x1,y1,area,id}; lab: bản đồ nhãn (components()). Cách làm: dựng BIỂU ĐỒ CHIẾU theo trục y
+  // tính bằng SỐ ĐIỂM ẢNH MỰC của các ký tự "chuẩn" (bỏ dấu thanh nhỏ và các nét cao bất thường làm dính 2 dòng),
+  // rồi tìm các "thung lũng" (cực tiểu cục bộ sâu so với 2 đỉnh hai bên) làm ranh giới dòng — cách này vẫn tách được
+  // các dòng sát nhau (giãn dòng ~1.0) mà hộp bao của chúng chạm/chồng nhau. Sau đó gán mọi thành phần vào dòng theo
+  // tâm y, và tách mỗi dòng thành các ĐOẠN theo khe ngang lớn (vd chữ bên trái + chữ bên phải cùng một hàng).
+  function segmentLines(comps, medH, lab, w){
+    if(!comps.length) return [];
+    let minY=1e9, maxY=-1e9;
+    for(const c of comps){ if(c.y0<minY)minY=c.y0; if(c.y1>maxY)maxY=c.y1; }
+    const n = maxY-minY+1;
+    const P = new Float32Array(n);
+    let nStd=0;
+    for(const c of comps){
+      const ch=c.y1-c.y0+1, cw=c.x1-c.x0+1;
+      c._small = ch < medH*0.5 && cw < medH*1.1;
+      c._tall = ch > medH*1.9;
+      if(c._small || c._tall) continue;
+      nStd++;
+      for(let y=c.y0;y<=c.y1;y++){ const row=y*w; let cnt=0; for(let x=c.x0;x<=c.x1;x++) if(lab[row+x]===c.id) cnt++; P[y-minY]+=cnt; }
+    }
+    if(!nStd){ // toàn thành phần nhỏ/cao: coi cả vùng là một dòng
+      const seg=comps; return [{x0:Math.min(...seg.map(c=>c.x0)),y0:minY,x1:Math.max(...seg.map(c=>c.x1)),y1:maxY,comps:seg.slice()}];
+    }
+    // làm mịn cửa sổ 5
+    const S = new Float32Array(n);
+    for(let i=0;i<n;i++){ let s=0,k=0; for(let d=-2;d<=2;d++){ const j=i+d; if(j>=0&&j<n){ s+=P[j]; k++; } } S[i]=s/k; }
+    const R = Math.max(6, Math.round(medH*0.9));
+    const seps=[];
+    for(let i=1;i<n-1;i++){
+      // cực tiểu cục bộ (trong ±3, lấy điểm giữa của cao nguyên thấp nhất)
+      let isMin=true; for(let d=-3;d<=3;d++){ const j=i+d; if(j<0||j>=n) continue; if(S[j]<S[i]-1e-6 || (S[j]===S[i] && d<0)) { isMin=false; break; } }
+      if(!isMin) continue;
+      let lp=0, rp=0;
+      for(let d=1; d<=R; d++){ if(i-d>=0) lp=Math.max(lp,S[i-d]); if(i+d<n) rp=Math.max(rp,S[i+d]); }
+      const peak = Math.min(lp,rp);
+      if(peak<=0) continue;
+      // Vùng lân cận hai bên phải THỰC SỰ có chữ (đỉnh cao), và điểm cực tiểu đủ sâu
+      if(S[i] <= 0.30*peak) seps.push({i, depth:S[i]/peak});
+    }
+    // các khoảng TRỐNG hoàn toàn (>= 3 hàng liên tiếp không có mực) luôn là ranh giới dòng: lấy điểm giữa
+    { let z=-1; for(let i=0;i<=n;i++){ const blank = i<n && S[i] < 0.5; if(blank){ if(z<0) z=i; } else if(z>=0){ if(i-z>=3) seps.push({i:Math.floor((z+i-1)/2), depth:0}); z=-1; } } }
+    // gộp các ranh giới quá gần nhau (< 0.55*medH): giữ cái sâu nhất
+    seps.sort((a,b)=>a.i-b.i);
+    const sp=[];
+    for(const s of seps){
+      const last=sp[sp.length-1];
+      if(last && s.i-last.i < medH*0.55){ if(s.depth<last.depth) sp[sp.length-1]=s; }
+      else sp.push(s);
+    }
+    const cuts=[-1, ...sp.map(s=>s.i), n];
+    const bands=[];
+    for(let k=0;k<cuts.length-1;k++) bands.push({a:cuts[k]+1+minY, b:cuts[k+1]-1+minY, comps:[]});
+    for(const c of comps){
+      const cy=(c.y0+c.y1)/2;
+      let bi = bands.findIndex(b=>cy>=b.a && cy<=b.b+0.999);
+      if(bi<0) bi = 0;
+      // thành phần cao (dính 2 dòng) thì gán theo phần trùng lớn nhất
+      if(c._tall){ let bo=-1; bands.forEach((b,i)=>{ const ov=Math.min(c.y1,b.b)-Math.max(c.y0,b.a); if(ov>bo){bo=ov;bi=i;} }); }
+      bands[bi].comps.push(c);
+    }
+    const out=[];
+    for(const b of bands){
+      const cs=b.comps.slice().sort((p,q)=>p.x0-q.x0);
+      if(!cs.some(c=>!c._small && !c._tall)) { if(!cs.length) continue; }
+      const hs=cs.filter(c=>!c._small&&!c._tall).map(c=>c.y1-c.y0+1).sort((p,q)=>p-q);
+      const lineH = hs.length? hs[hs.length>>1] : medH;
+      const gapMax = Math.max(lineH*4.5, medH*4.5);
+      let cur=null;
+      for(const c of cs){
+        if(cur && c.x0 - cur.x1 <= gapMax){ cur.comps.push(c); cur.x1=Math.max(cur.x1,c.x1); cur.y0=Math.min(cur.y0,c.y0); cur.y1=Math.max(cur.y1,c.y1); }
+        else { cur={x0:c.x0,y0:c.y0,x1:c.x1,y1:c.y1,comps:[c]}; out.push(cur); }
+      }
+    }
+    return out.filter(L=>{ const area=L.comps.reduce((a,c)=>a+c.area,0); const hh=L.y1-L.y0+1; return !(L.comps.length<=2 && area < medH*medH*0.15 && hh < medH*0.6); });
+  }
+
+  // ================= ĐO ĐỊNH DẠNG CỦA MỘT DÒNG (đậm / nghiêng / gạch chân / đường cơ sở) =================
+  // Đường cơ sở: y đáy mà nhiều thành phần (theo diện tích) cùng dừng lại nhất (chữ có đuôi như g,p,y thấp hơn nhưng ít).
+  function lineBaseline(L){
+    const cs=L.comps.filter(c=>!c._small);
+    if(!cs.length) return L.y1;
+    const bins=new Map();
+    for(const c of cs){ const k=c.y1; bins.set(k,(bins.get(k)||0)+c.area); }
+    let best=L.y1, bw=-1;
+    for(const [k] of bins){
+      let s=0; for(let d=-2;d<=2;d++) s+=bins.get(k+d)||0;
+      if(s>bw || (s===bw && k>best)){ bw=s; best=k; }
+    }
+    return best;
+  }
+  // Độ dày nét đứng điển hình (px): trung vị độ dài các đoạn mực nằm ngang trong dải giữa của thành phần,
+  // chỉ lấy đoạn ngắn (< 0.28 chiều cao dòng) để bỏ qua các nét ngang dài.
+  function stemWidth(L, lab, w, x0, x1){
+    const runs=[];
+    const base=lineBaseline(L);
+    const cs=L.comps.filter(c=>!c._small && c.x1>=x0 && c.x0<=x1);
+    if(!cs.length) return 0;
+    const hs=cs.map(c=>c.y1-c.y0+1).sort((a,b)=>a-b);
+    const H=hs[hs.length>>1];
+    const maxRun=Math.max(4, H*0.5);
+    for(const c of cs){
+      const ch=c.y1-c.y0+1;
+      const ya=Math.round(c.y0+ch*0.35), yb=Math.round(c.y0+ch*0.7);
+      for(let y=ya;y<=yb;y++){
+        const row=y*w; let run=0;
+        for(let x=c.x0;x<=c.x1+1;x++){
+          if(x<=c.x1 && lab[row+x]===c.id) run++;
+          else { if(run>0 && run<=maxRun) runs.push(run); run=0; }
+        }
+      }
+    }
+    if(!runs.length) return 0;
+    runs.sort((a,b)=>a-b);
+    return runs[runs.length>>1];
+  }
+  // Độ nghiêng (độ): tìm góc cắt (shear) làm biểu đồ chiếu theo trục x của các điểm mực "gai" nhất — chữ nghiêng có nét đứng
+  // xiên ~12-15°, chữ thường ~0°. Trả về góc theo chiều nghiêng sang phải (+).
+  function slantDeg(L, lab, w, x0, x1){
+    const cs=L.comps.filter(c=>!c._small && c.x1>=x0 && c.x0<=x1);
+    if(!cs.length) return 0;
+    const base=lineBaseline(L);
+    const pts=[];
+    for(const c of cs){
+      const ch=c.y1-c.y0+1; if(ch<8) continue;
+      for(let y=c.y0;y<=c.y1;y+=1){ const row=y*w; for(let x=c.x0;x<=c.x1;x++){ if(lab[row+x]===c.id) pts.push(x,y); } }
+    }
+    const n=pts.length/2; if(n<200) return 0;
+    let bestA=0,bestS=-1;
+    const xmin=x0, wid=x1-x0+40;
+    for(let a=-6;a<=26;a+=2){
+      const t=Math.tan(a*Math.PI/180);
+      const acc=new Int32Array(wid+400);
+      for(let i=0;i<n;i++){ const x=pts[2*i], y=pts[2*i+1]; const xs=Math.round(x + (y-base)*t) - xmin + 200; if(xs>=0&&xs<acc.length) acc[xs]++; }
+      let s=0; for(let i=0;i<acc.length;i++) s+=acc[i]*acc[i];
+      if(s>bestS){ bestS=s; bestA=a; }
+    }
+    return bestA;
+  }
+  // Gạch chân: tìm hàng ở dưới đường cơ sở có đoạn mực LIỀN MẠCH dài (không khe) — trả về các đoạn [xa,xb]
+  function underlineSegments(L, T, w, minLen){
+    const base=lineBaseline(L);
+    const hs=L.comps.filter(c=>!c._small).map(c=>c.y1-c.y0+1).sort((a,b)=>a-b);
+    const H=hs.length?hs[hs.length>>1]:20;
+    const ya=base+1, yb=Math.min(L.y1+3, Math.round(base+H*0.55));
+    const segs=[];
+    for(let y=ya;y<=yb;y++){
+      const row=y*w; let run=0, start=0;
+      for(let x=L.x0;x<=L.x1+1;x++){
+        if(x<=L.x1 && T[row+x]){ if(!run) start=x; run++; }
+        else { if(run>=minLen) segs.push({xa:start,xb:x-1,y}); run=0; }
+      }
+    }
+    // gộp các hàng liền kề cùng đoạn
+    const out=[];
+    for(const s of segs){
+      const o=out.find(q=>Math.abs(q.xa-s.xa)<=6 && Math.abs(q.xb-s.xb)<=6 && s.y-q.y1<=2);
+      if(o){ o.y1=s.y; o.xa=Math.min(o.xa,s.xa); o.xb=Math.max(o.xb,s.xb); } else out.push({xa:s.xa,xb:s.xb,y0:s.y,y1:s.y});
+    }
+    return out.filter(o=>o.y1-o.y0+1<=6);
+  }
+  // Nhận diện có chân (serif): với các nét đứng đơn (i, l, I, 1...) so độ dài đoạn mực ở sát đáy với ở giữa thân
+  function serifVote(comps, lab, w){
+    let serif=0,total=0;
+    for(const c of comps){
+      const ch=c.y1-c.y0+1, cw=c.x1-c.x0+1;
+      if(c._small || ch<14 || cw>ch*0.62 || cw<3) continue;
+      const yb=c.y1-1, ym=Math.round((c.y0+c.y1)/2);
+      const runAt=(y)=>{ let m=0,r=0; for(let x=c.x0;x<=c.x1;x++){ if(lab[y*w+x]===c.id){ r++; if(r>m)m=r; } else r=0; } return m; };
+      const rb=runAt(yb), rm=runAt(ym);
+      if(rm<2) continue;
+      total++; if(rb>=rm*1.7 && rb>=rm+3) serif++;
+    }
+    return { serif, total };
+  }
+
+  return { grayOf, otsu, separateInk, estimateSkewDeg, rotateRGBA, ruleMasks, components, detectTables, median, mergeClose, buildTextMask, typicalCharH, segmentLines, lineBaseline, stemWidth, slantDeg, underlineSegments, serifVote };
+})();
+if(typeof module!=='undefined') module.exports = WXI;
+
+/* ===== WX-A: phân tích trang + OCR từng dòng + suy luận định dạng (chạy trong trình duyệt) ===== */
+const WX_SC = 3;                 // hệ số render: 1pt = 3px  (216 dpi)
+const WX_PX2PT = 1 / WX_SC;
+
+// ---- Worker OCR riêng cho xuất Word: chỉ tiếng Việt, mô hình "best_int" (nhỏ hơn VÀ chính xác hơn bản mặc định) ----
+let __wxOcrWorker = null;
+async function wxGetOcrWorker(){
+  if(typeof Tesseract === 'undefined') throw new Error('Thư viện Tesseract.js chưa tải được (kiểm tra mạng / tường lửa chặn cdnjs.cloudflare.com).');
+  if(__wxOcrWorker) return __wxOcrWorker;
+  const tryCreate = async (opts, langs)=>{
+    const w = Tesseract.createWorker(Object.assign({ logger: ()=>{} }, opts));
+    await w.load(); await w.loadLanguage(langs); await w.initialize(langs);
+    return w;
+  };
+  try{
+    __wxOcrWorker = await tryCreate({ langPath: 'https://cdn.jsdelivr.net/npm/@tesseract.js-data/vie/4.0.0_best_int' }, 'vie');
+  }catch(err){
+    console.warn('WORD: không tải được mô hình OCR "best" (jsDelivr) — dùng mô hình mặc định eng+vie:', err);
+    __wxOcrWorker = await tryCreate({}, 'eng+vie');
+  }
+  return __wxOcrWorker;
+}
+
+
+// Chữ MÀU (đỏ, xanh...) bị tách khỏi mực đen cùng với con dấu/chữ ký. Nhận diện các nhóm mực màu có dạng "dòng chữ"
+// (thấp, dài, gồm nhiều ký tự rời) và trả chúng về mặt nạ mực để được OCR/định dạng như chữ thường (giữ nguyên màu).
+function wxRestoreColoredText(sep, w, h){
+  const n = w*h; let cnt = 0;
+  for(let i=0;i<n;i++) if(sep.color[i]) cnt++;
+  if(cnt < 120) return 0;
+  const cc0 = WXI.components(sep.ink, w, h);
+  const medH0 = WXI.typicalCharH(cc0.boxes) || 24;
+  const F = 4, gw = Math.ceil(w/F), gh = Math.ceil(h/F);
+  const g = new Uint8Array(gw*gh);
+  for(let y=0;y<h;y++) for(let x=0;x<w;x++) if(sep.color[y*w+x]) g[(y>>2)*gw+(x>>2)] = 1;
+  const d = new Uint8Array(gw*gh);
+  for(let y=0;y<gh;y++) for(let x=0;x<gw;x++){ if(!g[y*gw+x]) continue; for(let dy=-2;dy<=2;dy++){ const yy=y+dy; if(yy<0||yy>=gh) continue; for(let dx=-2;dx<=2;dx++){ const xx=x+dx; if(xx>=0&&xx<gw) d[yy*gw+xx]=1; } } }
+  const grp = WXI.components(d, gw, gh);
+  const ccc = WXI.components(sep.color, w, h);
+  let restored = 0;
+  for(const b of grp.boxes){
+    const bx0=b.x0*F, by0=b.y0*F, bx1=Math.min(w-1,(b.x1+1)*F-1), by1=Math.min(h-1,(b.y1+1)*F-1);
+    const bw=bx1-bx0+1, bh=by1-by0+1;
+    let comps = 0;
+    for(const c of ccc.boxes){ if(c.area >= 6 && (c.x0+c.x1)/2 >= bx0 && (c.x0+c.x1)/2 <= bx1 && (c.y0+c.y1)/2 >= by0 && (c.y0+c.y1)/2 <= by1) comps++; }
+    if((bh <= 3.0*medH0 && comps >= 5 && bw/bh >= 1.6) || (comps >= 8 && bw/bh >= 3.5 && bh <= 6*medH0)){
+      for(let y=by0;y<=by1;y++) for(let x=bx0;x<=bx1;x++){
+        const i = y*w+x;
+        sep.color[i] = 0; sep.colorDil[i] = 0;
+        sep.ink[i] = sep.gray[i] < sep.thr ? 1 : 0;
+      }
+      restored++;
+    }
+  }
+  return restored;
+}
+
+// ---- Phân tích ảnh của một trang (đã chống nghiêng): bảng, đồ hoạ, mực màu, các dòng chữ ----
+// Render trang ở 3x và VẼ LUÔN các chỉnh sửa của người dùng (chữ/ảnh/che...) giống hệt cách màn hình hiển thị,
+// nên bản Word phản ánh đúng những gì người dùng đang thấy. Áp dụng cả góc xoay trang (nếu có).
+async function wxRenderComposite(idx, scale){
+  const canvas = await renderPageToCanvas(idx, scale);
+  const p = pages[idx];
+  const ctx = canvas.getContext('2d');
+  for(const e of (p.edits || [])){ try{ drawEdit(ctx, e, scale); }catch(err){ console.warn('WORD: bỏ qua một chỉnh sửa lỗi', err); } }
+  const rot = getPageRotation_(p);
+  if(rot) applyCanvasRotation_(canvas, rot);
+  canvas.__rotated = !!rot;
+  return canvas;
+}
+
+// ---- Phân tích ảnh của một trang (đã chống nghiêng): bảng, đồ hoạ, mực màu, các dòng chữ ----
+async function wxAnalyzePage(idx){
+  const canvas = await wxRenderComposite(idx, WX_SC);
+  const w = canvas.width, h = canvas.height;
+  if(w*h > 16e6) throw new Error('Trang quá lớn để phân tích ở 216 dpi ('+w+'×'+h+' px).');
+  let rgba = canvas.getContext('2d', { willReadFrequently: true }).getImageData(0,0,w,h).data;
+  let sep = WXI.separateInk(rgba, w, h);
+  const skew = WXI.estimateSkewDeg(sep.ink, w, h);
+  const skewApplied = Math.abs(skew) >= 0.12;
+  if(skewApplied){
+    rgba = WXI.rotateRGBA(rgba, w, h, skew, [sep.paper, sep.paper, sep.paper]);
+    sep = WXI.separateInk(rgba, w, h);
+  }
+  wxRestoreColoredText(sep, w, h);
+  const rm = WXI.ruleMasks(sep.ink, w, h, 60, 60, 3);
+  const tables = WXI.detectTables(rm.hMask, rm.vMask, w, h);
+  const T = WXI.buildTextMask(sep.ink, rm.hMask, rm.vMask, tables, w, h);
+  const cc = WXI.components(T, w, h);
+  const medH = WXI.typicalCharH(cc.boxes);
+  const EDGE = 32;
+  // bỏ nhiễu mảnh sát mép trang (vệt scanner)
+  let comps = cc.boxes.filter(b => b.area >= 4 && !(((b.x1>=w-EDGE)||(b.x0<=EDGE)||(b.y0<=EDGE)||(b.y1>=h-EDGE)) && ((b.x1-b.x0+1)<=12 || (b.y1-b.y0+1)<=6)));
+  // đồ hoạ lớn (logo...): quá cao/quá rộng so với chữ
+  const big = comps.filter(b => (b.y1-b.y0+1) > medH*3.0 || (b.x1-b.x0+1) > medH*14);
+  const bigIds = new Set(big.map(b=>b.id));
+  comps = comps.filter(b => !bigIds.has(b.id));
+  return { idx, w, h, rgba, sep, rm, tables, T, cc, medH, comps, big, skew, skewApplied, rotated: !!canvas.__rotated };
+}
+
+const wxCenterIn = (c, r) => { const cx=(c.x0+c.x1)/2, cy=(c.y0+c.y1)/2; return cx>=r.x0 && cx<=r.x1 && cy>=r.y0 && cy<=r.y1; };
+
+// ---- Cắt ảnh xám của MỘT dòng để OCR: chỉ giữ mực của chính dòng đó (xoá dòng lân cận, đường kẻ, mực màu) ----
+function wxLineCanvas(A, L, pad, scale){
+  const { w, sep, cc } = A;
+  const x0=Math.max(0,L.x0-pad), y0=Math.max(0,L.y0-pad), x1=Math.min(A.w-1,L.x1+pad), y1=Math.min(A.h-1,L.y1+pad);
+  const cw=x1-x0+1, ch=y1-y0+1;
+  const ids = new Set(L.comps.map(c=>c.id));
+  const own = new Uint8Array(cw*ch);
+  for(let y=0;y<ch;y++) for(let x=0;x<cw;x++){ const lb=cc.lab[(y0+y)*w+(x0+x)]; if(lb && ids.has(lb)) own[y*cw+x]=1; }
+  const keep = new Uint8Array(cw*ch);
+  for(let y=0;y<ch;y++) for(let x=0;x<cw;x++){
+    if(!own[y*cw+x]) continue;
+    for(let dy=-2;dy<=2;dy++){ const yy=y+dy; if(yy<0||yy>=ch) continue; for(let dx=-2;dx<=2;dx++){ const xx=x+dx; if(xx<0||xx>=cw) continue; keep[yy*cw+xx]=1; } }
+  }
+  const cv = document.createElement('canvas'); cv.width=cw; cv.height=ch;
+  const ctx = cv.getContext('2d'); const im = ctx.createImageData(cw,ch);
+  const paper = sep.paper;
+  for(let y=0;y<ch;y++) for(let x=0;x<cw;x++){
+    const gi=(y0+y)*w+(x0+x);
+    let v = 255;
+    if(keep[y*cw+x]){
+      const lb = cc.lab[gi];
+      const foreign = lb && !ids.has(lb);
+      if(!foreign && !sep.colorDil[gi]) v = sep.gray[gi];
+    }
+    if(v >= paper-6) v = 255;
+    const o=(y*cw+x)*4; im.data[o]=im.data[o+1]=im.data[o+2]=v; im.data[o+3]=255;
+  }
+  ctx.putImageData(im,0,0);
+  L._crop = { x0, y0, scale };
+  if(scale && Math.abs(scale-1) > 0.02){
+    const c2=document.createElement('canvas'); c2.width=Math.max(8,Math.round(cw*scale)); c2.height=Math.max(8,Math.round(ch*scale));
+    const g=c2.getContext('2d'); g.imageSmoothingEnabled=true; g.imageSmoothingQuality='high'; g.fillStyle='#fff'; g.fillRect(0,0,c2.width,c2.height); g.drawImage(cv,0,0,c2.width,c2.height);
+    return c2;
+  }
+  return cv;
+}
+
+// ---- OCR toàn bộ các dòng (PSM 7 = một dòng), bỏ phiếu nhiều tỉ lệ để giảm lỗi dấu tiếng Việt ----
+// Mỗi dòng được nhận diện ở 3 tỉ lệ khác nhau; chọn văn bản xuất hiện nhiều nhất (hoà thì lấy bản có độ tin cậy cao nhất).
+// Trang quá dày (> 60 dòng) chỉ chạy 1 lượt để không quá chậm.
+function wxNormOcr(t){ return (t||'').normalize('NFC').replace(/\s+/g,' ').trim(); }
+async function wxOcrLines(A, lines, onProgress){
+  const worker = await wxGetOcrWorker();
+  await worker.setParameters({ tessedit_pageseg_mode: '7', preserve_interword_spaces: '1', user_defined_dpi: '216' });
+  const base = Math.max(0.6, Math.min(1.6, 24 / Math.max(10, A.medH)));   // chuẩn hoá cỡ chữ điển hình về ~24px
+  const factors = lines.length <= 60 ? [0.75, 1.0, 1.25] : [1.0];
+  let done = 0; const total = lines.length * factors.length;
+  try{
+    for(const L of lines){
+      const cands = [];
+      for(const f of factors){
+        const cv = wxLineCanvas(A, L, 8, base*f);
+        const { data } = await worker.recognize(cv);
+        const cr = L._crop;
+        cands.push({
+          text: wxNormOcr(data.text), conf: data.confidence || 0,
+          words: (data.words || []).filter(wd => wd.text && wd.text.trim()).map(wd => ({
+            text: wd.text.trim(), conf: wd.confidence,
+            x0: cr.x0 + wd.bbox.x0/cr.scale, x1: cr.x0 + wd.bbox.x1/cr.scale,
+            y0: cr.y0 + wd.bbox.y0/cr.scale, y1: cr.y0 + wd.bbox.y1/cr.scale
+          }))
+        });
+        done++; if(onProgress) onProgress(done, total);
+      }
+      const m = new Map();
+      for(const c of cands){ const k=c.text; const o=m.get(k) || { n:0, conf:0, c }; o.n++; o.conf+=c.conf; if(c.conf>o.c.conf) o.c=c; m.set(k,o); }
+      const best = [...m.values()].sort((p,q)=> q.n-p.n || q.conf-p.conf)[0].c;
+      L.ocrText = best.text; L.ocrConf = best.conf; L.ocrWords = best.words;
+      // Ký tự đơn (vd số thứ tự "1") thường bị PSM 7 bỏ sót -> thử lại với PSM 10 (một ký tự)
+      if(!/[A-Za-zÀ-ỹ0-9]/.test(best.text) && L.comps.length <= 3 && (L.y1-L.y0+1) >= A.medH*0.6 && (L.x1-L.x0+1) <= A.medH*2.2){
+        try{
+          await worker.setParameters({ tessedit_pageseg_mode: '10' });
+          const cv = wxLineCanvas(A, L, 10, base);
+          const { data } = await worker.recognize(cv);
+          const t = wxNormOcr(data.text);
+          if(/[A-Za-zÀ-ỹ0-9]/.test(t)){
+            const cr = L._crop;
+            L.ocrText = t; L.ocrConf = data.confidence || 0;
+            L.ocrWords = [{ text:t, conf:data.confidence||0, x0:L.x0, x1:L.x1, y0:L.y0, y1:L.y1 }];
+          }
+        } catch(e){}
+        await worker.setParameters({ tessedit_pageseg_mode: '7' });
+      }
+    }
+  } finally {
+    try{ await worker.setParameters({ tessedit_pageseg_mode: '3' }); }catch(e){}
+  }
+}
+
+// ---- Phát hiện ký hiệu đầu dòng (gạch đầu dòng / chấm tròn) và làm sạch từ OCR ----
+const WX_BULLET_RE = /^[-–—−•·●○▪■□*+]+$/;
+// ---- Chia vùng (ngoài bảng + từng ô bảng) và tách dòng ----
+function wxBuildLines(A){
+  const { tables, comps, medH, cc, w } = A;
+  const inTable = c => tables.find(t => wxCenterIn(c, { x0:t.bbox.x0-4, y0:t.bbox.y0-4, x1:t.bbox.x1+4, y1:t.bbox.y1+4 }));
+  const regions = [{ name:'out', table:-1, cell:null, comps: comps.filter(c=>!inTable(c)) }];
+  tables.forEach((t,ti) => t.cells.forEach(cell => {
+    regions.push({ name:`T${ti}c${cell.r0},${cell.c0}`, table:ti, cell, comps: comps.filter(c=>wxCenterIn(c, cell)) });
+  }));
+  const lines = [];
+  for(const r of regions){
+    for(const L of WXI.segmentLines(r.comps, medH, cc.lab, w)){ L.region = r; L.table = r.table; L.cell = r.cell; lines.push(L); }
+  }
+  lines.sort((a,b)=>a.y0-b.y0||a.x0-b.x0);
+  return { lines, regions };
+}
+
+/* ===== WX-B: suy luận định dạng chữ (font, cỡ chữ, đậm, nghiêng, gạch chân, màu) ===== */
+const __wxMeasureCtx = document.createElement('canvas').getContext('2d');
+const WX_FONT_STACK = {
+  'Times New Roman': '"Times New Roman", "Liberation Serif", Times, serif',
+  'Arial': 'Arial, "Liberation Sans", Helvetica, sans-serif'
+};
+// Độ rộng phần MỰC (không tính lề chữ) của một chuỗi ở cỡ 100px
+function wxInkWidth100(text, family, bold, italic){
+  const ctx = __wxMeasureCtx;
+  ctx.font = `${italic?'italic ':''}${bold?'bold ':''}100px ${WX_FONT_STACK[family] || WX_FONT_STACK['Times New Roman']}`;
+  const m = ctx.measureText(text);
+  return (m.actualBoundingBoxLeft||0) + (m.actualBoundingBoxRight||m.width);
+}
+const wxMedian = a => { if(!a.length) return 0; const s=a.slice().sort((x,y)=>x-y); return s[s.length>>1]; };
+
+// Trung bình độ dày nét đứng (px, có phần thập phân) trong khoảng x của một dòng — chính xác hơn trung vị nguyên
+function wxStemMean(A, L, xa, xb){
+  const { cc, w } = A;
+  const cs = L.comps.filter(c=>!c._small && c.x1>=xa && c.x0<=xb);
+  if(!cs.length) return 0;
+  const hs = cs.map(c=>c.y1-c.y0+1).sort((a,b)=>a-b);
+  const maxRun = Math.max(4, hs[hs.length>>1]*0.5);
+  let sum=0, n=0;
+  for(const c of cs){
+    const ch=c.y1-c.y0+1;
+    const ya=Math.round(c.y0+ch*0.35), yb=Math.round(c.y0+ch*0.7);
+    for(let y=ya;y<=yb;y++){
+      const row=y*w; let run=0;
+      for(let x=c.x0;x<=c.x1+1;x++){
+        if(x<=c.x1 && cc.lab[row+x]===c.id) run++;
+        else { if(run>=2 && run<=maxRun){ sum+=run; n++; } run=0; }
+      }
+    }
+  }
+  return n? sum/n : 0;
+}
+
+// Khoảng x [xa,xb] của phần MỰC thuộc một từ OCR (lấy từ các thành phần liên thông nằm trong hộp từ).
+// Chỉ đo các hàng NẰM TRÊN đường cơ sở (+1px) để đường gạch chân — dính liền với chữ — không làm từ "dài ra".
+function wxWordInk(A, L, wd){
+  const cs = L.comps.filter(c=>{ const cx=(c.x0+c.x1)/2; return cx>=wd.x0-3 && cx<=wd.x1+3; });
+  if(!cs.length) return { xa: wd.x0, xb: wd.x1, comps: [] };
+  const base = WXI.lineBaseline(L) + 1;
+  let xa = Infinity, xb = -Infinity;
+  for(const c of cs){
+    const yEnd = Math.min(c.y1, base);
+    for(let y=c.y0; y<=yEnd; y++){
+      const row = y*A.w;
+      for(let x=c.x0; x<=c.x1; x++){ if(A.cc.lab[row+x]===c.id){ if(x<xa) xa=x; break; } }
+      for(let x=c.x1; x>=c.x0; x--){ if(A.cc.lab[row+x]===c.id){ if(x>xb) xb=x; break; } }
+    }
+  }
+  if(!isFinite(xa)) return { xa: Math.min(...cs.map(c=>c.x0)), xb: Math.max(...cs.map(c=>c.x1)), comps: cs };
+  return { xa, xb, comps: cs };
+}
+
+// Suy luận toàn bộ định dạng. lines: các dòng đã có words. Kết quả gắn vào từng dòng (L.style) và từng từ.
+function wxInferStyles(A, lines){
+  const { cc, w, T } = A;
+  // 1) Họ font: bỏ phiếu "có chân" trên toàn trang
+  let sv = 0, tot = 0;
+  for(const L of lines){ const v = WXI.serifVote(L.comps, cc.lab, w); sv += v.serif; tot += v.total; }
+  const serif = tot < 6 ? true : (sv / tot) >= 0.12;
+  let serifFinal = serif;
+  { // chữ thật của PDF: bỏ phiếu theo số ký tự
+    let sy = 0, sn = 0;
+    for(const L of lines){ if(L.nstyle && L.nstyle.serif !== undefined && L.nstyle.serif !== null){ const n=(L.text||'').length||1; if(L.nstyle.serif) sy+=n; else sn+=n; } }
+    if(sy + sn > 0) serifFinal = sy >= sn;
+  }
+  const family = serifFinal ? 'Times New Roman' : 'Arial';
+  A.family = family;
+
+  // 2) Từng dòng: đo đặc trưng thô
+  for(const L of lines){
+    L.style = { family };
+    const ws = L.words || [];
+    L.wordInfo = ws.map(wd=>{
+      const ink = wxWordInk(A, L, wd);
+      return { wd, xa: ink.xa, xb: ink.xb, comps: ink.comps, wPx: ink.xb-ink.xa+1 };
+    });
+    // độ nghiêng cả dòng
+    L.style.slant = WXI.slantDeg(L, cc.lab, w, L.x0, L.x1);
+    L.style.italic = L.style.slant >= 7;
+    // cỡ chữ (giả định thường, không nghiêng đậm) từ độ rộng từng TỪ (không bị ảnh hưởng bởi giãn đều 2 bên)
+    const sizes = [];
+    for(const wi of L.wordInfo){
+      const t = wi.wd.text;
+      if(t.length < 3) continue;
+      const iw = wxInkWidth100(t, family, false, L.style.italic);
+      if(iw <= 0) continue;
+      sizes.push( (wi.wPx*WX_PX2PT) / (iw/100) );
+    }
+    L.style.sizeReg = sizes.length ? wxMedian(sizes) : 0;
+    L.style.nWords = ws.length;
+    // độ dày nét
+    L.style.stem = wxStemMean(A, L, L.x0, L.x1);
+    L.style.q = L.style.sizeReg ? L.style.stem / (L.style.sizeReg*WX_SC) : 0;
+  }
+  // 3) Đậm / thường: kiểm định HAI GIẢ THUYẾT. Với mỗi dòng, dự đoán độ dày nét nếu là chữ thường (dùng cỡ chữ đo theo
+  //    số đo chữ thường) và nếu là chữ đậm (dùng cỡ chữ đo theo số đo chữ đậm), rồi chọn giả thuyết khớp hơn. Mô hình tuyến
+  //    tính (độ dày = a*em + b) đã hiệu chỉnh trên bản scan 216dpi; ở chữ nhỏ hai giả thuyết gần nhau nên mặc định là THƯỜNG.
+  for(const L of lines){
+    const ws = L.wordInfo;
+    const sizesB = [];
+    for(const wi of ws){ const t=wi.wd.text; if(t.length<3) continue; const iw=wxInkWidth100(t, family, true, L.style.italic); if(iw>0) sizesB.push((wi.wPx*WX_PX2PT)/(iw/100)); }
+    L.style.sizeBold = sizesB.length ? wxMedian(sizesB) : L.style.sizeReg;
+  }
+  const off = 0; A.boldOffset = off;
+  const testBold = (stem, sReg, sBold)=>{
+    if(!(stem>0) || !(sReg>0)) return false;
+    const predR = 2.9 + 0.04*sReg*WX_SC + off, predB = 0.9 + 0.145*sBold*WX_SC + off;
+    const eR = Math.abs(stem-predR)/predR, eB = Math.abs(stem-predB)/predB;
+    return eB < eR - 0.05;
+  };
+  for(const L of lines){
+    L.style.bold = testBold(L.style.stem, L.style.sizeReg, L.style.sizeBold);
+    // từng từ (chữ đậm xen kẽ trong dòng thường, vd nhãn "Điều 1:")
+    for(const wi of L.wordInfo){
+      wi.bold = L.style.bold;
+    }
+    if(!L.style.bold && L.wordInfo.length >= 3){
+      for(const wi of L.wordInfo){
+        if(wi.wd.text.length < 3) continue;
+        const st = wxStemMean(A, L, wi.xa, wi.xb);
+        const iwR = wxInkWidth100(wi.wd.text, family, false, L.style.italic), iwB = wxInkWidth100(wi.wd.text, family, true, L.style.italic);
+        if(iwR<=0||iwB<=0) continue;
+        const sR = (wi.wPx*WX_PX2PT)/(iwR/100), sB = (wi.wPx*WX_PX2PT)/(iwB/100);
+        // từ đậm phải khớp giả thuyết đậm rõ rệt hơn (ngưỡng chặt hơn mức dòng)
+        const predR = 2.9 + 0.04*sR*WX_SC + off, predB = 0.9 + 0.145*sB*WX_SC + off;
+        if(st>0 && Math.abs(st-predB)/predB < 0.10 && Math.abs(st-predB)/predB < Math.abs(st-predR)/predR - 0.14 && Math.abs(sB - L.style.sizeReg*0.96) < 2.0) wi.bold = true;
+      }
+      // ký hiệu ngắn (số, dấu) đứng liền sau từ đậm -> đậm theo
+      for(let k=1;k<L.wordInfo.length;k++){
+        const wi=L.wordInfo[k]; if(wi.wd.text.length<3 && L.wordInfo[k-1].bold && !wi.bold && k<=2) wi.bold = true;
+      }
+    }
+    // Chữ đậm xen kẽ trong dòng thường (nhãn kiểu "Điều 1:", "Kính gửi:") gần như luôn nằm Ở ĐẦU dòng: chỉ giữ dãy từ đậm
+    // liền nhau bắt đầu từ từ đầu tiên, bỏ các từ đậm rời rạc giữa dòng (thường là nhiễu đo ở ảnh chất lượng thấp).
+    if(!L.style.bold && !L.native){
+      let k = 0; while(k < L.wordInfo.length && L.wordInfo[k].bold) k++;
+      for(let q = k; q < L.wordInfo.length; q++) L.wordInfo[q].bold = false;
+    }
+    // cỡ chữ cuối: theo biến thể thật
+    L.style.size = L.style.bold ? L.style.sizeBold : L.style.sizeReg;
+  }
+  // 3b) Dòng ít chữ (khó đo cỡ chữ bằng độ rộng từ): suy ra từ chiều cao chữ so với các dòng đo được tin cậy
+  const hOf = L => { const hs = L.comps.filter(c=>!c._small && !c._tall).map(c=>c.y1-c.y0+1).sort((a,b)=>a-b); return hs.length ? hs[Math.floor(hs.length*0.7)] : 0; };
+  const reliable = L => (L.words||[]).reduce((s,w)=> s + (w.text.length>=3 ? w.text.length : 0), 0) >= 9 && L.style.size > 0;
+  const refs = lines.filter(reliable).map(L=>({ h:hOf(L), s:L.style.size })).filter(r=>r.h>0);
+  const kMed = refs.length ? wxMedian(refs.map(r=>r.s/r.h)) : 0;
+  for(const L of lines){
+    if(reliable(L)) continue;
+    const h = hOf(L); if(!(h>0) || !refs.length) continue;
+    // ưu tiên kế thừa từ dòng đo tin cậy GẦN NHẤT trong cùng ô/vùng và có chiều cao chữ tương đương (±25%)
+    const same = lines.filter(o => o !== L && o.region === L.region && reliable(o) && hOf(o) > 0 && Math.abs(hOf(o)/h - 1) <= 0.25)
+                      .sort((p,q) => Math.abs(p.y0 - L.y0) - Math.abs(q.y0 - L.y0));
+    if(same.length){ L.style.size = same[0].style.size; continue; }
+    const near = refs.filter(r => Math.abs(r.h/h - 1) <= 0.15);
+    const est = near.length ? wxMedian(near.map(r=>r.s * h / r.h)) : kMed*h;
+    if(est > 0) L.style.size = est;
+  }
+  // 3c) Dòng có chữ thật của PDF: dùng đúng cỡ chữ, đậm/nghiêng của font (chính xác tuyệt đối), không đoán từ ảnh
+  for(const L of lines){
+    if(!(L.native && L.nstyle)) continue;
+    L.style.bold = L.nstyle.bold; L.style.italic = L.nstyle.italic; L.style.size = L.nstyle.size;
+    for(const wi of L.wordInfo) wi.bold = !!wi.wd.nb;
+  }
+  // 4) Gạch chân + màu, theo từng từ
+  for(const L of lines){
+    const ul = WXI.underlineSegments(L, T, w, Math.round(A.medH*2.2));
+    for(const wi of L.wordInfo){
+      const cx = (wi.xa+wi.xb)/2;
+      wi.underline = ul.some(u => cx>=u.xa-4 && cx<=u.xb+4 && (Math.min(u.xb,wi.xb)-Math.max(u.xa,wi.xa)) >= 0.5*(wi.xb-wi.xa));
+    }
+    // màu mực trung bình của dòng
+    let r=0,g=0,b=0,n=0;
+    for(const c of L.comps){ if(c._small) continue;
+      for(let y=c.y0;y<=c.y1;y+=2){ const row=y*w; for(let x=c.x0;x<=c.x1;x+=2){ const i=row+x; if(cc.lab[i]===c.id){ const o=i*4; r+=A.rgba[o]; g+=A.rgba[o+1]; b+=A.rgba[o+2]; n++; } } }
+    }
+    if(n){ r/=n; g/=n; b/=n; }
+    const chroma = Math.max(r,g,b)-Math.min(r,g,b);
+    L.style.color = (n && chroma >= 45 && (r+g+b)/3 < 200) ? '#'+[r,g,b].map(v=>Math.round(v).toString(16).padStart(2,'0')).join('') : '000000';
+    if(L.style.color[0]==='#') L.style.color = L.style.color.slice(1);
+  }
+  // 5) Gom cỡ chữ trên toàn trang về các mức "đẹp" (bội 0.5pt), ưu tiên mức xuất hiện nhiều
+  for(const L of lines) if(L.native && L.nstyle){ L.style.sizeSnap = Math.max(1, Math.round(L.style.size*2)/2); }
+  const items = lines.filter(L=>L.style.size>0 && !(L.native && L.nstyle)).map(L=>({ L, s:L.style.size, wgt: Math.max(1,(L.text||'').length) })).sort((a,b)=>a.s-b.s);
+  const clusters=[];
+  for(const it of items){
+    const last=clusters[clusters.length-1];
+    if(last && it.s - last.max <= 0.75){ last.items.push(it); last.max=it.s; }
+    else clusters.push({ items:[it], max:it.s });
+  }
+  for(const c of clusters){
+    // trung vị có trọng số theo độ dài chữ
+    const arr = c.items.slice().sort((a,b)=>a.s-b.s); const total = arr.reduce((a,b)=>a+b.wgt,0);
+    let acc=0, med=arr[0].s; for(const it of arr){ acc+=it.wgt; if(acc>=total/2){ med=it.s; break; } }
+    let snapped = Math.round(med*2)/2;
+    if(Math.abs(med-Math.round(med)) <= 0.3) snapped = Math.round(med);
+    for(const it of c.items) it.L.style.sizeSnap = snapped;
+  }
+  for(const L of lines) if(!L.style.sizeSnap) L.style.sizeSnap = L.style.size || 12;
+}
+
+/* ===== WX-C: dựng bố cục trang (hàng → đoạn văn → bảng → ảnh) ===== */
+const WX_K_BASE = 0.80;   // vị trí đường cơ sở bên trong một dòng cao "chính xác" (tỉ lệ / chiều cao dòng)
+const wxPt = v => v * WX_PX2PT;
+
+// ---- Ký hiệu đầu dòng (đã thay thế phiên bản cũ ở wx_a): ưu tiên HÌNH HỌC, OCR chỉ để bổ trợ ----
+function wxSplitBullet(L, A){
+  const words = (L.ocrWords || []).slice();
+  const cs = L.comps.slice().sort((p,q)=>p.x0-q.x0);
+  const c0 = cs[0], c1 = c0 ? cs.find(c=>c.x0 > c0.x1) : null;
+  let bullet = null;
+  if(c0){
+    const h0=c0.y1-c0.y0+1, w0=c0.x1-c0.x0+1;
+    const dashLike = h0 <= A.medH*0.25 && w0 >= A.medH*0.3 && w0 <= A.medH*1.2;
+    const dotLike  = h0 <= A.medH*0.5 && w0 <= A.medH*0.5 && h0 >= A.medH*0.18 && Math.abs(h0-w0) <= 0.45*Math.max(h0,w0);
+    if((dashLike || dotLike) && c1 && (c1.x0 - c0.x1) > A.medH*0.55) bullet = { ch: dashLike ? '-' : '•', x0: c0.x0, x1: c0.x1 };
+  }
+  // bỏ các token đầu là ký hiệu/dấu câu do OCR đọc ra từ gạch đầu dòng (tối đa 3 token)
+  let i = 0;
+  while(i < words.length && i < 3 && (WX_BULLET_RE.test(words[i].text) || /^[.,·:;'"`|]+$/.test(words[i].text))){
+    if(!bullet && WX_BULLET_RE.test(words[i].text)) bullet = { ch: /[•●○▪■□·]/.test(words[i].text) ? '•' : '-', x0: words[i].x0, x1: words[i].x1 };
+    i++;
+  }
+  let rest = words.slice(i);
+  if(bullet && rest.length && /^[-–—•·]+[^\s-–—•·]/.test(rest[0].text)) rest[0] = Object.assign({}, rest[0], { text: rest[0].text.replace(/^[-–—•·]+/, '') });
+  L.bullet = bullet;
+  L.words = rest;
+  // mép trái của phần chữ: thành phần mực đầu tiên nằm sau ký hiệu
+  if(bullet){
+    const after = cs.find(c => c.x0 > bullet.x1 + A.medH*0.2);
+    L.textX0 = after ? after.x0 : (rest.length ? rest[0].x0 : L.x0);
+  } else {
+    L.textX0 = L.x0;
+  }
+}
+
+function wxDropGarbage(lines, A){
+  return lines.filter(L => {
+    if(!(L.words && L.words.length)) return false;
+    const txt = L.words.map(w=>w.text).join('');
+    const alnum = (txt.match(/[A-Za-zÀ-ỹ0-9]/g) || []).length;
+    if(!alnum) return false;
+    // Ngoài bảng: dòng cực ngắn (<= 3 ký tự) gần như chắc chắn là bụi/vệt scan, nhất là sát mép trang
+    if(L.table < 0 && !L.bullet && alnum <= 3){
+      const nearEdge = L.x0 < A.w*0.08 || L.x1 > A.w*0.92 || L.y0 < A.h*0.06 || L.y1 > A.h*0.94;
+      if(nearEdge || (L.ocrConf||0) < 70) return false;
+    }
+    return true;
+  });
+}
+
+// ---- Dòng → hàng (các đoạn cùng đường cơ sở nằm chung một hàng) ----
+function wxRowsFromLines(lines){
+  const arr = lines.map(L=>({ L, base: WXI.lineBaseline(L) })).sort((a,b)=>a.base-b.base || a.L.x0-b.L.x0);
+  const rows = [];
+  for(const it of arr){
+    const em = Math.max(12, it.L.style.sizeSnap*WX_SC);
+    const last = rows[rows.length-1];
+    if(last && Math.abs(last.base - it.base) <= 0.4*em){ last.segs.push(it.L); }
+    else rows.push({ segs:[it.L], base: it.base });
+  }
+  for(const r of rows){
+    r.segs.sort((a,b)=>a.x0-b.x0);
+    r.base = Math.round(r.segs.reduce((s,l)=>s+WXI.lineBaseline(l),0) / r.segs.length);
+    r.size = Math.max(...r.segs.map(s=>s.style.sizeSnap));
+    r.x0 = Math.min(...r.segs.map(s=>s.bullet ? s.bullet.x0 : s.x0));
+    r.textX0 = r.segs[0].bullet ? r.segs[0].textX0 : r.segs[0].x0;
+    r.x1 = Math.max(...r.segs.map(s=>s.x1));
+    r.multi = r.segs.length > 1;
+    r.bullet = r.segs[0].bullet || null;
+    r.bold = r.segs.every(s=>s.style.bold);
+    r.len = r.segs.reduce((s,l)=>s+l.words.map(w=>w.text).join(' ').length, 0);
+  }
+  return rows;
+}
+
+// ---- Nhóm hàng → đoạn văn ----
+function wxMarkCentered(rows, frame){
+  const fw = frame.R - frame.L, fc = (frame.L + frame.R)/2;
+  for(const r of rows){
+    r.centered = !r.multi && !r.bullet && Math.abs((r.x0+r.x1)/2 - fc) <= 0.04*fw && (r.x0 - frame.L) >= 0.06*fw && (frame.R - r.x1) >= 0.06*fw;
+  }
+  // Canh phải: ít nhất 2 dòng đơn cùng dừng ở một mép phải (sát mép khung), chữ bắt đầu cách mép trái một đoạn
+  const cand = rows.filter(r => !r.multi && !r.bullet && !r.centered && (frame.R - r.x1) <= 0.07*fw && (r.x0 - frame.L) >= 0.08*fw);
+  for(const r of cand){
+    r.rightAlign = cand.some(o => o !== r && Math.abs(o.x1 - r.x1) <= 0.02*fw) || ((frame.R - r.x1) <= 0.03*fw && (r.x0 - frame.L) >= 0.30*fw);
+  }
+}
+function wxBodyRight(rows, frame){
+  const xs = rows.filter(r=>!r.multi && r.len >= 35).map(r=>r.x1).sort((a,b)=>a-b);
+  if(!xs.length) return frame.R;
+  return xs[Math.min(xs.length-1, Math.floor(xs.length*0.8))];
+}
+function wxParaContLeft(P){
+  const f = P.rows[0];
+  if(f.bullet) return f.textX0;
+  if(P.rows.length >= 2) return P.rows[1].x0;
+  return f.x0;
+}
+function wxCanContinue(P, r, frame){
+  const prev = P.rows[P.rows.length-1];
+  if(prev.multi || r.multi || r.bullet || prev.centered) return false;
+  if(Math.abs(r.size - prev.size) > 0.75 || r.bold !== prev.bold) return false;
+  const em = prev.size * WX_SC;
+  const gap = r.base - prev.base;
+  if(gap < 0.8*em || gap > 1.7*em) return false;
+  if(P.rows.length >= 2){
+    const p0 = prev.base - P.rows[P.rows.length-2].base;
+    if(Math.abs(gap - p0) > 0.25*p0) return false;
+  }
+  // dòng liền trước phải chạm gần mép phải của khối chữ (dòng chưa hết đoạn thì mới xuống dòng tiếp)
+  if(prev.x1 < frame.bodyRight - 0.07*(frame.bodyRight - frame.L)) return false;
+  if(P.rows.length === 1 && !P.rows[0].bullet){
+    if(r.x0 > prev.x0 + 0.7*em || r.x0 < prev.x0 - 3.5*em) return false;
+  } else {
+    if(Math.abs(r.x0 - wxParaContLeft(P)) > 0.7*em) return false;
+  }
+  return true;
+}
+
+// Chạy (run) văn bản của một đoạn (nhiều hàng, ngăn cách bằng ngắt dòng cứng)
+function wxRunsForSeg(L){
+  const runs = [];
+  const ws = L.words;
+  const wi = L.wordInfo || [];
+  const infoByWord = new Map(wi.map(x=>[x.wd, x]));
+  let cur = null;
+  for(let k=0;k<ws.length;k++){
+    const info = infoByWord.get(ws[k]) || {};
+    const st = {
+      b: !!(info.bold !== undefined ? info.bold : L.style.bold),
+      i: !!L.style.italic,
+      u: !!info.underline,
+      color: L.style.color || '000000',
+      sz: L.style.sizeSnap,
+      fam: L.style.family
+    };
+    const text = (k>0 ? ' ' : '') + ws[k].text;
+    if(cur && cur.b===st.b && cur.i===st.i && cur.u===st.u && cur.color===st.color && cur.sz===st.sz && cur.fam===st.fam){ cur.t += text; }
+    else { cur = Object.assign({ t: text }, st); runs.push(cur); }
+  }
+  return runs;
+}
+
+function wxMakePara(P, frame){
+  const rows = P.rows, first = rows[0], n = rows.length;
+  const fw = frame.R - frame.L;
+  const size = Math.max(...rows.map(r=>r.size));
+  const blockL = Math.min(...rows.map(r=>r.x0)), blockR = Math.max(...rows.map(r=>r.x1));
+  const para = { kind:'p', size, rows, runs:[], tabs:[], jc:'left', indL:0, indR:0, first:0 };
+  // --- canh lề ---
+  let jc = 'left';
+  if(n === 1 && !first.multi && !first.bullet){
+    if(first.rightAlign) jc = 'right';
+    else if(first.centered) jc = 'center';
+  } else if(n >= 2){
+    const nonLast = rows.slice(0, n-1);
+    if(nonLast.every(r => Math.abs(r.x1 - blockR) <= 0.02*fw)) jc = 'both';
+  }
+  // --- thụt lề ---
+  const contLeft = wxParaContLeft(P);
+  if(jc === 'center'){
+    const D = 2*((blockL + blockR)/2) - (frame.L + frame.R);
+    para.indL = Math.max(0, D) * WX_PX2PT; para.indR = Math.max(0, -D) * WX_PX2PT;
+  } else if(jc === 'right'){
+    para.indR = Math.max(0, frame.R - blockR) * WX_PX2PT;
+  } else {
+    if(first.bullet){
+      para.indL = Math.max(0, contLeft - frame.L) * WX_PX2PT;
+      para.first = (first.bullet.x0 - contLeft) * WX_PX2PT;          // âm = thụt treo
+    } else if(n >= 2){
+      para.indL = Math.max(0, contLeft - frame.L) * WX_PX2PT;
+      para.first = (first.x0 - contLeft) * WX_PX2PT;
+    } else {
+      para.indL = Math.max(0, first.x0 - frame.L) * WX_PX2PT;
+    }
+    // Đoạn canh đều cần lề phải đúng mép khối chữ (chừa 3pt dự phòng để Word không ngắt dòng khi số đo chữ lệch nhẹ);
+    // đoạn canh trái không cần lề phải (để 0 = tối đa chỗ, không bị ngắt dòng ngoài ý muốn).
+    para.indR = (jc === 'both') ? Math.max(0, frame.R - (blockR + 3*WX_SC)) * WX_PX2PT : 0;
+  }
+  para.jc = jc;
+  // --- nội dung ---
+  const push = (o)=>para.runs.push(o);
+  for(let k=0;k<n;k++){
+    const r = rows[k];
+    if(k > 0) push({ br:true });
+    r.segs.forEach((seg, si)=>{
+      if(si === 0 && seg.bullet){ push({ t: seg.bullet.ch, b:false, i:false, u:false, color: seg.style.color||'000000', sz: seg.style.sizeSnap, fam: seg.style.family }); push({ tab:true }); }
+      if(si > 0){
+        // tab dẫn tới đoạn thứ si: căn phải nếu đoạn sát mép phải, ngược lại tab trái tại vị trí mép trái mực
+        const rightAlign = seg.x1 >= frame.R - 0.04*fw;
+        para.tabs.push(rightAlign ? { type:'right', pos:(seg.x1 - frame.L)*WX_PX2PT } : { type:'left', pos:(seg.x0 - frame.L)*WX_PX2PT });
+        push({ tab:true });
+      }
+      for(const run of wxRunsForSeg(seg)) push(run);
+    });
+  }
+  if(first.bullet) para.tabs.push({ type:'left', pos: Math.max(0, contLeft - frame.L) * WX_PX2PT });
+  // --- chiều cao dòng & vị trí dọc ---
+  let LH;
+  if(n >= 2){
+    const ds = []; for(let k=1;k<n;k++) ds.push(rows[k].base - rows[k-1].base);
+    LH = wxMedian(ds) * WX_PX2PT;
+  } else LH = Math.max(size * 1.2, 6);
+  LH = Math.max(6, Math.round(LH * 2) / 2);       // bội 0.5pt
+  para.LH = LH;
+  para.top = first.base*WX_PX2PT - WX_K_BASE*LH;
+  para.bottom = para.top + n*LH;
+  return para;
+}
+
+// Gom toàn bộ hàng của một khung (trang/ô bảng) thành các đoạn văn
+function wxParagraphsForFrame(lines, frame){
+  if(!lines.length) return [];
+  const rows = wxRowsFromLines(lines);
+  frame.bodyRight = wxBodyRight(rows, frame);
+  wxMarkCentered(rows, frame);
+  const paras = []; let P = null;
+  for(const r of rows){
+    if(P && wxCanContinue(P, r, frame)) P.rows.push(r);
+    else { P = { rows:[r] }; paras.push(P); }
+  }
+  return paras.map(P => wxMakePara(P, frame));
+}
+
+// ---- Ảnh: cắt từ ảnh trang đã chống nghiêng ----
+function wxCropCanvas(A, rect, mask){
+  const x0=Math.max(0,Math.floor(rect.x0)), y0=Math.max(0,Math.floor(rect.y0));
+  const x1=Math.min(A.w-1,Math.ceil(rect.x1)), y1=Math.min(A.h-1,Math.ceil(rect.y1));
+  const cw=x1-x0+1, ch=y1-y0+1;
+  const cv=document.createElement('canvas'); cv.width=cw; cv.height=ch;
+  const ctx=cv.getContext('2d'); const im=ctx.createImageData(cw,ch);
+  for(let y=0;y<ch;y++) for(let x=0;x<cw;x++){
+    const gi=(y0+y)*A.w+(x0+x), o=(y*cw+x)*4, s=gi*4;
+    const r=A.rgba[s], g=A.rgba[s+1], b=A.rgba[s+2];
+    if(mask){
+      // "màu → alpha": alpha = độ đậm của điểm ảnh, chỉ trong vùng mặt nạ; hiệu ứng giống mực đóng dấu chồng lên chữ
+      if(!mask[gi]){ im.data[o+3]=0; continue; }
+      const mn=Math.min(r,g,b);
+      const a=Math.max(0, Math.min(1, (255-mn)/255*1.15));
+      if(a<=0.02){ im.data[o+3]=0; continue; }
+      im.data[o]  =Math.max(0,Math.min(255,(r-255*(1-a))/a));
+      im.data[o+1]=Math.max(0,Math.min(255,(g-255*(1-a))/a));
+      im.data[o+2]=Math.max(0,Math.min(255,(b-255*(1-a))/a));
+      im.data[o+3]=Math.round(a*255);
+    } else {
+      im.data[o]=r; im.data[o+1]=g; im.data[o+2]=b; im.data[o+3]=255;
+    }
+  }
+  ctx.putImageData(im,0,0);
+  return { canvas:cv, x0, y0, x1, y1, w:cw, h:ch };
+}
+async function wxCanvasToPng(cv){
+  const blob = await new Promise(res=>cv.toBlob(res,'image/png'));
+  return new Uint8Array(await blob.arrayBuffer());
+}
+
+// Nhóm mực màu (con dấu, chữ ký...) thành từng đối tượng. Trả về [{x0,y0,x1,y1,count}]
+function wxColorObjects(A){
+  const { sep, w, h, medH } = A;
+  const F = 4, gw = Math.ceil(w/F), gh = Math.ceil(h/F);
+  const g = new Uint8Array(gw*gh), cnt = new Int32Array(gw*gh);
+  for(let y=0;y<h;y++) for(let x=0;x<w;x++){ if(sep.color[y*w+x]){ const k=(y>>2)*gw+(x>>2); g[k]=1; cnt[k]++; } }
+  // giãn 3 ô (~12px) để nối các mảnh của cùng một con dấu
+  const d = new Uint8Array(gw*gh);
+  for(let y=0;y<gh;y++) for(let x=0;x<gw;x++){ if(!g[y*gw+x]) continue; for(let dy=-3;dy<=3;dy++){ const yy=y+dy; if(yy<0||yy>=gh) continue; for(let dx=-3;dx<=3;dx++){ const xx=x+dx; if(xx>=0&&xx<gw) d[yy*gw+xx]=1; } } }
+  const cc = WXI.components(d, gw, gh);
+  const objs = [];
+  for(const b of cc.boxes){
+    let count = 0;
+    for(let y=b.y0;y<=b.y1;y++) for(let x=b.x0;x<=b.x1;x++) if(cc.lab[y*gw+x]===b.id) count += cnt[y*gw+x];
+    const o = { x0: Math.max(0, b.x0*F-6), y0: Math.max(0, b.y0*F-6), x1: Math.min(w-1, (b.x1+1)*F+6), y1: Math.min(h-1, (b.y1+1)*F+6), count };
+    // bỏ nhiễu: quá ít điểm màu và nhỏ
+    if(count < 350 && Math.max(o.x1-o.x0, o.y1-o.y0) < medH*2.5) continue;
+    if(count < 80) continue;
+    objs.push(o);
+  }
+  return objs;
+}
+
+/* ===== WX-T: sửa lỗi dấu OCR theo CỤM TỪ hành chính phổ biến (chỉ cụm >= 2 từ, so khớp không phân biệt dấu) ===== */
+const WX_PHRASES = [
+  'cộng hòa xã hội chủ nghĩa việt nam','cộng hoà xã hội chủ nghĩa việt nam','độc lập - tự do - hạnh phúc','độc lập tự do hạnh phúc',
+  'giám đốc','phó giám đốc','tổng giám đốc','trưởng phòng','phó phòng','kế toán trưởng','chủ tịch','công ty cổ phần','công ty tnhh',
+  'công ty trách nhiệm hữu hạn','cổ phần','họ và tên','năm sinh','ngày sinh','nơi nhận','người lao động','người sử dụng lao động',
+  'quyết định','thông báo','biên bản','hợp đồng','giấy chứng nhận','giấy đề nghị','tờ trình','báo cáo','kính gửi','thay mặt','thừa lệnh',
+  'căn cứ','bộ luật lao động','luật an toàn','vệ sinh lao động','an toàn lao động','quy chuẩn kỹ thuật quốc gia','quy chuẩn','kỹ thuật',
+  'thương binh và xã hội','thương binh & xã hội','lao động thương binh','bộ lao động','xã hội','thiết bị nâng','xe nâng hàng','cầu trục',
+  'vận hành','nhiệm vụ','giao nhiệm vụ','nhân viên','có tên sau đây','sau đây','hồ chí minh','hà nội','đà nẵng','hải phòng','vũng tàu',
+  'nhân sự','hành chính','hành chính nhân sự','phòng nhân sự','năng lượng','hàng hải','hàng hải và năng lượng','nội quy lao động',
+  'quy trình vận hành','quy định an toàn','nhu cầu hoạt động','hoạt động','thông tư','nghị định','thi hành','hướng dẫn thi hành',
+  'văn bản hướng dẫn','các văn bản','quy định','có hiệu lực','kể từ ngày','ngày ký','trách nhiệm','chịu trách nhiệm','như điều','lưu vt','lưu văn thư','về việc','ban hành','quy chuẩn kỹ thuật','kỹ thuật quốc gia','quốc gia','theo quy định','thực hiện'
+];
+const wxStrip = s => s.normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/đ/g,'d').replace(/Đ/g,'D').toLowerCase();
+const __wxPhraseIdx = (function(){
+  const m = new Map();   // chuỗi không dấu -> [cách viết chuẩn]
+  for(const p of WX_PHRASES){ const w = p.split(' '); const k = w.map(wxStrip).join(' '); if(!m.has(k)) m.set(k, []); m.get(k).push(p); }
+  const byLen = new Map();
+  for(const [k, v] of m){ const n = k.split(' ').length; if(n < 2) continue; if(!byLen.has(n)) byLen.set(n, new Map()); byLen.get(n).set(k, v); }
+  return { byLen, maxN: Math.max(...byLen.keys()) };
+})();
+function wxCaseLike(orig, canon){
+  const letters = orig.replace(/[^A-Za-zÀ-ỹ]/g,'');
+  if(letters.length >= 2 && letters === letters.toUpperCase()) return canon.toUpperCase();
+  if(/^[A-ZÀ-Ỹ]/.test(orig)) return canon.charAt(0).toUpperCase() + canon.slice(1);
+  return canon;
+}
+function wxFixPhrases(lines){
+  for(const L of lines){
+    const ws = L.words; if(!ws || ws.length < 2 || L.native) continue;
+    // chuỗi khoá không dấu (bỏ dấu câu ở hai đầu từ)
+    const keys = ws.map(w => { const core = w.text.replace(/^[^A-Za-zÀ-ỹ0-9&]+|[^A-Za-zÀ-ỹ0-9&]+$/g,''); return core ? wxStrip(core) : w.text; });
+    let i = 0;
+    while(i < ws.length){
+      let done = false;
+      for(let n = Math.min(__wxPhraseIdx.maxN, ws.length - i); n >= 2 && !done; n--){
+        const tbl = __wxPhraseIdx.byLen.get(n); if(!tbl) continue;
+        const key = keys.slice(i, i+n).join(' ');
+        const cands = tbl.get(key);
+        if(!cands) continue;
+        // đã đúng theo một cách viết chuẩn nào đó thì giữ nguyên
+        const cur = ws.slice(i, i+n).map(w=>{ const c=w.text.replace(/^[^A-Za-zÀ-ỹ0-9&]+|[^A-Za-zÀ-ỹ0-9&]+$/g,''); return (c||w.text).toLowerCase().normalize('NFC'); }).join(' ');
+        if(cands.some(c => c.normalize('NFC') === cur)){ i += n; done = true; break; }
+        const canon = cands[0].split(' ');
+        for(let k=0;k<n;k++){
+          const w = ws[i+k];
+          if(!/[A-Za-zÀ-ỹ0-9]/.test(w.text)) continue;
+          const m = /^([^A-Za-zÀ-ỹ0-9&]*)(.*?)([^A-Za-zÀ-ỹ0-9&]*)$/.exec(w.text);
+          ws[i+k] = Object.assign({}, w, { text: m[1] + wxCaseLike(m[2], canon[k]) + m[3] });
+        }
+        i += n; done = true;
+      }
+      if(!done) i++;
+    }
+    // "Page 1 of2" / "Pape 1 of 2": lỗi OCR rất hay gặp ở đầu biểu mẫu
+    for(let k=0;k<ws.length;k++){
+      if(/^Pa[pq]e$/.test(ws[k].text) && k+1<ws.length && /^\d+$/.test(ws[k+1].text)) ws[k] = Object.assign({}, ws[k], { text:'Page' });
+      const m = /^(of|Of|OF)(\d+)$/.exec(ws[k].text);
+      if(m && k>0 && /^\d+$/.test(ws[k-1].text)){
+        const w0 = ws[k], mid = w0.x0 + (w0.x1-w0.x0)*0.4;
+        ws.splice(k, 1, Object.assign({}, w0, { text:m[1], x1:mid }), Object.assign({}, w0, { text:m[2], x0:mid }));
+      }
+    }
+    // vài lỗi cố định thường gặp ở văn bản hành chính Việt
+    if(ws.length){
+      ws[0] = Object.assign({}, ws[0], { text: ws[0].text.replace(/^\(V[AaÁ|Iil]:/, '(V/v:').replace(/^\(V[AaÁ|Iil]\b/, '(V/v') });
+      if(ws.length >= 2 && /^S[óò6ố]$/.test(ws[0].text) && /^\(N[oó0]\)/i.test(ws[1].text)) ws[0] = Object.assign({}, ws[0], { text:'Số' });
+    }
+  }
+}
+
+// Từ viết tắt hành chính thường gặp: nếu OCR sai đúng MỘT ký tự thuộc nhóm dễ nhầm thì sửa lại (vd HƠNS -> HCNS)
+const WX_ABBR = ['HCNS','TNHH','CTCP','BLĐTBXH','HĐQT','ĐHĐCĐ','PCCC','ATLĐ','BHXH','BHYT','CCCD','CMND','HSE','KCS','TP.HCM','SME'];
+const WX_CONFUSABLE = ['CGOƠÔỐỔỒQ0DĐ','Il1|ÍỊ','S5$','B8ĐD','UVŨ','ZNM'];
+function wxFixAbbreviations(lines){
+  const conf = (a,b)=> a===b || WX_CONFUSABLE.some(g => g.includes(a) && g.includes(b));
+  for(const L of lines){
+    if(!L.words || L.native) continue;
+    L.words = L.words.map(w => {
+      const t = w.text.replace(/[^A-Za-zÀ-ỹ0-9.]/g,'');
+      if(t.length < 3 || t.length > 8 || t !== t.toUpperCase()) return w;
+      for(const ab of WX_ABBR){
+        if(ab.length !== t.length || ab === t) continue;
+        let diff = 0, ok = true;
+        for(let i=0;i<t.length;i++){ if(t[i] !== ab[i]){ diff++; if(!conf(t[i], ab[i])) ok = false; } }
+        if(diff === 1 && ok) return Object.assign({}, w, { text: w.text.replace(t, ab) });
+      }
+      return w;
+    });
+  }
+}
+
+/* ===== WX-D: dựng mô hình trang → tài liệu Word (.docx thật, OOXML) ===== */
+
+// ---------- Mô hình trang ----------
+async function wxBuildPageModel(idx, onStatus){
+  const say = (m)=>{ if(onStatus) onStatus(m); };
+  say('Đang phân tích ảnh trang '+(idx+1)+'…');
+  const A = await wxAnalyzePage(idx);
+  const pageWpt = A.w * WX_PX2PT, pageHpt = A.h * WX_PX2PT;
+  const { lines: allLines } = wxBuildLines(A);
+
+  // 1) Ô bảng chứa đồ hoạ (logo...) -> cả ô là MỘT ẢNH; đồ hoạ lớn ngoài bảng -> ảnh nổi
+  const floats = [];       // ảnh nổi (con dấu, chữ ký, logo ngoài bảng)
+  const imageRegions = []; // vùng ngoài bảng đã thành ảnh (bỏ các dòng chữ nằm trong)
+  for(const t of A.tables){
+    for(const cell of t.cells){
+      cell.isImage = A.big.some(b => wxCenterIn(b, cell));
+    }
+  }
+  const outsideBig = A.big.filter(b => !A.tables.some(t => wxCenterIn(b, { x0:t.bbox.x0-4, y0:t.bbox.y0-4, x1:t.bbox.x1+4, y1:t.bbox.y1+4 })));
+  for(const b of outsideBig){
+    const pad = Math.round(A.medH*0.6);
+    let reg = { x0:b.x0-pad, y0:b.y0-pad, x1:b.x1+pad, y1:b.y1+pad };
+    // mở rộng để gồm các dòng chữ sát đó (chữ trong logo)
+    let changed = true;
+    while(changed){
+      changed = false;
+      for(const L of allLines){
+        if(L.table >= 0) continue;
+        const cx=(L.x0+L.x1)/2, cy=(L.y0+L.y1)/2;
+        const near = cx>=reg.x0-A.medH*1.2 && cx<=reg.x1+A.medH*1.2 && cy>=reg.y0-A.medH*0.6 && cy<=reg.y1+A.medH*0.6 && (L.x1-L.x0) < (reg.x1-reg.x0)*1.6;
+        if(near && (L.x0<reg.x0||L.x1>reg.x1||L.y0<reg.y0||L.y1>reg.y1)){ reg = { x0:Math.min(reg.x0,L.x0), y0:Math.min(reg.y0,L.y0), x1:Math.max(reg.x1,L.x1), y1:Math.max(reg.y1,L.y1) }; changed = true; }
+      }
+    }
+    imageRegions.push(reg);
+  }
+  const inImageRegion = (L)=> imageRegions.some(r => wxCenterIn(L, r)) ||
+    (L.table >= 0 && A.tables[L.table].cells.some(c => c.isImage && c.r0===L.cell.r0 && c.c0===L.cell.c0));
+  const textLines = allLines.filter(L => !inImageRegion(L));
+
+  // 2) Chữ: OCR từng dòng (hoặc chữ thật của PDF nếu có)
+  say('Đang nhận dạng chữ trang '+(idx+1)+' ('+textLines.length+' dòng)…');
+  await wxFillTextForLines(A, textLines, (d,t)=>say('Đang nhận dạng chữ trang '+(idx+1)+': '+d+'/'+t));
+  for(const L of textLines) wxSplitBullet(L, A);
+  const lines = wxDropGarbage(textLines, A);
+  wxFixDigitCells(A, lines);
+  wxFixPhrases(lines);
+  wxFixAbbreviations(lines);
+  for(const L of lines) L.text = L.words.map(w=>w.text).join(' ');
+  wxInferStyles(A, lines);
+
+  // 3) Ảnh
+  say('Đang tách ảnh (logo, con dấu, chữ ký)…');
+  for(const reg of imageRegions){
+    const cr = wxCropCanvas(A, reg, null);
+    floats.push({ x:cr.x0*WX_PX2PT, y:cr.y0*WX_PX2PT, w:cr.w*WX_PX2PT, h:cr.h*WX_PX2PT, png: await wxCanvasToPng(cr.canvas) });
+  }
+  for(const o of wxColorObjects(A)){
+    const cr = wxCropCanvas(A, o, A.sep.colorDil);
+    floats.push({ x:cr.x0*WX_PX2PT, y:cr.y0*WX_PX2PT, w:cr.w*WX_PX2PT, h:cr.h*WX_PX2PT, png: await wxCanvasToPng(cr.canvas), alpha:true });
+  }
+
+  // 4) Khung chữ ngoài bảng + các bảng
+  const outLines = lines.filter(L => L.table < 0);
+  let minX = Infinity, maxX = -Infinity;
+  for(const L of outLines){ minX = Math.min(minX, L.bullet ? L.bullet.x0 : L.x0); maxX = Math.max(maxX, L.x1); }
+  for(const t of A.tables){ minX = Math.min(minX, t.bbox.x0); maxX = Math.max(maxX, t.bbox.x1); }
+  for(const f of floats){ if(!f.alpha && f.x*WX_SC < minX && f.x + f.w < pageWpt) { /* ảnh nổi không ảnh hưởng lề */ } }
+  if(!isFinite(minX)){ minX = 72*WX_SC; maxX = A.w - 72*WX_SC; }
+  const frame = { L: minX, R: maxX };
+  const flow = [];
+  for(const p of wxParagraphsForFrame(outLines, frame)) flow.push(p);
+
+  for(let ti=0; ti<A.tables.length; ti++){
+    const t = A.tables[ti];
+    const tbl = { kind:'tbl', t, top: t.Y[0]*WX_PX2PT, bottom: t.Y[t.Y.length-1]*WX_PX2PT,
+      indent: (t.X[0]-frame.L)*WX_PX2PT,
+      colW: t.X.slice(1).map((x,i)=>(x-t.X[i])*WX_PX2PT),
+      rowH: t.Y.slice(1).map((y,i)=>(y-t.Y[i])*WX_PX2PT),
+      borderSz: Math.max(4, Math.min(18, Math.round(t.thick*WX_PX2PT*8))),
+      cells: [] };
+    for(const cell of t.cells){
+      const cm = { r0:cell.r0, r1:cell.r1, c0:cell.c0, c1:cell.c1, paras:[], vAlign:'top', image:null };
+      const cellFrame = { L: t.X[cell.c0], R: t.X[cell.c1+1] };
+      if(cell.isImage){
+        const cr = wxCropCanvas(A, { x0:cell.x0+1, y0:cell.y0+1, x1:cell.x1-1, y1:cell.y1-1 }, null);
+        cm.image = { png: await wxCanvasToPng(cr.canvas), w: cr.w*WX_PX2PT, h: cr.h*WX_PX2PT };
+      } else {
+        const cl = lines.filter(L => L.table === ti && L.cell === cell);
+        cm.paras = wxParagraphsForFrame(cl, cellFrame);
+        if(cm.paras.length){
+          const cTop = t.Y[cell.r0]*WX_PX2PT, cBot = t.Y[cell.r1+1]*WX_PX2PT;
+          const bTop = cm.paras[0].top, bBot = cm.paras[cm.paras.length-1].bottom;
+          const cH = cBot - cTop;
+          if(Math.abs(((bTop+bBot)/2) - ((cTop+cBot)/2)) <= 0.12*cH) cm.vAlign = 'center';
+          else if((cBot - bBot) < (bTop - cTop)*0.35) cm.vAlign = 'bottom';
+          // khoảng cách trước từng đoạn trong ô
+          let prev = (cm.vAlign === 'top') ? cTop : null;
+          cm.paras.forEach((p,i)=>{
+            if(i === 0) p.spBefore = (cm.vAlign === 'top') ? Math.max(0, p.top - cTop) : 0;
+            else p.spBefore = Math.max(0, p.top - cm.paras[i-1].bottom);
+          });
+          if(cm.vAlign === 'bottom'){ cm.paras[0].spBefore = 0; }
+        }
+      }
+      tbl.cells.push(cm);
+    }
+    flow.push(tbl);
+  }
+  flow.sort((a,b)=>a.top-b.top);
+
+  // 5) Lề trang & khoảng cách trước từng phần tử
+  const ANCHOR = 1;                              // đoạn neo 1pt ở đầu trang (chứa ảnh nổi)
+  const firstTop = flow.length ? flow[0].top : 36;
+  const marginTop = Math.max(0, firstTop - ANCHOR);
+  let prevBottom = marginTop + ANCHOR, prevIsTbl = false;
+  const out = [];
+  for(const el of flow){
+    if(el.kind === 'p'){
+      el.spBefore = Math.max(0, el.top - prevBottom);
+      prevBottom = el.bottom; prevIsTbl = false; out.push(el);
+    } else {
+      if(prevIsTbl){ const gap = Math.max(0, el.top - prevBottom); out.push({ kind:'spacer', spBefore: Math.max(0, gap-1) }); prevBottom = el.top; }
+      el.spBefore = 0;
+      if(!prevIsTbl && el.top - prevBottom > 0.5) out.push({ kind:'spacer', spBefore: Math.max(0, el.top - prevBottom - 1) });
+      prevBottom = el.bottom; prevIsTbl = true; out.push(el);
+    }
+  }
+  const lastBottom = flow.length ? Math.max(...flow.map(e=>e.bottom)) : 72;
+  if(typeof window!=='undefined' && window.__WX_DEBUG) window.__wxA = A;
+  const model = {
+    wPt: pageWpt, hPt: pageHpt,
+    mL: Math.max(0, minX*WX_PX2PT), mR: Math.max(0, pageWpt - maxX*WX_PX2PT),
+    mT: marginTop, mB: Math.max(4, Math.min(36, pageHpt - lastBottom - 4)),
+    flow: out, floats, family: A.family, empty: !flow.length,
+    fallbackPng: null
+  };
+  if(model.empty && !floats.length){
+    // trang không có chữ/bảng/ảnh nào dựng được: chèn ảnh nguyên trang để không mất nội dung
+    const shot = await wxRenderComposite(idx, 2);
+    model.fallbackPng = await wxCanvasToPng(shot);
+  }
+  return model;
+}
+
+// Ô bảng chỉ có 1 ký tự bị OCR đọc là I / l / | (thực ra là số 1) khi cùng cột có số khác -> sửa thành '1'
+function wxFixDigitCells(A, lines){
+  for(const L of lines){
+    if(L.table < 0 || !L.cell || !L.words || L.words.length !== 1) continue;
+    const t = L.words[0].text;
+    if(!/^[Il|i!¡ịỊĩĨ]$/.test(t)) continue;
+    const tbl = A.tables[L.table];
+    const sameCol = lines.filter(o => o !== L && o.table === L.table && o.cell && o.cell.c0 === L.cell.c0 && o.words && o.words.length === 1);
+    if(sameCol.some(o => /^\d+$/.test(o.words[0].text))) L.words[0] = Object.assign({}, L.words[0], { text:'1' });
+  }
+}
+
+// Điền chữ cho các dòng: dùng chữ thật của PDF nếu có, còn lại OCR
+async function wxFillTextForLines(A, lines, onProgress){
+  let remain = await wxApplyNativeText(A, lines);   // chữ thật của PDF (nếu có)
+  remain = wxApplyEditText(A, remain);                // chữ do người dùng gõ/sửa: biết chính xác nội dung, không cần OCR
+  if(remain.length) await wxOcrLines(A, remain, onProgress);
+}
+// Hộp (px) của một chỉnh sửa của người dùng; null nếu không xác định được
+function wxEditRectPx(e){
+  let x0,y0,x1,y1;
+  if(e && Array.isArray(e.points) && e.points.length){
+    const xs=e.points.map(q=>q.x), ys=e.points.map(q=>q.y);
+    const pad=(e.width||2);
+    x0=Math.min(...xs)-pad; x1=Math.max(...xs)+pad; y0=Math.min(...ys)-pad; y1=Math.max(...ys)+pad;
+  } else if(e && isFinite(e.x) && isFinite(e.y) && isFinite(e.w) && isFinite(e.h)){
+    x0=e.x; y0=e.y; x1=e.x+e.w; y1=e.y+e.h;
+    try{ if(e.bg && typeof getCoverRect==='function'){ const c=getCoverRect(e); x0=Math.min(x0,c.x); y0=Math.min(y0,c.y); x1=Math.max(x1,c.x+c.w); y1=Math.max(y1,c.y+c.h); } }catch(err){}
+  } else return null;
+  return { x0:x0*WX_SC, y0:y0*WX_SC, x1:x1*WX_SC, y1:y1*WX_SC };
+}
+
+// Chỉnh sửa dạng chữ của người dùng: nội dung, cỡ chữ, đậm/nghiêng đã biết chính xác -> gán thẳng cho các dòng nằm trong khung chữ.
+function wxApplyEditText(A, lines){
+  const p = pages[A.idx];
+  if(!p || !(p.edits||[]).length || A.rotated) return lines;
+  const remain = new Set(lines);
+  for(const ed of p.edits){
+    if(!isTextEdit(ed) || !ed.text || !String(ed.text).trim() || !isFinite(ed.x) || !isFinite(ed.w)) continue;
+    const pad = 4;
+    const r = { x0:ed.x*WX_SC-pad, y0:ed.y*WX_SC-pad, x1:(ed.x+ed.w)*WX_SC+pad, y1:(ed.y+(ed.h||ed.fontSize*1.3))*WX_SC+pad };
+    const ls = lines.filter(L => remain.has(L) && wxCenterIn(L, r)).sort((a,b)=>a.y0-b.y0||a.x0-b.x0);
+    if(!ls.length) continue;
+    // chia các từ của chỉnh sửa vào từng dòng (theo đúng ngắt dòng nếu có, ngược lại theo tỉ lệ độ rộng ảnh)
+    const srcLines = String(ed.text).split(/\r?\n/).map(s=>s.replace(/\s+/g,' ').trim()).filter(Boolean);
+    let parts;
+    if(srcLines.length === ls.length) parts = srcLines.map(s=>s.split(' '));
+    else {
+      const words = srcLines.join(' ').split(' ');
+      const totalW = ls.reduce((s,L)=>s+(L.x1-L.x0+1),0), totalC = words.reduce((s,w)=>s+w.length+1,0);
+      parts = []; let k = 0;
+      ls.forEach((L,i)=>{
+        if(i === ls.length-1){ parts.push(words.slice(k)); return; }
+        const target = totalC * (L.x1-L.x0+1) / totalW; let c = 0; const cur = [];
+        while(k < words.length && (c + words[k].length/2 < target || !cur.length)){ cur.push(words[k]); c += words[k].length+1; k++; }
+        parts.push(cur);
+      });
+    }
+    const fam = String(ed.fontFamily||'');
+    const serif = /times|serif|georgia|garamond|cambria|book|minion|palatino/i.test(fam) && !/sans/i.test(fam) ? true : (/arial|helvet|sans|calibri|tahoma|verdana|segoe|roboto/i.test(fam) ? false : null);
+    ls.forEach((L,i)=>{
+      const ws = parts[i] || [];
+      if(!ws.length) return;
+      const totC = ws.reduce((s,w)=>s+w.length,0) + Math.max(0, ws.length-1);
+      let acc = 0; const wpx = L.x1-L.x0+1;
+      L.ocrWords = ws.map(t=>{ const x0 = L.x0 + wpx*acc/totC; acc += t.length; const x1 = L.x0 + wpx*acc/totC; acc += 1; return { text:t, conf:100, x0, x1, y0:L.y0, y1:L.y1 }; });
+      L.ocrText = ws.join(' '); L.ocrConf = 100; L.native = true;
+      L.nstyle = { size: ed.fontSize || 12, bold: !!ed.bold, italic: !!ed.italic, serif };
+      remain.delete(L);
+    });
+  }
+  return lines.filter(L => remain.has(L));
+}
+
+// Nhóm các thành phần mực của một dòng thành các "từ" theo khoảng trống (để khớp với danh sách từ của chữ thật)
+function wxWordGroups(L, gapPx){
+  const cs = L.comps.slice().sort((p,q)=>p.x0-q.x0);
+  const g = [];
+  for(const c of cs){
+    const last = g[g.length-1];
+    if(last && c.x0 - last.xb <= gapPx){ last.xb = Math.max(last.xb, c.x1); }
+    else g.push({ xa:c.x0, xb:c.x1 });
+  }
+  return g;
+}
+
+// Dùng CHỮ THẬT trong PDF (nếu có) cho những dòng khớp vị trí — nhanh và chính xác tuyệt đối, không cần OCR.
+// Dòng nào không có chữ thật (ảnh scan trong trang chữ, vùng đã chỉnh sửa...) vẫn được OCR như bình thường.
+async function wxApplyNativeText(A, lines){
+  const p = pages[A.idx];
+  if(!p || p.type !== 'pdf' || A.rotated || A.skewApplied) return lines;
+  const items = [];
+  try{
+    const page = await p.doc.getPage(p.srcPage);
+    const vp = page.getViewport({ scale: WX_SC });
+    const content = await page.getTextContent();
+    for(const it of content.items){
+      if(!it.str || !it.str.trim()) continue;
+      const m = pdfjsLib.Util.transform(vp.transform, it.transform);
+      if(Math.abs(m[1]) > 0.02*Math.abs(m[0]) || m[0] <= 0) continue;      // chữ xoay/lật -> để OCR
+      const fs = Math.hypot(m[2], m[3]);
+      // Thông tin font thật (đã nạp khi render trang): tên font cho biết đậm/nghiêng, họ font cho biết có chân hay không
+      let nm = '';
+      try{ const f = page.commonObjs.has(it.fontName) ? page.commonObjs.get(it.fontName) : null; nm = ((f && f.name) || '').replace(/^[A-Z]{6}\+/, ''); }catch(err){}
+      const gen = (content.styles && content.styles[it.fontName] && content.styles[it.fontName].fontFamily) || '';
+      const known = !!nm;
+      items.push({ text: it.str.normalize('NFC'), x0: m[4], x1: m[4] + (it.width||0)*vp.scale, base: m[5], fs, used:false,
+        known, bold: /bold|black|heavy|semibold|demi/i.test(nm), italic: /italic|oblique|slanted|[-,]it\b/i.test(nm),
+        serif: /serif/i.test(gen) && !/sans/i.test(gen) ? true : (/sans|arial|helvet|calibri|tahoma|verdana|segoe|roboto/i.test(nm+' '+gen) ? false : null) });
+    }
+  }catch(err){ console.warn('WORD: không đọc được chữ thật của PDF, dùng OCR:', err); return lines; }
+  if(!items.length) return lines;
+  const eds = (p.edits || []).map(wxEditRectPx).filter(Boolean);
+  const remain = [];
+  for(const L of lines){
+    const box = { x0:L.x0-3, x1:L.x1+3, y0:L.y0-3, y1:L.y1+3 };
+    if(eds.some(r => r.x0 < box.x1 && r.x1 > box.x0 && r.y0 < box.y1 && r.y1 > box.y0)){ remain.push(L); continue; }
+    const its = items.filter(it => { if(it.used) return false; const cx=(it.x0+it.x1)/2, cy=it.base-0.3*it.fs; return cx>=box.x0 && cx<=box.x1 && cy>=box.y0 && cy<=box.y1; }).sort((a,b)=>a.x0-b.x0);
+    const cover = its.reduce((s,it)=>s+Math.max(0, Math.min(it.x1,box.x1)-Math.max(it.x0,box.x0)), 0);
+    if(!its.length || cover < 0.6*(L.x1-L.x0)){ remain.push(L); continue; }
+    its.forEach(it=>it.used = true);
+    // danh sách từ (theo chữ thật) kèm khoảng x ước lượng theo tỉ lệ ký tự
+    const words = [];
+    for(const it of its){
+      const s = it.text, len = Math.max(1, s.length), wpx = it.x1 - it.x0;
+      const re = /\S+/g; let m;
+      while((m = re.exec(s))){ words.push({ text:m[0], conf:100, x0: it.x0 + wpx*m.index/len, x1: it.x0 + wpx*(m.index+m[0].length)/len, y0:L.y0, y1:L.y1,
+        nb: it.bold, ni: it.italic, nsz: it.fs*WX_PX2PT, nknown: it.known, nserif: it.serif }); }
+    }
+    // tinh chỉnh vị trí từ theo khoảng trống thật của ảnh khi số nhóm khớp số từ
+    const fsMed = wxMedian(its.map(i=>i.fs));
+    const groups = wxWordGroups(L, Math.max(4, 0.22*fsMed));
+    if(groups.length === words.length) words.forEach((wd,i)=>{ wd.x0 = groups[i].xa; wd.x1 = groups[i].xb; });
+    L.ocrWords = words; L.ocrText = words.map(w=>w.text).join(' '); L.ocrConf = 100; L.native = true;
+    if(its.every(i=>i.known)){
+      const tot = its.reduce((s,i)=>s+i.text.length,0) || 1;
+      L.nstyle = {
+        size: wxMedian(its.flatMap(i=>Array(Math.max(1,i.text.length)).fill(i.fs*WX_PX2PT))),
+        bold: its.every(i=>i.bold),
+        italic: its.filter(i=>i.italic).reduce((s,i)=>s+i.text.length,0) >= 0.5*tot,
+        serif: (its.find(i=>i.serif !== null) || {}).serif
+      };
+    }
+  }
+  return remain;
+}
+
+// ---------- Xuất Word: hàm được nút "Export Word" gọi ----------
+async function exportWordSelected(indices){
+  if(!indices || !indices.length){ alert('Hãy chọn ít nhất một trang để xuất.'); return; }
+  flushPendingEdit();
+  const spinner = document.getElementById('spinner');
+  const spinnerLabel = spinner.lastChild;
+  spinner.classList.add('show');
+  let fallback = false;
+  try{
+    const models = [];
+    for(let k=0;k<indices.length;k++){
+      const i = indices[k];
+      const tag = indices.length > 1 ? ` (${k+1}/${indices.length})` : '';
+      spinnerLabel.textContent = ` Đang chuyển trang ${i+1} sang Word${tag}…`;
+      models.push(await wxBuildPageModel(i, msg => { spinnerLabel.textContent = ' ' + msg + tag; }));
+      await new Promise(r => setTimeout(r, 0));     // nhường luồng giao diện
+    }
+    spinnerLabel.textContent = ' Đang đóng gói tệp Word…';
+    const blob = wxBuildDocxBlob(models);
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+    const base = originalFileName.replace(/\.pdf$/i,'').replace(/-edited$/,'');
+    a.download = indices.length===pages.length ? base+'.docx' : base+'-trang-'+indices.map(i=>i+1).join('_')+'.docx';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(a.href), 60000);
+  }catch(err){
+    console.error('Xuất Word (cách mới) lỗi:', err);
+    fallback = confirm('Không xuất được Word theo cách phân tích bố cục mới:\n'+((err && err.message) || err)+'\n\nBạn có muốn dùng cách xuất đơn giản (.doc) thay thế không?');
+  }finally{
+    spinner.classList.remove('show');
+    spinnerLabel.textContent = ' Đang xử lý OCR…';
+  }
+  if(fallback) return exportWordSelectedLegacy_(indices);
+}
+
+
+// ---------- XML ----------
+const wxEsc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g,'');
+const tw = pt => Math.round(pt*20);
+const emu = pt => Math.round(pt*12700);
+
+function wxRunXml(r){
+  if(r.br) return '<w:r><w:br/></w:r>';
+  if(r.tab) return '<w:r><w:tab/></w:r>';
+  const f = wxEsc(r.fam || 'Times New Roman');
+  const sz = Math.round((r.sz||12)*2);
+  let x = '<w:r><w:rPr><w:rFonts w:ascii="'+f+'" w:hAnsi="'+f+'" w:eastAsia="'+f+'" w:cs="'+f+'"/>';
+  if(r.b) x += '<w:b/><w:bCs/>';
+  if(r.i) x += '<w:i/><w:iCs/>';
+  if(r.color && r.color.toLowerCase() !== '000000') x += '<w:color w:val="'+wxEsc(r.color)+'"/>';
+  x += '<w:sz w:val="'+sz+'"/><w:szCs w:val="'+sz+'"/>';
+  if(r.u) x += '<w:u w:val="single"/>';
+  x += '</w:rPr><w:t xml:space="preserve">'+wxEsc(r.t)+'</w:t></w:r>';
+  return x;
+}
+function wxParaXml(p, opts){
+  opts = opts || {};
+  let ppr = '';
+  if(p.tabs && p.tabs.length){
+    ppr += '<w:tabs>' + p.tabs.slice().sort((a,b)=>a.pos-b.pos).map(t=>'<w:tab w:val="'+t.type+'" w:pos="'+tw(t.pos)+'"/>').join('') + '</w:tabs>';
+  }
+  ppr += '<w:spacing w:before="'+tw(p.spBefore||0)+'" w:after="0" w:line="'+tw(p.LH||12)+'" w:lineRule="exact"/>';
+  let ind = '';
+  if(p.indL) ind += ' w:left="'+tw(p.indL)+'"';
+  if(p.indR) ind += ' w:right="'+tw(p.indR)+'"';
+  if(p.first > 0.05) ind += ' w:firstLine="'+tw(p.first)+'"';
+  else if(p.first < -0.05) ind += ' w:hanging="'+tw(-p.first)+'"';
+  if(ind) ppr += '<w:ind'+ind+'/>';
+  ppr += '<w:jc w:val="'+(p.jc||'left')+'"/>';
+  const psz = Math.round((p.size||11)*2);
+  ppr += '<w:rPr><w:sz w:val="'+psz+'"/><w:szCs w:val="'+psz+'"/></w:rPr>';
+  return '<w:p><w:pPr>'+ppr+'</w:pPr>'+p.runs.map(wxRunXml).join('')+'</w:p>';
+}
+function wxTinyParaXml(spBeforePt, extraPPr, inner){
+  // Thứ tự phần tử trong pPr theo lược đồ: spacing ... rPr, sectPr (sectPr phải nằm SAU rPr)
+  return '<w:p><w:pPr><w:spacing w:before="'+tw(spBeforePt||0)+'" w:after="0" w:line="20" w:lineRule="exact"/><w:rPr><w:sz w:val="2"/><w:szCs w:val="2"/></w:rPr>'+(extraPPr||'')+'</w:pPr>'+(inner||'')+'</w:p>';
+}
+function wxPicXml(rid, n, wPt, hPt, anchorPos){
+  const cx = emu(wPt), cy = emu(hPt);
+  const gfx = '<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">'+
+    '<pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:nvPicPr><pic:cNvPr id="'+n+'" name="image'+n+'.png"/><pic:cNvPicPr/></pic:nvPicPr>'+
+    '<pic:blipFill><a:blip r:embed="'+rid+'"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>'+
+    '<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="'+cx+'" cy="'+cy+'"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic>';
+  if(anchorPos){
+    return '<w:r><w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="'+(251650000+n)+'" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1">'+
+      '<wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="page"><wp:posOffset>'+emu(anchorPos.x)+'</wp:posOffset></wp:positionH>'+
+      '<wp:positionV relativeFrom="page"><wp:posOffset>'+emu(anchorPos.y)+'</wp:posOffset></wp:positionV>'+
+      '<wp:extent cx="'+cx+'" cy="'+cy+'"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:wrapNone/>'+
+      '<wp:docPr id="'+n+'" name="Picture '+n+'"/><wp:cNvGraphicFramePr><a:graphicFrameLocks xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" noChangeAspect="1"/></wp:cNvGraphicFramePr>'+
+      gfx+'</wp:anchor></w:drawing></w:r>';
+  }
+  return '<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="'+cx+'" cy="'+cy+'"/><wp:effectExtent l="0" t="0" r="0" b="0"/>'+
+    '<wp:docPr id="'+n+'" name="Picture '+n+'"/><wp:cNvGraphicFramePr><a:graphicFrameLocks xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" noChangeAspect="1"/></wp:cNvGraphicFramePr>'+
+    gfx+'</wp:inline></w:drawing></w:r>';
+}
+
+function wxTableXml(tbl, ctx){
+  const sumW = tbl.colW.reduce((a,b)=>a+b,0);
+  const bs = tbl.borderSz;
+  const bd = (n)=>'<w:'+n+' w:val="single" w:sz="'+bs+'" w:space="0" w:color="000000"/>';
+  let x = '<w:tbl><w:tblPr><w:tblW w:w="'+tw(sumW)+'" w:type="dxa"/>'+
+    (tbl.indent ? '<w:tblInd w:w="'+tw(tbl.indent)+'" w:type="dxa"/>' : '')+
+    '<w:tblBorders>'+bd('top')+bd('left')+bd('bottom')+bd('right')+bd('insideH')+bd('insideV')+'</w:tblBorders>'+
+    '<w:tblLayout w:type="fixed"/><w:tblCellMar><w:top w:w="0" w:type="dxa"/><w:left w:w="0" w:type="dxa"/><w:bottom w:w="0" w:type="dxa"/><w:right w:w="0" w:type="dxa"/></w:tblCellMar></w:tblPr>';
+  x += '<w:tblGrid>'+tbl.colW.map(w=>'<w:gridCol w:w="'+tw(w)+'"/>').join('')+'</w:tblGrid>';
+  const nR = tbl.rowH.length, nC = tbl.colW.length;
+  // bản đồ ô theo (hàng, cột)
+  const occ = []; for(let r=0;r<nR;r++) occ.push(new Array(nC).fill(null));
+  for(const c of tbl.cells) for(let r=c.r0;r<=c.r1;r++) for(let k=c.c0;k<=c.c1;k++) occ[r][k]=c;
+  for(let r=0;r<nR;r++){
+    x += '<w:tr><w:trPr><w:cantSplit/><w:trHeight w:val="'+tw(tbl.rowH[r])+'" w:hRule="atLeast"/></w:trPr>';
+    let k = 0;
+    while(k < nC){
+      const c = occ[r][k];
+      if(!c){ x += '<w:tc><w:tcPr><w:tcW w:w="'+tw(tbl.colW[k])+'" w:type="dxa"/></w:tcPr><w:p/></w:tc>'; k++; continue; }
+      const span = c.c1 - c.c0 + 1;
+      let wcell = 0; for(let q=c.c0;q<=c.c1;q++) wcell += tbl.colW[q];
+      let tcpr = '<w:tcW w:w="'+tw(wcell)+'" w:type="dxa"/>';
+      if(span > 1) tcpr += '<w:gridSpan w:val="'+span+'"/>';
+      if(c.r1 > c.r0) tcpr += (r === c.r0) ? '<w:vMerge w:val="restart"/>' : '<w:vMerge/>';
+      if(c.vAlign && c.vAlign !== 'top') tcpr += '<w:vAlign w:val="'+c.vAlign+'"/>';
+      x += '<w:tc><w:tcPr>'+tcpr+'</w:tcPr>';
+      if(r === c.r0){
+        if(c.image){
+          const n = ++ctx.imgN; const rid = 'rId'+(ctx.relBase + ctx.media.length);
+          ctx.media.push({ name:'image'+n+'.png', data:c.image.png, rid });
+          x += '<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="240" w:lineRule="auto"/><w:jc w:val="center"/><w:rPr><w:sz w:val="2"/><w:szCs w:val="2"/></w:rPr></w:pPr>'+wxPicXml(rid, n, c.image.w, c.image.h, null)+'</w:p>';
+        } else if(c.paras.length){
+          x += c.paras.map(p=>wxParaXml(p)).join('');
+        } else x += '<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="20" w:lineRule="exact"/><w:rPr><w:sz w:val="2"/><w:szCs w:val="2"/></w:rPr></w:pPr></w:p>';
+      } else {
+        x += '<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="20" w:lineRule="exact"/><w:rPr><w:sz w:val="2"/><w:szCs w:val="2"/></w:rPr></w:pPr></w:p>';
+      }
+      x += '</w:tc>';
+      k += span;
+    }
+    x += '</w:tr>';
+  }
+  return x + '</w:tbl>';
+}
+
+function wxSectPr(m, last){
+  return '<w:sectPr>'+(last ? '' : '<w:type w:val="nextPage"/>')+
+    '<w:pgSz w:w="'+tw(m.wPt)+'" w:h="'+tw(m.hPt)+'"'+(m.wPt > m.hPt ? ' w:orient="landscape"' : '')+'/>'+
+    '<w:pgMar w:top="'+tw(m.mT)+'" w:right="'+tw(m.mR)+'" w:bottom="'+tw(m.mB)+'" w:left="'+tw(m.mL)+'" w:header="0" w:footer="0" w:gutter="0"/></w:sectPr>';
+}
+
+function wxDocumentXml(models){
+  const ctx = { imgN: 0, media: [], relBase: 3 };
+  let body = '';
+  models.forEach((m, pi)=>{
+    const last = pi === models.length-1;
+    // đoạn neo (chứa ảnh nổi)
+    let anchorInner = '';
+    for(const f of m.floats){
+      const n = ++ctx.imgN; const rid = 'rId'+(ctx.relBase + ctx.media.length);
+      ctx.media.push({ name:'image'+n+'.png', data:f.png, rid });
+      anchorInner += wxPicXml(rid, n, f.w, f.h, { x:f.x, y:f.y });
+    }
+    if(m.fallbackPng){
+      const n = ++ctx.imgN; const rid = 'rId'+(ctx.relBase + ctx.media.length);
+      ctx.media.push({ name:'image'+n+'.png', data:m.fallbackPng, rid });
+      anchorInner += wxPicXml(rid, n, m.wPt, m.hPt, { x:0, y:0 });
+    }
+    body += wxTinyParaXml(0, '', anchorInner);
+    for(const el of m.flow){
+      if(el.kind === 'p') body += wxParaXml(el);
+      else if(el.kind === 'spacer') body += wxTinyParaXml(el.spBefore, '', '');
+      else if(el.kind === 'tbl') body += wxTableXml(el, ctx);
+    }
+    // đoạn kết trang (bắt buộc sau bảng) — mang sectPr của trang nếu không phải trang cuối
+    if(!last) body += wxTinyParaXml(0, wxSectPr(m, false), '');
+    else body += wxTinyParaXml(0, '', '');
+  });
+  const lastM = models[models.length-1];
+  const doc = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'+
+    '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">'+
+    '<w:body>'+body+wxSectPr(lastM, true)+'</w:body></w:document>';
+  return { doc, media: ctx.media };
+}
+
+function wxStylesXml(family){
+  const f = wxEsc(family || 'Times New Roman');
+  return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'+
+  '<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:docDefaults><w:rPrDefault><w:rPr>'+
+  '<w:rFonts w:ascii="'+f+'" w:hAnsi="'+f+'" w:eastAsia="'+f+'" w:cs="'+f+'"/><w:sz w:val="22"/><w:szCs w:val="22"/><w:lang w:val="vi-VN" w:eastAsia="en-US" w:bidi="ar-SA"/></w:rPr></w:rPrDefault>'+
+  '<w:pPrDefault><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults>'+
+  '<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:qFormat/></w:style>'+
+  '<w:style w:type="character" w:default="1" w:styleId="DefaultParagraphFont"><w:name w:val="Default Paragraph Font"/><w:uiPriority w:val="1"/><w:semiHidden/><w:unhideWhenUsed/></w:style>'+
+  '<w:style w:type="table" w:default="1" w:styleId="TableNormal"><w:name w:val="Normal Table"/><w:uiPriority w:val="99"/><w:semiHidden/><w:unhideWhenUsed/><w:tblPr><w:tblInd w:w="0" w:type="dxa"/><w:tblCellMar><w:top w:w="0" w:type="dxa"/><w:left w:w="108" w:type="dxa"/><w:bottom w:w="0" w:type="dxa"/><w:right w:w="108" w:type="dxa"/></w:tblCellMar></w:tblPr></w:style>'+
+  '</w:styles>';
+}
+
+// ---------- ZIP (lưu không nén, đủ cho .docx) ----------
+const __wxCrcTable = (function(){ const t=new Uint32Array(256); for(let n=0;n<256;n++){ let c=n; for(let k=0;k<8;k++) c = (c&1) ? (0xEDB88320 ^ (c>>>1)) : (c>>>1); t[n]=c>>>0; } return t; })();
+function wxCrc32(u8){ let c=0xFFFFFFFF; for(let i=0;i<u8.length;i++) c = __wxCrcTable[(c^u8[i])&0xFF] ^ (c>>>8); return (c^0xFFFFFFFF)>>>0; }
+function wxZip(files){
+  const enc = new TextEncoder();
+  const chunks = [], central = [];
+  let offset = 0;
+  const dt = new Date(); const dosTime = ((dt.getHours()<<11)|(dt.getMinutes()<<5)|(dt.getSeconds()>>1))&0xFFFF;
+  const dosDate = (((dt.getFullYear()-1980)<<9)|((dt.getMonth()+1)<<5)|dt.getDate())&0xFFFF;
+  const u16=(v)=>[v&255,(v>>8)&255], u32=(v)=>[v&255,(v>>8)&255,(v>>16)&255,(v>>>24)&255];
+  for(const f of files){
+    const name = enc.encode(f.name);
+    const data = typeof f.data === 'string' ? enc.encode(f.data) : f.data;
+    const crc = wxCrc32(data);
+    const local = new Uint8Array([0x50,0x4b,0x03,0x04, ...u16(20), ...u16(0x0800), ...u16(0), ...u16(dosTime), ...u16(dosDate), ...u32(crc), ...u32(data.length), ...u32(data.length), ...u16(name.length), ...u16(0)]);
+    chunks.push(local, name, data);
+    central.push({ name, crc, size:data.length, offset });
+    offset += local.length + name.length + data.length;
+  }
+  const cdStart = offset; let cdSize = 0;
+  for(const c of central){
+    const rec = new Uint8Array([0x50,0x4b,0x01,0x02, ...u16(20), ...u16(20), ...u16(0x0800), ...u16(0), ...u16(dosTime), ...u16(dosDate), ...u32(c.crc), ...u32(c.size), ...u32(c.size), ...u16(c.name.length), ...u16(0), ...u16(0), ...u16(0), ...u16(0), ...u32(0), ...u32(c.offset)]);
+    chunks.push(rec, c.name); cdSize += rec.length + c.name.length;
+  }
+  chunks.push(new Uint8Array([0x50,0x4b,0x05,0x06, ...u16(0), ...u16(0), ...u16(central.length), ...u16(central.length), ...u32(cdSize), ...u32(cdStart), ...u16(0)]));
+  return new Blob(chunks, { type:'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+}
+
+function wxBuildDocxBlob(models){
+  const { doc, media } = wxDocumentXml(models);
+  const CT = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'+
+    '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="png" ContentType="image/png"/>'+
+    '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>'+
+    '<Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>'+
+    '<Override PartName="/word/settings.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"/>'+
+    '<Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>'+
+    '<Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/></Types>';
+  const RELS = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'+
+    '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>'+
+    '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/>'+
+    '<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/></Relationships>';
+  const DOCRELS = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'+
+    '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>'+
+    '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings" Target="settings.xml"/>'+
+    media.map(m=>'<Relationship Id="'+m.rid+'" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/'+m.name+'"/>').join('')+'</Relationships>';
+  const SETTINGS = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:defaultTabStop w:val="720"/><w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat></w:settings>';
+  const now = new Date().toISOString().replace(/\.\d+Z$/,'Z');
+  const CORE = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><dc:creator>PDF Editor</dc:creator><dcterms:created xsi:type="dcterms:W3CDTF">'+now+'</dcterms:created><dcterms:modified xsi:type="dcterms:W3CDTF">'+now+'</dcterms:modified></cp:coreProperties>';
+  const APP = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"><Application>PDF Editor</Application></Properties>';
+  const files = [
+    { name:'[Content_Types].xml', data:CT }, { name:'_rels/.rels', data:RELS },
+    { name:'word/document.xml', data:doc }, { name:'word/styles.xml', data:wxStylesXml(models[0] && models[0].family) },
+    { name:'word/settings.xml', data:SETTINGS }, { name:'word/_rels/document.xml.rels', data:DOCRELS },
+    { name:'docProps/core.xml', data:CORE }, { name:'docProps/app.xml', data:APP }
+  ];
+  for(const m of media) files.push({ name:'word/media/'+m.name, data:m.data });
+  return wxZip(files);
+}
 
 </script>
 </body>
