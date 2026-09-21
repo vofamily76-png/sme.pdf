@@ -1412,7 +1412,7 @@ function updateAuthUi_(){
   applyPermissions();
 }
 
-function showAppUI(username, role, token, permissions){
+function showAppUI(username, role, token, permissions, mustChangePassword){
   document.getElementById('loginScreen').style.display = 'none';
   document.getElementById('appContainer').style.display = '';
   currentUsername = username || null;
@@ -1421,6 +1421,9 @@ function showAppUI(username, role, token, permissions){
   if(token) currentAuthToken = token;
   updateAuthUi_();
   startPermissionRefresh_();
+  // [BẢO MẬT] Máy chủ báo mật khẩu này là mật khẩu mặc định/do admin đặt hộ ->
+  // bắt buộc đổi ngay, không cho dùng ứng dụng cho tới khi đổi xong.
+  if(mustChangePassword){ openChangePasswordModal(true); }
 }
 
 /* Tự cập nhật quyền khi admin vừa đổi quyền cho tài khoản này (không cần đăng nhập lại): kiểm
@@ -1437,6 +1440,7 @@ async function refreshMyPermissions_(){
       currentUserRole = result.role || currentUserRole;
       currentUserPermissions = result.permissions || {};
       updateAuthUi_();
+      if(result.mustChangePassword && !changePasswordForced_) openChangePasswordModal(true);
     }
   }catch(err){ /* bỏ qua */ }
 }
@@ -1472,7 +1476,7 @@ async function tryRestoreSession(){
   try{
     const result = await callAuthApi({ action: 'verify', token: token });
     if(result && result.success){
-      showAppUI(result.username, result.role, token, result.permissions);
+      showAppUI(result.username, result.role, token, result.permissions, result.mustChangePassword);
     } else {
       sessionStorage.removeItem(SESSION_STORAGE_KEY);
       document.getElementById('loginScreen').style.display = 'flex';
@@ -1497,7 +1501,7 @@ document.getElementById('loginForm').addEventListener('submit', async function(e
     if(result && result.success){
       sessionStorage.setItem(SESSION_STORAGE_KEY, result.token);
       document.getElementById('loginPassword').value = '';
-      showAppUI(result.username, result.role, result.token, result.permissions);
+      showAppUI(result.username, result.role, result.token, result.permissions, result.mustChangePassword);
     } else {
       showLoginError((result && result.message) || 'Sai tên đăng nhập hoặc mật khẩu.');
     }
@@ -1518,17 +1522,39 @@ document.getElementById('btnLogout').addEventListener('click', async function(){
 
 /* ---------- Đổi mật khẩu ---------- */
 const changePasswordModal = document.getElementById('changePasswordModal');
-function openChangePasswordModal(){
+// [BẢO MẬT] Khi true: mật khẩu hiện tại là mật khẩu mặc định/do admin đặt hộ ->
+// không cho đóng hộp thoại (bấm Huỷ / click ra ngoài / Esc) cho tới khi đổi thành công.
+let changePasswordForced_ = false;
+function openChangePasswordModal(forced){
+  changePasswordForced_ = !!forced;
   document.getElementById('changePasswordForm').reset();
   document.getElementById('cpError').textContent = '';
-  document.getElementById('cpSuccess').textContent = '';
+  const okEl = document.getElementById('cpSuccess');
+  const cancelBtn = document.getElementById('cpCancelBtn');
+  if(changePasswordForced_){
+    okEl.style.color = '#ffcf6b';
+    okEl.textContent = 'Mật khẩu hiện tại là mật khẩu mặc định/do admin đặt hộ. Vì lý do bảo mật, bạn cần đặt mật khẩu mới trước khi tiếp tục sử dụng.';
+    if(cancelBtn) cancelBtn.style.display = 'none';
+  } else {
+    okEl.style.color = '';
+    okEl.textContent = '';
+    if(cancelBtn) cancelBtn.style.display = '';
+  }
   changePasswordModal.style.display = 'flex';
   document.getElementById('cpOldPassword').focus();
 }
-function closeChangePasswordModal(){ changePasswordModal.style.display = 'none'; }
-document.getElementById('btnChangePassword').addEventListener('click', openChangePasswordModal);
+function closeChangePasswordModal(){
+  if(changePasswordForced_) return; // bắt buộc đổi xong mới được đóng
+  changePasswordModal.style.display = 'none';
+}
+document.getElementById('btnChangePassword').addEventListener('click', function(){ openChangePasswordModal(false); });
 document.getElementById('cpCancelBtn').addEventListener('click', closeChangePasswordModal);
 changePasswordModal.addEventListener('click', function(e){ if(e.target === changePasswordModal) closeChangePasswordModal(); });
+document.addEventListener('keydown', function(e){
+  if(e.key === 'Escape' && changePasswordForced_ && changePasswordModal.style.display !== 'none'){
+    e.stopImmediatePropagation();
+  }
+});
 
 document.getElementById('changePasswordForm').addEventListener('submit', async function(e){
   e.preventDefault();
@@ -1538,17 +1564,23 @@ document.getElementById('changePasswordForm').addEventListener('submit', async f
   const errEl = document.getElementById('cpError');
   const okEl = document.getElementById('cpSuccess');
   const btn = document.getElementById('cpSubmitBtn');
-  errEl.textContent = ''; okEl.textContent = '';
+  errEl.textContent = '';
+  if(!changePasswordForced_) okEl.textContent = '';
   if(newPassword.length < 8){ errEl.textContent = 'Mật khẩu mới phải có ít nhất 8 ký tự.'; return; }
+  if(!/[A-Za-z]/.test(newPassword) || !/[0-9]/.test(newPassword)){ errEl.textContent = 'Mật khẩu mới phải có cả chữ và số.'; return; }
   if(newPassword !== newPassword2){ errEl.textContent = 'Hai lần nhập mật khẩu mới không khớp.'; return; }
   btn.disabled = true; btn.textContent = 'Đang xử lý…';
   try{
     const token = sessionStorage.getItem(SESSION_STORAGE_KEY);
     const result = await callAuthApi({ action: 'changePassword', token: token, oldPassword: oldPassword, newPassword: newPassword });
     if(result && result.success){
+      const wasForced = changePasswordForced_;
+      changePasswordForced_ = false;
+      okEl.style.color = '#8bd17c';
       okEl.textContent = 'Đổi mật khẩu thành công.';
+      document.getElementById('cpCancelBtn').style.display = '';
       document.getElementById('changePasswordForm').reset();
-      setTimeout(closeChangePasswordModal, 1200);
+      setTimeout(closeChangePasswordModal, wasForced ? 900 : 1200);
     } else {
       errEl.textContent = (result && result.message) || 'Đổi mật khẩu thất bại.';
     }
