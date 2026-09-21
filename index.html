@@ -515,7 +515,7 @@
   font-family:'Segoe UI',Roboto,Arial,sans-serif;color:#eceff1;">
   <div style="
     background:#25282e;border:1px solid #454a52;border-radius:10px;
-    padding:22px 24px;width:540px;max-width:92vw;max-height:86vh;overflow:auto;
+    padding:22px 24px;width:600px;max-width:92vw;max-height:86vh;overflow:auto;
     box-shadow:0 10px 40px rgba(0,0,0,.5);">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
       <div style="font-weight:600;font-size:15px;">👥 Quản lý người dùng</div>
@@ -1581,20 +1581,22 @@ async function refreshUserList(){
     container.innerHTML = '';
     result.users.forEach(function(u){
       const row = document.createElement('div');
-      row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:8px 10px;background:#1c1e22;border:1px solid #454a52;border-radius:6px;';
+      // Bố cục 2 tầng: TÊN ĐĂNG NHẬP hiển thị ĐẦY ĐỦ ở trên (tên quá dài sẽ tự xuống dòng, không bị cắt "…"),
+      // các nút thao tác nằm ở hàng dưới. (Trước đây tên và 5 nút chung 1 hàng nên tên bị ép còn vài ký tự.)
+      row.style.cssText = 'display:flex;flex-direction:column;align-items:stretch;gap:7px;padding:9px 10px;background:#1c1e22;border:1px solid #454a52;border-radius:6px;';
       const isSelf = currentUsername && u.username.toLowerCase() === currentUsername.toLowerCase();
       const isAdminLocked = !!u.adminLocked;
       row.style.cssText += isAdminLocked ? 'opacity:.75;' : '';
       row.innerHTML =
-        '<div style="flex:1;min-width:0;">'+
-          '<div style="font-size:12.5px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+escapeHtml(u.username)+(isSelf?' <span style="opacity:.6;font-weight:400;">(bạn)</span>':'')+'</div>'+
+        '<div style="min-width:0;">'+
+          '<div title="'+escapeHtml(u.username)+'" style="font-size:13px;font-weight:600;white-space:normal;overflow-wrap:anywhere;word-break:break-word;line-height:1.35;">'+escapeHtml(u.username)+(isSelf?' <span style="opacity:.6;font-weight:400;">(bạn)</span>':'')+'</div>'+
           '<div style="font-size:11px;color:#9aa0a8;">'+(u.role==='admin'?'Admin':'User')+
             (u.role==='admin' ? ' · <span style="color:#8bd17c;">✔ toàn quyền chức năng</span>' : '')+
             (u.locked?' · <span style="color:#ff8a80;">đang khoá tạm</span>':'')+
             (isAdminLocked?' · <span style="color:#ff8a80;font-weight:600;">🔒 đã khoá bởi admin</span>':'')+
           '</div>'+
         '</div>'+
-        '<div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;">'+
+        '<div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-start;">'+
         (u.role==='admin' ? '' : PERMISSION_LIST.map(function(pm){
           const on = !!(u.permissions && u.permissions[pm.key]);
           return '<button type="button" data-username="'+escapeHtml(u.username)+'" data-perm-key="'+pm.key+'" data-value="'+(on?'1':'0')+'" class="umPermBtn" title="'+
