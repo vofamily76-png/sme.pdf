@@ -522,7 +522,7 @@
       <button type="button" id="umCloseBtn" style="
         background:transparent;border:none;color:#9aa0a8;font-size:18px;cursor:pointer;line-height:1;">✕</button>
     </div>
-    <div style="font-size:12px;color:#9aa0a8;margin-bottom:14px;">Tạo tài khoản mới, khoá/mở khoá hoặc đặt lại mật khẩu cho người dùng đã có.</div>
+    <div style="font-size:12px;color:#9aa0a8;margin-bottom:14px;">Tạo tài khoản mới, phân quyền chức năng Edit Text, khoá/mở khoá hoặc đặt lại mật khẩu cho người dùng đã có.</div>
 
     <form id="addUserForm" style="border:1px solid #454a52;border-radius:8px;padding:14px;margin-bottom:16px;background:#1c1e22;">
       <div style="font-size:12.5px;font-weight:600;margin-bottom:10px;">Thêm tài khoản mới</div>
@@ -547,6 +547,10 @@
       <input id="auPassword" type="password" autocomplete="new-password" required minlength="8" style="
         width:100%;box-sizing:border-box;padding:8px 9px;margin-bottom:10px;
         background:#2b2f36;border:1px solid #454a52;border-radius:6px;color:#eceff1;font-size:12.5px;">
+      <label id="auPermEditTextWrap" style="display:flex;align-items:center;gap:8px;font-size:12px;color:#eceff1;margin-bottom:10px;cursor:pointer;">
+        <input id="auPermEditText" type="checkbox" style="margin:0;">
+        <span>✎ Cho phép hiển thị &amp; sử dụng chức năng <b>Edit Text</b> <span id="auPermEditTextNote" style="color:#9aa0a8;font-size:11px;"></span></span>
+      </label>
       <div id="auError" style="min-height:16px;color:#ff8a80;font-size:11.5px;margin-bottom:6px;"></div>
       <div id="auSuccess" style="min-height:16px;color:#8bd17c;font-size:11.5px;margin-bottom:6px;"></div>
       <button id="auSubmitBtn" type="submit" style="
@@ -1146,7 +1150,7 @@
       <button class="tbtn" data-tool="addtext" id="toolAddText"><span class="ic">🅰️</span>Add text</button>
       <button class="tbtn" data-tool="ocr" id="toolOcr"><span class="ic">🔎</span>Edit Document (OCR-PDF scan)</button>
       <button class="tbtn" id="btnOcrFull"><span class="ic">📄</span>OCR text extract</button>
-      <button class="tbtn" data-tool="edittext" id="toolEditText" title="Bấm để hiện toàn bộ chữ có thể sửa trên trang — trỏ chuột vào bất kỳ đoạn nào và bấm để sửa ngay, không cần chọn vùng"><span class="ic">✎</span>Edit Text</button>
+      <button class="tbtn" data-tool="edittext" id="toolEditText" data-perm="editText" style="display:none" title="Bấm để hiện toàn bộ chữ có thể sửa trên trang — trỏ chuột vào bất kỳ đoạn nào và bấm để sửa ngay, không cần chọn vùng"><span class="ic">✎</span>Edit Text</button>
     </div>
   </div>
   <div class="sep"></div>
@@ -1350,17 +1354,75 @@ const SESSION_STORAGE_KEY = 'pdfEditorAuthToken';
 let currentAuthToken = null;
 let currentUsername = null;
 let currentUserRole = 'user';
+// Quyền chức năng của tài khoản đang đăng nhập (do admin cấp, lấy từ máy chủ ở lần login/verify).
+// Mặc định RỖNG = chưa được cấp quyền nào -> mọi chức năng cần phân quyền đều bị ẩn/khoá.
+// Admin luôn có đủ quyền (xem hasPermission).
+let currentUserPermissions = {};
 
-function showAppUI(username, role, token){
+function hasPermission(key){
+  if(currentUserRole === 'admin') return true;
+  return !!(currentUserPermissions && currentUserPermissions[key] === true);
+}
+
+/* Áp dụng phân quyền lên giao diện: mọi phần tử có thuộc tính data-perm="<tênQuyền>" (hiện có:
+   "editText" ở nút Edit Text trong menu Edit) chỉ được HIỂN THỊ khi tài khoản có quyền đó.
+   Muốn phân quyền thêm chức năng khác: chỉ cần gắn data-perm="..." cho nút đó (và thêm quyền
+   tương ứng ở code.gs). */
+function applyPermissions(){
+  document.querySelectorAll('[data-perm]').forEach(function(el){
+    el.style.display = hasPermission(el.getAttribute('data-perm')) ? '' : 'none';
+  });
+  // Đang dùng công cụ Edit Text mà vừa bị thu hồi quyền -> tự chuyển về công cụ Select.
+  try{
+    if(activeTool === 'edittext' && !hasPermission('editText')){
+      const selectBtn = document.getElementById('toolSelect');
+      if(selectBtn) selectBtn.click();
+    }
+  }catch(err){ /* activeTool chưa khởi tạo (chưa nạp xong script) -> không có gì để chuyển */ }
+}
+
+function updateAuthUi_(){
+  const label = document.getElementById('loggedInUserLabel');
+  if(label) label.textContent = currentUsername ? ('👤 ' + currentUsername + (currentUserRole==='admin' ? ' (admin)' : '')) : '';
+  const manageBtn = document.getElementById('btnManageUsers');
+  if(manageBtn) manageBtn.style.display = (currentUserRole === 'admin') ? '' : 'none';
+  applyPermissions();
+}
+
+function showAppUI(username, role, token, permissions){
   document.getElementById('loginScreen').style.display = 'none';
   document.getElementById('appContainer').style.display = '';
   currentUsername = username || null;
   currentUserRole = role || 'user';
+  currentUserPermissions = permissions || {};
   if(token) currentAuthToken = token;
-  const label = document.getElementById('loggedInUserLabel');
-  if(label) label.textContent = username ? ('👤 ' + username + (currentUserRole==='admin' ? ' (admin)' : '')) : '';
-  const manageBtn = document.getElementById('btnManageUsers');
-  if(manageBtn) manageBtn.style.display = (currentUserRole === 'admin') ? '' : 'none';
+  updateAuthUi_();
+  startPermissionRefresh_();
+}
+
+/* Tự cập nhật quyền khi admin vừa đổi quyền cho tài khoản này (không cần đăng nhập lại): kiểm
+   tra lại với máy chủ mỗi 2 phút và mỗi khi người dùng quay lại tab. Nếu lỗi mạng/phiên hết hạn
+   thì BỎ QUA (giữ nguyên trạng thái hiện tại, không đăng xuất giữa chừng để khỏi mất bản chỉnh sửa
+   PDF đang làm dở). */
+let permissionRefreshTimer_ = null;
+async function refreshMyPermissions_(){
+  const token = sessionStorage.getItem(SESSION_STORAGE_KEY);
+  if(!token) return;
+  try{
+    const result = await callAuthApi({ action: 'verify', token: token });
+    if(result && result.success){
+      currentUserRole = result.role || currentUserRole;
+      currentUserPermissions = result.permissions || {};
+      updateAuthUi_();
+    }
+  }catch(err){ /* bỏ qua */ }
+}
+function startPermissionRefresh_(){
+  if(permissionRefreshTimer_) return;
+  permissionRefreshTimer_ = setInterval(refreshMyPermissions_, 120000);
+  document.addEventListener('visibilitychange', function(){
+    if(document.visibilityState === 'visible' && document.getElementById('appContainer').style.display !== 'none') refreshMyPermissions_();
+  });
 }
 
 function showLoginError(msg){
@@ -1387,7 +1449,7 @@ async function tryRestoreSession(){
   try{
     const result = await callAuthApi({ action: 'verify', token: token });
     if(result && result.success){
-      showAppUI(result.username, result.role, token);
+      showAppUI(result.username, result.role, token, result.permissions);
     } else {
       sessionStorage.removeItem(SESSION_STORAGE_KEY);
       document.getElementById('loginScreen').style.display = 'flex';
@@ -1412,7 +1474,7 @@ document.getElementById('loginForm').addEventListener('submit', async function(e
     if(result && result.success){
       sessionStorage.setItem(SESSION_STORAGE_KEY, result.token);
       document.getElementById('loginPassword').value = '';
-      showAppUI(result.username, result.role, result.token);
+      showAppUI(result.username, result.role, result.token, result.permissions);
     } else {
       showLoginError((result && result.message) || 'Sai tên đăng nhập hoặc mật khẩu.');
     }
@@ -1499,16 +1561,23 @@ async function refreshUserList(){
       row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:8px 10px;background:#1c1e22;border:1px solid #454a52;border-radius:6px;';
       const isSelf = currentUsername && u.username.toLowerCase() === currentUsername.toLowerCase();
       const isAdminLocked = !!u.adminLocked;
+      const canEditText = !!(u.permissions && u.permissions.editText);
       row.style.cssText += isAdminLocked ? 'opacity:.75;' : '';
       row.innerHTML =
         '<div style="flex:1;min-width:0;">'+
           '<div style="font-size:12.5px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+escapeHtml(u.username)+(isSelf?' <span style="opacity:.6;font-weight:400;">(bạn)</span>':'')+'</div>'+
           '<div style="font-size:11px;color:#9aa0a8;">'+(u.role==='admin'?'Admin':'User')+
+            (u.role==='admin'
+              ? ' · <span style="color:#8bd17c;">✎ Edit Text: luôn bật</span>'
+              : ' · <span style="color:'+(canEditText?'#8bd17c':'#9aa0a8')+';">✎ Edit Text: '+(canEditText?'được dùng':'đã ẩn')+'</span>')+
             (u.locked?' · <span style="color:#ff8a80;">đang khoá tạm</span>':'')+
             (isAdminLocked?' · <span style="color:#ff8a80;font-weight:600;">🔒 đã khoá bởi admin</span>':'')+
           '</div>'+
         '</div>'+
         '<div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;">'+
+        (u.role==='admin' ? '' :
+          '<button type="button" data-username="'+escapeHtml(u.username)+'" data-perm-key="editText" data-value="'+(canEditText?'1':'0')+'" class="umPermBtn" title="'+(canEditText?'Thu hồi quyền dùng Edit Text (nút Edit Text sẽ bị ẩn với tài khoản này)':'Cấp quyền dùng Edit Text cho tài khoản này')+'" style="'+
+            'background:transparent;border:1px solid '+(canEditText?'#3a6b3f':'#454a52')+';color:'+(canEditText?'#8bd17c':'#eceff1')+';border-radius:5px;padding:5px 9px;font-size:11.5px;cursor:pointer;white-space:nowrap;">'+(canEditText?'✎ Tắt Edit Text':'✎ Bật Edit Text')+'</button>')+
         '<button type="button" data-username="'+escapeHtml(u.username)+'" class="umResetPwBtn" style="'+
           'background:transparent;border:1px solid #454a52;color:#eceff1;border-radius:5px;padding:5px 9px;font-size:11.5px;cursor:pointer;white-space:nowrap;">Reset MK</button>'+
         '<button type="button" data-username="'+escapeHtml(u.username)+'" data-locked="'+(isAdminLocked?'1':'0')+'" class="umLockBtn" style="'+
@@ -1552,6 +1621,21 @@ async function refreshUserList(){
         }catch(err){ listErr.textContent = err.message; btn.disabled = false; btn.textContent = originalText; }
       });
     });
+    container.querySelectorAll('.umPermBtn').forEach(function(btn){
+      btn.addEventListener('click', async function(){
+        const username = btn.getAttribute('data-username');
+        const permKey = btn.getAttribute('data-perm-key');
+        const nextValue = btn.getAttribute('data-value') !== '1';
+        const originalText = btn.textContent;
+        btn.disabled = true; btn.textContent = 'Đang lưu…';
+        try{
+          const token = sessionStorage.getItem(SESSION_STORAGE_KEY);
+          const result = await callAuthApi({ action: 'setUserPermission', token: token, targetUsername: username, permission: permKey, value: nextValue });
+          if(result && result.success){ refreshUserList(); }
+          else { listErr.style.color = '#ff8a80'; listErr.textContent = (result && result.message) || 'Phân quyền thất bại.'; btn.disabled = false; btn.textContent = originalText; }
+        }catch(err){ listErr.style.color = '#ff8a80'; listErr.textContent = err.message; btn.disabled = false; btn.textContent = originalText; }
+      });
+    });
     container.querySelectorAll('.umResetPwBtn').forEach(function(btn){
       btn.addEventListener('click', async function(){
         const username = btn.getAttribute('data-username');
@@ -1591,6 +1675,19 @@ document.getElementById('btnManageUsers').addEventListener('click', openUserMana
 document.getElementById('umCloseBtn').addEventListener('click', closeUserManageModal);
 userManageModal.addEventListener('click', function(e){ if(e.target === userManageModal) closeUserManageModal(); });
 
+/* Khi chọn Quyền = Admin thì ô "Edit Text" tự bật & khoá (admin luôn có đủ quyền); chọn User thì cho
+   admin tự tick/bỏ tick. Đồng bộ lại cả sau khi form được reset. */
+function syncAddUserPermUi_(){
+  const isAdminRole = document.getElementById('auRole').value === 'admin';
+  const cb = document.getElementById('auPermEditText');
+  cb.disabled = isAdminRole;
+  if(isAdminRole) cb.checked = true;
+  document.getElementById('auPermEditTextNote').textContent = isAdminRole ? '(admin luôn có sẵn)' : '';
+}
+document.getElementById('auRole').addEventListener('change', syncAddUserPermUi_);
+document.getElementById('addUserForm').addEventListener('reset', function(){ setTimeout(syncAddUserPermUi_, 0); });
+syncAddUserPermUi_();
+
 document.getElementById('addUserForm').addEventListener('submit', async function(e){
   e.preventDefault();
   const newUsername = document.getElementById('auUsername').value.trim();
@@ -1604,7 +1701,7 @@ document.getElementById('addUserForm').addEventListener('submit', async function
   btn.disabled = true; btn.textContent = 'Đang tạo…';
   try{
     const token = sessionStorage.getItem(SESSION_STORAGE_KEY);
-    const result = await callAuthApi({ action: 'addUser', token: token, newUsername: newUsername, newPassword: newPassword, role: role });
+    const result = await callAuthApi({ action: 'addUser', token: token, newUsername: newUsername, newPassword: newPassword, role: role, permissions: { editText: document.getElementById('auPermEditText').checked } });
     if(result && result.success){
       okEl.textContent = 'Đã tạo tài khoản "'+newUsername+'".';
       document.getElementById('addUserForm').reset();
@@ -5194,6 +5291,12 @@ document.querySelectorAll('.tbtn[data-tool]').forEach(btn=>{
     // thái, không bao giờ bị "kẹt".
     try{
       const tool = btn.dataset.tool;
+      // PHÂN QUYỀN: chỉ tài khoản được admin cấp quyền (hoặc admin) mới dùng được Edit Text — chặn ở
+      // đây để bao trùm cả 2 cách dùng (bấm-từng-dòng và sửa nhanh cả vùng chọn "Selection area").
+      if(tool === 'edittext' && !hasPermission('editText')){
+        alert('Bạn chưa được cấp quyền sử dụng chức năng Edit Text. Vui lòng liên hệ quản trị viên (admin).');
+        return;
+      }
       // Nếu đã có một vùng được chọn sẵn trên trang hiện tại và người dùng bấm nút
       // "Sửa văn bản (OCR)" hoặc "Edit Text" thì sửa nhanh toàn bộ vùng đó
       // thay vì chuyển công cụ sang chế độ nhấn-từng-chữ.
