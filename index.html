@@ -1113,8 +1113,19 @@
 </div>
 
 <div id="toolbar">
-  <button class="tbtn primary" id="btnOpen"><span class="ic">📂</span>Open PDF</button>
-  <input type="file" id="fileInput" accept="application/pdf">
+  <!-- ===== Menu "File" — gom Open PDF (đưa nút "Open PDF" cũ vào trong menu, GIỮ NGUYÊN id
+       "btnOpen"/"fileInput" nên code JS gắn sự kiện phía dưới không cần sửa) và thêm nút "Close"
+       mới để đóng file PDF đang mở (dọn sạch tài liệu/trang/chỉnh sửa đang có trong bộ nhớ, quay
+       lại màn hình trống ban đầu — KHÔNG tự lưu, người dùng cần bấm "Save PDF" trước nếu muốn giữ
+       chỉnh sửa). Cùng cơ chế mở/đóng menu với Document/Edit/Export/Tool ở dưới. -->
+  <div class="menu-wrap" id="fileMenuWrap">
+    <button class="tbtn primary" id="btnFileMenu" title="Mở file PDF mới hoặc đóng file đang mở"><span class="ic">📁</span>File ▾</button>
+    <div class="menu-dropdown" id="fileMenuDropdown">
+      <button class="tbtn" id="btnOpen"><span class="ic">📂</span>Open PDF</button>
+      <input type="file" id="fileInput" accept="application/pdf">
+      <button class="tbtn" id="btnClosePdf" title="Đóng file PDF đang mở — nếu còn chỉnh sửa chưa lưu, hãy Save PDF trước khi Close"><span class="ic">✕</span>Close</button>
+    </div>
+  </div>
   <div class="sep"></div>
 
   <!-- ===== Menu "Document" — gom Insert pages / Insert a blank page / Delete page / Extract Pages /
@@ -1412,7 +1423,7 @@ function updateAuthUi_(){
   applyPermissions();
 }
 
-function showAppUI(username, role, token, permissions, mustChangePassword){
+function showAppUI(username, role, token, permissions){
   document.getElementById('loginScreen').style.display = 'none';
   document.getElementById('appContainer').style.display = '';
   currentUsername = username || null;
@@ -1421,9 +1432,6 @@ function showAppUI(username, role, token, permissions, mustChangePassword){
   if(token) currentAuthToken = token;
   updateAuthUi_();
   startPermissionRefresh_();
-  // [BẢO MẬT] Máy chủ báo mật khẩu này là mật khẩu mặc định/do admin đặt hộ ->
-  // bắt buộc đổi ngay, không cho dùng ứng dụng cho tới khi đổi xong.
-  if(mustChangePassword){ openChangePasswordModal(true); }
 }
 
 /* Tự cập nhật quyền khi admin vừa đổi quyền cho tài khoản này (không cần đăng nhập lại): kiểm
@@ -1440,7 +1448,6 @@ async function refreshMyPermissions_(){
       currentUserRole = result.role || currentUserRole;
       currentUserPermissions = result.permissions || {};
       updateAuthUi_();
-      if(result.mustChangePassword && !changePasswordForced_) openChangePasswordModal(true);
     }
   }catch(err){ /* bỏ qua */ }
 }
@@ -1476,7 +1483,7 @@ async function tryRestoreSession(){
   try{
     const result = await callAuthApi({ action: 'verify', token: token });
     if(result && result.success){
-      showAppUI(result.username, result.role, token, result.permissions, result.mustChangePassword);
+      showAppUI(result.username, result.role, token, result.permissions);
     } else {
       sessionStorage.removeItem(SESSION_STORAGE_KEY);
       document.getElementById('loginScreen').style.display = 'flex';
@@ -1501,7 +1508,7 @@ document.getElementById('loginForm').addEventListener('submit', async function(e
     if(result && result.success){
       sessionStorage.setItem(SESSION_STORAGE_KEY, result.token);
       document.getElementById('loginPassword').value = '';
-      showAppUI(result.username, result.role, result.token, result.permissions, result.mustChangePassword);
+      showAppUI(result.username, result.role, result.token, result.permissions);
     } else {
       showLoginError((result && result.message) || 'Sai tên đăng nhập hoặc mật khẩu.');
     }
@@ -1522,39 +1529,17 @@ document.getElementById('btnLogout').addEventListener('click', async function(){
 
 /* ---------- Đổi mật khẩu ---------- */
 const changePasswordModal = document.getElementById('changePasswordModal');
-// [BẢO MẬT] Khi true: mật khẩu hiện tại là mật khẩu mặc định/do admin đặt hộ ->
-// không cho đóng hộp thoại (bấm Huỷ / click ra ngoài / Esc) cho tới khi đổi thành công.
-let changePasswordForced_ = false;
-function openChangePasswordModal(forced){
-  changePasswordForced_ = !!forced;
+function openChangePasswordModal(){
   document.getElementById('changePasswordForm').reset();
   document.getElementById('cpError').textContent = '';
-  const okEl = document.getElementById('cpSuccess');
-  const cancelBtn = document.getElementById('cpCancelBtn');
-  if(changePasswordForced_){
-    okEl.style.color = '#ffcf6b';
-    okEl.textContent = 'Mật khẩu hiện tại là mật khẩu mặc định/do admin đặt hộ. Vì lý do bảo mật, bạn cần đặt mật khẩu mới trước khi tiếp tục sử dụng.';
-    if(cancelBtn) cancelBtn.style.display = 'none';
-  } else {
-    okEl.style.color = '';
-    okEl.textContent = '';
-    if(cancelBtn) cancelBtn.style.display = '';
-  }
+  document.getElementById('cpSuccess').textContent = '';
   changePasswordModal.style.display = 'flex';
   document.getElementById('cpOldPassword').focus();
 }
-function closeChangePasswordModal(){
-  if(changePasswordForced_) return; // bắt buộc đổi xong mới được đóng
-  changePasswordModal.style.display = 'none';
-}
-document.getElementById('btnChangePassword').addEventListener('click', function(){ openChangePasswordModal(false); });
+function closeChangePasswordModal(){ changePasswordModal.style.display = 'none'; }
+document.getElementById('btnChangePassword').addEventListener('click', openChangePasswordModal);
 document.getElementById('cpCancelBtn').addEventListener('click', closeChangePasswordModal);
 changePasswordModal.addEventListener('click', function(e){ if(e.target === changePasswordModal) closeChangePasswordModal(); });
-document.addEventListener('keydown', function(e){
-  if(e.key === 'Escape' && changePasswordForced_ && changePasswordModal.style.display !== 'none'){
-    e.stopImmediatePropagation();
-  }
-});
 
 document.getElementById('changePasswordForm').addEventListener('submit', async function(e){
   e.preventDefault();
@@ -1564,23 +1549,17 @@ document.getElementById('changePasswordForm').addEventListener('submit', async f
   const errEl = document.getElementById('cpError');
   const okEl = document.getElementById('cpSuccess');
   const btn = document.getElementById('cpSubmitBtn');
-  errEl.textContent = '';
-  if(!changePasswordForced_) okEl.textContent = '';
+  errEl.textContent = ''; okEl.textContent = '';
   if(newPassword.length < 8){ errEl.textContent = 'Mật khẩu mới phải có ít nhất 8 ký tự.'; return; }
-  if(!/[A-Za-z]/.test(newPassword) || !/[0-9]/.test(newPassword)){ errEl.textContent = 'Mật khẩu mới phải có cả chữ và số.'; return; }
   if(newPassword !== newPassword2){ errEl.textContent = 'Hai lần nhập mật khẩu mới không khớp.'; return; }
   btn.disabled = true; btn.textContent = 'Đang xử lý…';
   try{
     const token = sessionStorage.getItem(SESSION_STORAGE_KEY);
     const result = await callAuthApi({ action: 'changePassword', token: token, oldPassword: oldPassword, newPassword: newPassword });
     if(result && result.success){
-      const wasForced = changePasswordForced_;
-      changePasswordForced_ = false;
-      okEl.style.color = '#8bd17c';
       okEl.textContent = 'Đổi mật khẩu thành công.';
-      document.getElementById('cpCancelBtn').style.display = '';
       document.getElementById('changePasswordForm').reset();
-      setTimeout(closeChangePasswordModal, wasForced ? 900 : 1200);
+      setTimeout(closeChangePasswordModal, 1200);
     } else {
       errEl.textContent = (result && result.message) || 'Đổi mật khẩu thất bại.';
     }
@@ -3133,7 +3112,57 @@ function sampleBackgroundColor(pdfX, pdfY, pdfW, pdfH){
 // ---------- Mở PDF ----------
 document.getElementById('btnOpen').onclick = () => document.getElementById('fileInput').click();
 
-// ---------- Các menu thả xuống trên thanh công cụ (Document, Edit,...) ----------
+// ---------- Đóng file PDF đang mở (menu "File" > "Close") ----------
+async function closeCurrentPdf_(){
+  if(!pages.length) return; // chưa mở file nào thì không có gì để đóng
+  const ok = confirm('Đóng file PDF đang mở?\nMọi chỉnh sửa chưa "Save PDF" sẽ bị mất.');
+  if(!ok) return;
+
+  // Dừng ngay tác vụ render đang chạy dở (nếu có) TRƯỚC KHI dọn dữ liệu, tránh callback render cũ
+  // (đang chờ pdf.js vẽ xong) chạy trễ vào đúng lúc canvas đã bị xoá trống, gây vẽ nhầm lên màn hình
+  // trống hoặc lỗi tham chiếu tới trang đã không còn tồn tại trong mảng `pages`.
+  renderToken++;
+  if(activeRenderTask){ try{ activeRenderTask.cancel(); }catch(err){} activeRenderTask = null; }
+  if(pageIO){ pageIO.disconnect(); pageIO = null; }
+
+  // Dọn sạch toàn bộ trạng thái của tài liệu đang mở — GIỮ NGUYÊN mọi trạng thái không liên quan tới
+  // tài liệu (đăng nhập, công cụ/màu/font đang chọn...) để mở file kế tiếp vẫn dùng đúng thiết lập cũ.
+  pages = [];
+  currentIndex = 0;
+  nextId = 1;
+  originalFileName = 'document.pdf';
+  originalFileRawBuf = null;
+  originalFileRawSize = 0;
+  undoStack = {};
+  regionSelections = {};
+  selectedEditIndex = -1;
+  draggingSelected = false;
+  pendingEditCommit = null;
+  activeColorSelectionSpan = null;
+  ocrPrefetchState = {};
+
+  document.getElementById('filename').textContent = '';
+  document.getElementById('fileInput').value = '';
+  document.getElementById('ocrText').value = '';
+
+  // Xoá sạch nội dung đang vẽ trên canvas/lớp text của trang vừa đóng, tránh còn sót hình trang cũ
+  // hiển thị mờ phía sau dropHint.
+  const pdfCanvas = document.getElementById('pdfCanvas');
+  const overlayCanvas = document.getElementById('overlayCanvas');
+  if(pdfCanvas){ const ctx = pdfCanvas.getContext('2d'); ctx.clearRect(0,0,pdfCanvas.width,pdfCanvas.height); }
+  if(overlayCanvas){ const ctx = overlayCanvas.getContext('2d'); ctx.clearRect(0,0,overlayCanvas.width,overlayCanvas.height); }
+  const textLayer = document.getElementById('textLayer');
+  if(textLayer) textLayer.innerHTML = '';
+
+  pageWrap.style.display = 'none';
+  dropHint.style.display = ''; // quay lại display mặc định (flex) định nghĩa ở CSS #dropHint
+
+  await rebuildPageSlots();
+  buildThumbnails();
+}
+document.getElementById('btnClosePdf').onclick = closeCurrentPdf_;
+
+
 // Hàm dùng chung để gắn hành vi mở/đóng cho MỌI menu thả xuống kế bên nút "Open PDF": bấm nút menu
 // để mở/đóng, bấm ra ngoài tự đóng, bấm chọn một thao tác bên trong thì tự đóng ngay (các nút bên
 // trong đều tự làm việc của chúng — mở modal hoặc chọn công cụ — không cần menu còn mở nữa), và mở
@@ -3161,6 +3190,8 @@ function setupToolbarMenu_(wrapId, btnId, dropdownId){
     if(e.target.closest('.tbtn')) closeThisMenu();
   }, true);
 }
+// Menu "File": Open PDF/Close
+setupToolbarMenu_('fileMenuWrap', 'btnFileMenu', 'fileMenuDropdown');
 // Menu "Document": Insert pages/Delete page/Extract Pages/Rotate pages/Combine Files/Compress PDF
 setupToolbarMenu_('documentMenuWrap', 'btnDocumentMenu', 'documentMenuDropdown');
 // Menu "Edit": Add text/Edit Document (OCR-PDF scan)/OCR text extract/Edit Text
@@ -9856,6 +9887,50 @@ async function detectCellFillsForExcel_(idx, rowYs, colXs){
   return fills;
 }
 
+// Dò KHUNG VIỀN NGOÀI của cả trang/biểu mẫu: nhiều biểu mẫu hành chính (ví dụ Purchase
+// Requisition Form) vẽ MỘT hình chữ nhật bao quanh TOÀN BỘ nội dung (logo, tiêu đề, các trường
+// thông tin, bảng hàng hoá, phần ký tên...), tách biệt với khung của bảng dữ liệu ở giữa trang.
+// computeTableGrid_ (dùng chung cho xuất Word) CỐ TÌNH loại bỏ khung viền ngoài này khi tìm lưới
+// bảng (xem clusterConnectedGridSegments_ phía trên) để không lẫn khung trang với bảng dữ liệu
+// thật — đúng đắn cho việc dựng BẢNG, nhưng hệ quả phụ là khung viền ngoài bị mất hẳn khi xuất
+// Excel, trong khi bản gốc (và file Excel chuẩn) vẫn có khung viền bao quanh cả biểu mẫu (viền
+// trái/phải chạy suốt từ trên xuống dưới, viền trên ở hàng đầu, viền dưới ở hàng cuối). Hàm này
+// dò riêng khung đó từ chính danh sách đường kẻ thô (tableLines.segments, CHƯA lọc theo cụm liên
+// thông), tìm đường ngang/dọc chạy gần hết bề rộng/bề cao trang — đặc trưng riêng của khung viền
+// trang, khác hẳn đường kẻ nội bộ của bảng dữ liệu (thường ngắn hơn nhiều). Trả về null nếu trang
+// không có khung viền kiểu này (không tự bịa ra khung nếu bản gốc không có).
+function detectPageFrame_(tableLines, W, H){
+  const segs = (tableLines && tableLines.segments) || [];
+  const hSegs = segs.filter(s => s.orient === 'h');
+  const vSegs = segs.filter(s => s.orient === 'v');
+  const hFrameCand = hSegs.filter(s => (s.x1 - s.x0) >= W*0.85);
+  const vFrameCand = vSegs.filter(s => (s.y1 - s.y0) >= H*0.5);
+  if(hFrameCand.length < 2 || vFrameCand.length < 2) return null;
+  const topYs = hFrameCand.map(s => H - s.y); // quy sang hệ toạ độ trên-trái, cùng hệ với colXs/rowYs
+  const top = Math.min(...topYs), bottom = Math.max(...topYs);
+  const xs = vFrameCand.map(s => s.x);
+  const left = Math.min(...xs), right = Math.max(...xs);
+  if((bottom - top) < H*0.3 || (right - left) < W*0.3) return null; // quá gần nhau -> không phải khung bao cả trang
+  return { top, bottom, left, right };
+}
+
+// Gộp thêm các cạnh viền (sides = {top,bottom,left,right}, boolean) vào MỘT ô đã có kế hoạch định
+// dạng sẵn (từ buildExcelSheetPlan_), KHÔNG ghi đè/làm mất viền đã có — dùng để "vẽ" khung viền
+// ngoài của cả trang (xem detectPageFrame_) chồng lên các ô ở mép trái/phải/trên/dưới của sheet,
+// kể cả những ô hiện chưa có viền nào (phần chữ ngoài bảng: tiêu đề, ngày tháng, chữ ký...).
+function mergeCellBorder_(cell, add){
+  if(!cell) return;
+  if(cell.bordered) return; // đã có viền đủ 4 cạnh (ô trong bảng dữ liệu) -> khung ngoài không thêm được gì
+  const cur = cell.borderSides || {};
+  const next = {
+    top: !!(cur.top || add.top),
+    bottom: !!(cur.bottom || add.bottom),
+    left: !!(cur.left || add.left),
+    right: !!(cur.right || add.right),
+  };
+  if(next.top || next.bottom || next.left || next.right) cell.borderSides = next;
+}
+
 // Neo danh sách ẢNH NHÚNG (logo/con dấu/chữ ký, lấy từ extractPageImagesForWord) vào ĐÚNG hàng/cột
 // trong danh sách `rows` đã dựng (mỗi rowPlan mang theo _yTop/_yBot theo hệ toạ độ điểm, gốc trên-
 // trái — cùng hệ với x0/y0 của ảnh) — dùng chung cho cả nhánh "có bảng" lẫn "không có bảng" ở
@@ -9958,7 +10033,31 @@ async function buildExcelSheetPlan_(idx){
     // để nhịp cách dòng ở phần tiêu đề/chữ ký cũng khớp bản gốc như phần bảng.
     const makeOutsideRows = (arr) => {
       const groups = groupLinesIntoRows_(arr);
+      const colBand = colXs.slice(0, nCols);
       return groups.map((group, gi) => {
+        // Nhóm chỉ có ĐÚNG MỘT dòng chữ: kiểm tra dòng đó có thực sự VẮT NGANG qua từ 2 mốc cột
+        // trở lên hay không (so điểm bắt đầu và điểm gần-kết-thúc của dòng chữ với cùng một lưới
+        // colXs đang dùng để xếp cột ở mọi nơi khác) — đây là tiêu chí ĐÚNG BẢN CHẤT (dòng chữ có
+        // thật sự chiếm nhiều cột không), khác với so bề rộng tương đối (dễ gộp oan khi bảng dữ
+        // liệu vốn hẹp, khiến ngay cả nhãn ngắn như "DATE :" cũng "rộng hơn nửa bảng"). Nếu có vắt
+        // ngang, chỉ gộp ĐÚNG các cột nó phủ qua (không ép gộp hết nCols cột nếu chỉ lấn sang 1-2
+        // cột lân cận) — canh giữa nếu điểm giữa dòng chữ gần điểm giữa vùng đã gộp, ngược lại trái.
+        if(group.length === 1){
+          const l = group[0];
+          const lx1 = (l.x1!=null ? l.x1 : l.x0);
+          const startCol = Math.min(nCols-1, Math.max(0, colIndexForX_(l.x0, colBand)));
+          const endCol = Math.min(nCols-1, Math.max(0, colIndexForX_(Math.max(l.x0, lx1-0.01), colBand)));
+          if(endCol > startCol){
+            const spanLeft = colXs[startCol], spanRight = colXs[endCol+1];
+            const spanW = Math.max(1, spanRight - spanLeft);
+            const mid = l.x0 + (lx1-l.x0)/2, spanMid = spanLeft + spanW/2;
+            const align = Math.abs(mid - spanMid) <= spanW*0.15 ? 'center' : 'left';
+            const rowCells = new Array(nCols).fill(null).map(()=>({text:''}));
+            for(let k=startCol+1;k<=endCol;k++) rowCells[k] = null; // các cột bị ô gộp che
+            rowCells[startCol] = { text:(l.text||'').trim(), colSpan: endCol-startCol+1, align, bold:false };
+            return { heightPt: null, cells: rowCells, _yTop: l.y0, _yBot: null, _colXs: colXs, _fontSize: l.fontSize||11 };
+          }
+        }
         const rowCells = new Array(nCols).fill(null).map(()=>({text:''}));
         for(const l of group){
           const c = Math.min(nCols-1, Math.max(0, colIndexForX_(l.x0, colXs.slice(0, nCols))));
@@ -10042,8 +10141,33 @@ async function buildExcelSheetPlan_(idx){
     const afterRows = finalizeOutsideHeights(makeOutsideRows(outside.filter(l => l.y0 >= top)), null);
     rows.push(...afterRows);
 
+    // SỬA LỖI "file Excel xuất ra mất khung viền ngoài của cả biểu mẫu": xem giải thích chi tiết ở
+    // detectPageFrame_. Chỉ vẽ khi PDF THẬT SỰ có khung này (trả về null nếu không có) — không tự
+    // bịa viền cho trang không có khung bao ngoài.
+    let pageFrame = null;
+    try{ pageFrame = detectPageFrame_(tableLines, W, H); }
+    catch(err){ console.warn('Không dò được khung viền ngoài trang '+(idx+1)+':', err); }
+    if(pageFrame && rows.length){
+      const lastRi = rows.length - 1;
+      for(let ri=0; ri<rows.length; ri++){
+        const cellsArr = rows[ri].cells;
+        if(!cellsArr || !cellsArr.length) continue;
+        let firstCell = null, lastCell = null;
+        for(let k=0;k<cellsArr.length;k++){ if(cellsArr[k]){ firstCell = cellsArr[k]; break; } }
+        for(let k=cellsArr.length-1;k>=0;k--){ if(cellsArr[k]){ lastCell = cellsArr[k]; break; } }
+        const isFirst = ri===0, isLast = ri===lastRi;
+        mergeCellBorder_(firstCell, { left:true, top:isFirst, bottom:isLast });
+        if(lastCell && lastCell!==firstCell) mergeCellBorder_(lastCell, { right:true, top:isFirst, bottom:isLast });
+        else mergeCellBorder_(firstCell, { right:true });
+      }
+    }
+
     const colWidths = [];
-    for(let c=0;c<nCols;c++) colWidths.push(Math.max(8, Math.min(70, (colXs[c+1]-colXs[c])/7)));
+    // Quy đổi point (PDF) -> đơn vị bề rộng cột Excel (số ký tự font mặc định, ~7px/ký tự với
+    // Calibri 11): 1pt = 96/72 px, nên bề rộng point phải nhân 96/72 rồi mới chia 7, gộp lại là
+    // chia cho 5.25 — CHIA THẲNG CHO 7 (bản cũ) coi nhầm point như pixel, khiến cột luôn hẹp hơn
+    // thật khoảng 25%, sai lệch tỉ lệ cột so với bản gốc.
+    for(let c=0;c<nCols;c++) colWidths.push(Math.max(8, Math.min(70, (colXs[c+1]-colXs[c])/5.25)));
     const anchoredImages = anchorImagesToRows_(images, rows, colXs);
     return { nCols, colWidths, rows, images: anchoredImages };
   }
@@ -10070,7 +10194,7 @@ async function buildExcelSheetPlan_(idx){
   const colWidths = [];
   for(let c=0;c<anchors.length;c++){
     const next = (c+1 < anchors.length) ? anchors[c+1] : W;
-    colWidths.push(Math.max(8, Math.min(70, (next - anchors[c])/7)));
+    colWidths.push(Math.max(8, Math.min(70, (next - anchors[c])/5.25)));
   }
   const anchoredImages = anchorImagesToRows_(images, rows, anchors.concat([W]));
   return { nCols, colWidths, rows, images: anchoredImages };
