@@ -7619,6 +7619,33 @@ function refreshEditTextDomLayer(){
     }
   }).catch(err=>console.warn('Chuẩn bị lớp Edit Text (DOM) lỗi:', err));
 }
+// Đếm số ký tự có DẤU tiếng Việt (nguyên âm có dấu + đ/Đ) trong một đoạn văn bản.
+function countVietnameseDiacritics_(text){
+  const m = (text||'').match(/[àáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ]/gi);
+  return m ? m.length : 0;
+}
+// Đếm tổng số chữ cái (bỏ số/dấu câu/khoảng trắng) trong một đoạn văn bản.
+function countLetters_(text){
+  const m = (text||'').match(/[a-zA-ZÀ-ỹ]/g);
+  return m ? m.length : 0;
+}
+// SỬA LỖI "file Word xuất ra bị lẫn chữ tiếng Việt mất dấu, hiển thị không giống file PDF": một số
+// PDF (đặc biệt các file đã từng qua một lần OCR/bảng mã cũ trước khi đưa vào đây, ví dụ tên file có
+// "...OCR-edited.pdf") có sẵn một LỚP CHỮ GỐC (native text, trích qua page.getTextContent() của
+// pdf.js) nhưng lớp đó bị THIẾU DẤU tiếng Việt HÀNG LOẠT (ví dụ "Kién nghi b6 sung thém ché dé xe
+// cho nhan vién" thay vì "Kiến nghị bổ sung thêm chỗ để xe cho nhân viên") — không khớp với chữ
+// người dùng THỰC SỰ NHÌN THẤY trên trang. editTextLinesFor() (hàm dùng chung cho Edit Text/Select
+// Text/Export Word/Export Excel) trước đây LUÔN ưu tiên lớp chữ gốc này bất kể chất lượng, nên dù
+// người dùng đã OCR/sửa đúng lại MỘT SỐ dòng, các dòng CHƯA từng sửa vẫn xuất ra mất dấu y nguyên —
+// đúng triệu chứng "một phần đúng, một phần lỗi font" người dùng gặp phải. Hàm dưới đây kiểm tra một
+// đoạn chữ có tỉ lệ dấu tiếng Việt bất thường thấp so với văn bản tiếng Việt bình thường hay không,
+// để quyết định có nên tin OCR (đọc thẳng ảnh trang, không qua lớp text lỗi) hơn hay không.
+function looksLikeMissingVietnameseDiacritics_(text, minLetters){
+  const letters = countLetters_(text);
+  if(letters < (minLetters||40)) return false; // quá ít chữ, không đủ căn cứ để kết luận
+  const diacritics = countVietnameseDiacritics_(text);
+  return (diacritics/letters) < 0.015; // văn bản tiếng Việt thông thường luôn có tỉ lệ dấu cao hơn hẳn
+}
 // Kiểm tra 2 khung chữ nhật có trùng phần lớn lên nhau hay không (dùng để loại bỏ dòng OCR
 // trùng vị trí với dòng chữ PDF thật đã có, tránh 2 lớp có thể-bấm-sửa chồng đúng 1 chỗ).
 function boxesOverlapMostly(a, b){
@@ -7638,8 +7665,27 @@ function editTextLinesFor(p){
   const ocrLines = (p.ocrLines || []);
   if(!nativeLines.length) return ocrLines;
   if(!ocrLines.length) return nativeLines;
-  const extraOcr = ocrLines.filter(o => !nativeLines.some(n => boxesOverlapMostly(o, n)));
-  return nativeLines.concat(extraOcr);
+  // Với TỪNG dòng chữ gốc: nếu dòng đó mất dấu tiếng Việt bất thường (xem
+  // looksLikeMissingVietnameseDiacritics_) VÀ có một dòng OCR đè gần đúng vị trí (boxesOverlapMostly)
+  // với NHIỀU dấu tiếng Việt hơn hẳn -> tin dòng OCR hơn (đọc thẳng ảnh trang, không qua lớp text
+  // lỗi sẵn có trong PDF), thay NỘI DUNG dòng gốc bằng nội dung OCR nhưng GIỮ NGUYÊN toạ độ/kích
+  // thước của dòng gốc (toạ độ trích từ PDF thật luôn chính xác hơn toạ độ OCR tự ước lượng).
+  const usedOcr = new Set();
+  const merged = nativeLines.map(n => {
+    if(!looksLikeMissingVietnameseDiacritics_(n.text)) return n; // dòng gốc đã ổn, giữ nguyên như cũ
+    const nDiacritics = countVietnameseDiacritics_(n.text);
+    let best = -1, bestDiacritics = nDiacritics;
+    ocrLines.forEach((o, oi) => {
+      if(usedOcr.has(oi) || !boxesOverlapMostly(o, n)) return;
+      const oDiacritics = countVietnameseDiacritics_(o.text);
+      if(oDiacritics > bestDiacritics){ bestDiacritics = oDiacritics; best = oi; }
+    });
+    if(best < 0) return n; // không có ứng viên OCR nào tốt hơn -> vẫn giữ dòng gốc (an toàn)
+    usedOcr.add(best);
+    return Object.assign({}, n, { text: ocrLines[best].text, items: ocrLines[best].items });
+  });
+  const extraOcr = ocrLines.filter((o, oi) => !usedOcr.has(oi) && !nativeLines.some(n => boxesOverlapMostly(o, n)));
+  return merged.concat(extraOcr);
 }
 
 // ---------- Chọn văn bản để copy (Select text) ----------
@@ -9044,6 +9090,12 @@ async function getPageVisualLinesForWord(idx){
   // Trang scan/ảnh chưa có chữ nào (chưa từng OCR) -> chạy OCR để vẫn có vị trí dòng chữ
   if((!p.textItems || !p.textItems.length) && (!p.ocrLines || !p.ocrLines.length)){
     try{ await runOcrForPage(idx, true); }catch(err){ console.warn('OCR thất bại cho trang '+(idx+1)+':', err); }
+  } else if(p.nativeLines && p.nativeLines.length && (!p.ocrLines || !p.ocrLines.length)
+            && looksLikeMissingVietnameseDiacritics_(p.nativeLines.map(l=>l.text).join(' '), 60)){
+    // SỬA LỖI "Word xuất ra lẫn chữ mất dấu": trang CÓ chữ gốc nhưng nghi lớp đó bị lỗi (mất dấu
+    // hàng loạt) -> chạy thêm OCR để có căn cứ so sánh/thay thế đúng những dòng bị lỗi trong
+    // editTextLinesFor() (chỉ những dòng thực sự lỗi mới bị thay, các dòng vốn đã đúng giữ nguyên).
+    try{ await runOcrForPage(idx, true); }catch(err){ console.warn('OCR bù chữ gốc mất dấu thất bại cho trang '+(idx+1)+':', err); }
   }
   const baseLines = editTextLinesFor(p) || []; // chữ PDF thật + chữ OCR (đã gộp sẵn, dùng chung với Edit Text)
 
