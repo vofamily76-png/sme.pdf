@@ -839,6 +839,18 @@
       vị trí/bố cục như trong bản gốc (kể cả bảng biểu), bao gồm cả những chỉnh sửa bạn đã thực hiện.
     </div>
 
+    <!-- Nhập số trang trực tiếp (vd: 1,3,5-7) để tick chọn nhanh nhiều trang cùng lúc thay vì phải
+         bấm từng ảnh thu nhỏ — giống hệt cách chọn trang ở modal "Delete page". -->
+    <div style="display:flex;gap:8px;margin-bottom:10px;align-items:flex-start;">
+      <input type="text" id="ewPageRangeInput" placeholder="Enter page numbers, e.g. 1,3,5-7" style="
+        flex:1;background:#1c1e22;color:#eceff1;border:1px solid #454a52;border-radius:6px;
+        padding:8px 10px;font-size:12.5px;">
+      <button type="button" id="ewApplyRangeBtn" style="
+        padding:8px 14px;border:1px solid #454a52;border-radius:6px;background:#3a3f47;color:#eceff1;
+        font-weight:600;font-size:12.5px;cursor:pointer;white-space:nowrap;">Select pages</button>
+    </div>
+    <div id="ewRangeError" style="min-height:16px;color:#ff8a80;font-size:11.5px;margin:-4px 0 8px;"></div>
+
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
       <label style="display:flex;align-items:center;gap:8px;font-size:12.5px;cursor:pointer;">
         <input type="checkbox" id="ewSelectAll"> Chọn tất cả (Xuất tất cả các trang)
@@ -9709,6 +9721,9 @@ const ewList = document.getElementById('ewList');
 const ewSelectAll = document.getElementById('ewSelectAll');
 const ewSelectedCount = document.getElementById('ewSelectedCount');
 const ewError = document.getElementById('ewError');
+const ewPageRangeInput = document.getElementById('ewPageRangeInput');
+const ewApplyRangeBtn = document.getElementById('ewApplyRangeBtn');
+const ewRangeError = document.getElementById('ewRangeError');
 
 document.getElementById('btnExportWord').onclick = openExportWordModal;
 document.getElementById('ewCancelBtn').addEventListener('click', closeExportWordModal);
@@ -9716,6 +9731,38 @@ document.getElementById('ewCloseBtn').addEventListener('click', closeExportWordM
 exportWordModal.addEventListener('click', function(e){ if(e.target === exportWordModal) closeExportWordModal(); });
 
 function closeExportWordModal(){ exportWordModal.style.display = 'none'; }
+
+// Áp KẾT QUẢ phân tích chuỗi số trang (vd "1,3,5-7") vào lưới checkbox của modal Export Word — dùng
+// lại đúng hàm parsePageRangeInput_ đã viết cho modal Delete page, thay thế lựa chọn hiện có (không
+// cộng dồn), để gõ một danh sách trang rồi bấm "Xuất Word" là xuất đúng một lần những trang đó.
+function applyEwPageRangeSelection_(){
+  ewRangeError.textContent = '';
+  const { indices, invalidTokens, outOfRangeTokens } = parsePageRangeInput_(ewPageRangeInput.value, pages.length);
+  if(invalidTokens.length){
+    ewRangeError.textContent = 'Không hiểu: ' + invalidTokens.join(', ');
+    return;
+  }
+  if(outOfRangeTokens.length){
+    ewRangeError.textContent = `Trang không hợp lệ (tài liệu chỉ có ${pages.length} trang): ` + outOfRangeTokens.join(', ');
+    return;
+  }
+  if(!indices.size){
+    ewRangeError.textContent = 'Hãy nhập ít nhất một số trang, vd: 1,3,5-7';
+    return;
+  }
+  ewList.querySelectorAll('.dp-checkbox').forEach(cb => {
+    const idx = Number(cb.dataset.idx);
+    cb.checked = indices.has(idx);
+    cb.closest('.dp-item').classList.toggle('selected', cb.checked);
+  });
+  updateEwSelectedCount();
+  const firstChecked = ewList.querySelector('.dp-checkbox:checked');
+  if(firstChecked) firstChecked.closest('.dp-item').scrollIntoView({ block:'nearest' });
+}
+ewApplyRangeBtn.addEventListener('click', applyEwPageRangeSelection_);
+ewPageRangeInput.addEventListener('keydown', (e) => {
+  if(e.key === 'Enter'){ e.preventDefault(); applyEwPageRangeSelection_(); }
+});
 
 function updateEwSelectedCount(){
   const total = ewList.querySelectorAll('.dp-checkbox').length;
@@ -9727,6 +9774,8 @@ function updateEwSelectedCount(){
 
 async function openExportWordModal(){
   ewError.textContent = '';
+  ewRangeError.textContent = '';
+  ewPageRangeInput.value = '';
   if(!pages.length){ alert('Hãy mở một file PDF trước.'); return; }
   ewList.innerHTML = '';
   exportWordModal.style.display = 'flex';
