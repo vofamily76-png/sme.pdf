@@ -11124,6 +11124,8 @@ const WXI = (function(){
         if(cnt >= 4) color[i] = 1; // bản thân + tối thiểu 3 điểm màu sát ngay bên cạnh
       }
     }
+    // [MỚI] Loại các NHÓM "mực màu giả" (viền màu do lệch kênh RGB của máy scan / nén JPEG quanh nét chữ đen).
+    pruneIncoherentColor(rgba, w, h, color);
     // Histogram chỉ tính trên điểm KHÔNG màu để ngưỡng mực đen không bị con dấu/chữ ký kéo lệch
     const h2 = new Int32Array(256); let tot2=0;
     for(let i=0;i<n;i++) if(!color[i]){ h2[gray[i]]++; tot2++; }
@@ -11141,6 +11143,105 @@ const WXI = (function(){
     for(let x=0;x<w;x++){ for(let y=0;y<h;y++){ if(tmp[y*w+x]){ const a=Math.max(0,y-R), b=Math.min(h-1,y+R); for(let yy=a;yy<=b;yy++) dil[yy*w+x]=1; } } }
     for(let i=0;i<n;i++) if(dil[i]) ink[i]=0;
     return { gray, ink, color, colorDil: dil, thr, paper };
+  }
+
+  // ---- [MỚI - SỬA LỖI "còn sót ảnh thừa/ảnh lỗi + mất dấu tiếng Việt khi xuất Word"] ----
+  // NGUYÊN NHÂN GỐC: ảnh scan thường bị lệch nhẹ giữa 3 kênh R/G/B (máy scan CCD) hoặc bị nén JPEG (chroma
+  // subsampling) nên quanh các NÉT MẢNH của chữ ĐEN (dấu thanh, dấu chấm, gạch ngang, đường kẻ mảnh, chân chữ...)
+  // xuất hiện các VIỆN MÀU hồng/xanh/vàng ngắn. Bộ tách mực coi đó là "mực màu (con dấu/chữ ký)": (1) xoá mất
+  // chính các nét đen đó khỏi mặt nạ chữ -> OCR mất dấu ("Tên"->"Ten", "Hạnh"->"Hanh", "Tự do"->"Tưdo"...), và
+  // (2) cắt chúng thành hàng loạt ẢNH NHỎ vụn (mảnh dấu/gạch) chèn thừa vào Word.
+  // CÁCH PHÂN BIỆT: mực màu THẬT (con dấu đỏ, chữ ký xanh) có SẮC ĐỘ NHẤT QUÁN (cùng một tông màu trên toàn vùng);
+  // viền màu giả thì đổi tông liên tục (hồng ở mép này, xanh lục ở mép kia) nên các vector sắc độ TRIỆT TIÊU nhau.
+  // Đo độ nhất quán = |tổng vector sắc độ| / tổng |vector sắc độ| (1 = cùng tông, ~0 = lộn xộn) theo TỪNG NHÓM.
+  function pruneIncoherentColor(rgba, w, h, color, dbg){
+    const F=4, gw=Math.ceil(w/F), gh=Math.ceil(h/F);
+    const g=new Uint8Array(gw*gh);
+    let total=0;
+    for(let y=0;y<h;y++){ const row=y*w; for(let x=0;x<w;x++){ if(color[row+x]){ g[(y>>2)*gw+(x>>2)]=1; total++; } } }
+    if(!total) return 0;
+    const R=2, tmp=new Uint8Array(gw*gh), d=new Uint8Array(gw*gh);
+    for(let y=0;y<gh;y++){ const row=y*gw; for(let x=0;x<gw;x++){ if(g[row+x]){ const a=Math.max(0,x-R), b=Math.min(gw-1,x+R); for(let xx=a;xx<=b;xx++) tmp[row+xx]=1; } } }
+    for(let x=0;x<gw;x++){ for(let y=0;y<gh;y++){ if(tmp[y*gw+x]){ const a=Math.max(0,y-R), b=Math.min(gh-1,y+R); for(let yy=a;yy<=b;yy++) d[yy*gw+x]=1; } } }
+    const cc=components(d, gw, gh);
+    const S=new Map();
+    for(let y=0;y<h;y++){
+      const row=y*w;
+      for(let x=0;x<w;x++){
+        if(!color[row+x]) continue;
+        const lb=cc.lab[(y>>2)*gw+(x>>2)];
+        let s=S.get(lb); if(!s){ s={n:0,sb:0,sr:0,sm:0,x0:x,x1:x,y0:y,y1:y}; S.set(lb,s); }
+        const j=(row+x)*4, r=rgba[j], gg=rgba[j+1], b=rgba[j+2];
+        const cb=-0.1687*r-0.3313*gg+0.5*b, cr=0.5*r-0.4187*gg-0.0813*b;
+        s.n++; s.sb+=cb; s.sr+=cr; s.sm+=Math.hypot(cb,cr);
+        if(x<s.x0)s.x0=x; if(x>s.x1)s.x1=x; if(y<s.y0)s.y0=y; if(y>s.y1)s.y1=y;
+      }
+    }
+    const kill=new Set();
+    for(const [lb,s] of S){
+      const coh = s.sm>0 ? Math.hypot(s.sb,s.sr)/s.sm : 0;
+      const meanChroma = s.sm/s.n;
+      s.coh=coh; s.meanChroma=meanChroma;
+      // Mực màu thật: đủ nhiều điểm VÀ tông màu nhất quán. Nhóm nhỏ vụn hoặc tông lộn xộn -> viền giả.
+      const ok = s.n >= PRUNE_MIN_N && coh >= PRUNE_MIN_COH;
+      s.ok=ok;
+      if(!ok) kill.add(lb);
+    }
+    if(dbg) for(const s of S.values()) dbg.push(s);
+    if(!kill.size) return 0;
+    let removed=0;
+    for(let y=0;y<h;y++){
+      const row=y*w;
+      for(let x=0;x<w;x++){
+        if(!color[row+x]) continue;
+        if(kill.has(cc.lab[(y>>2)*gw+(x>>2)])){ color[row+x]=0; removed++; }
+      }
+    }
+    return removed;
+  }
+  const PRUNE_MIN_N = 400, PRUNE_MIN_COH = 0.55;
+
+  // ---- [MỚI] Căn lại 3 kênh R/G/B: máy scan (CCD 3 hàng) hay làm kênh R và B lệch so với G vài phần điểm ảnh,
+  // khiến nét chữ mảnh bị nhoè/nhạt (đo sai đậm-thường, cỡ chữ) và sinh viền màu. Ước lượng độ lệch (dx,dy) của R và B
+  // so với G bằng cách cực tiểu hoá sai khác, rồi dịch ngược lại (nội suy song tuyến tính). Không lệch -> không làm gì.
+  function alignChannels(rgba, w, h){
+    const step=3, x0=6, y0=6, x1=w-7, y1=h-7;
+    function samp(ch, x, y){
+      const xi=Math.floor(x), yi=Math.floor(y), fx=x-xi, fy=y-yi;
+      const o=(yi*w+xi)*4+ch;
+      return (rgba[o]*(1-fx)+rgba[o+4]*fx)*(1-fy) + (rgba[o+w*4]*(1-fx)+rgba[o+w*4+4]*fx)*fy;
+    }
+    function cost(ch, dx, dy){
+      let s=0;
+      for(let y=y0;y<y1;y+=step){
+        for(let x=x0;x<x1;x+=step){
+          const g=rgba[(y*w+x)*4+1]; if(g>235) continue;
+          let d = g - samp(ch, x-dx, y-dy); if(d>90) d=90; else if(d<-90) d=-90;
+          s += d*d;
+        }
+      }
+      return s;
+    }
+    const shifts=[];
+    for(const ch of [0,2]){
+      let best={dx:0,dy:0,c:cost(ch,0,0)}; const c0=best.c;
+      for(let dy=-2; dy<=2.001; dy+=0.25){ const c=cost(ch,0,dy); if(c<best.c) best={dx:0,dy,c}; }
+      const dy0=best.dy;
+      for(let dx=-2; dx<=2.001; dx+=0.25){ const c=cost(ch,dx,dy0); if(c<best.c) best={dx,dy:dy0,c}; }
+      const use = (Math.abs(best.dx)>=0.25 || Math.abs(best.dy)>=0.25) && best.c < 0.85*c0;
+      shifts.push(use ? best : {dx:0,dy:0});
+    }
+    if(shifts.every(s=>!s.dx && !s.dy)) return { rgba, shifts, applied:false };
+    const out=new Uint8ClampedArray(rgba.length); out.set(rgba);
+    [0,2].forEach((ch,k)=>{
+      const {dx,dy}=shifts[k]; if(!dx && !dy) return;
+      for(let y=1;y<h-2;y++) for(let x=1;x<w-2;x++){
+        const sx=x-dx, sy=y-dy;
+        if(sx<0||sy<0||sx>=w-1||sy>=h-1) continue;
+        out[(y*w+x)*4+ch]=samp(ch,sx,sy);
+      }
+    });
+    return { rgba: out, shifts, applied:true };
   }
 
   // ---- SHARPEN (unsharp mask): làm rõ nét chữ mờ do scan/chụp trước khi tách mực/OCR ----
@@ -11619,7 +11720,7 @@ const WXI = (function(){
     return { serif, total };
   }
 
-  return { grayOf, otsu, sharpenRGBA, separateInk, estimateSkewDeg, rotateRGBA, ruleMasks, components, detectTables, median, mergeClose, buildTextMask, typicalCharH, segmentLines, lineBaseline, stemWidth, slantDeg, underlineSegments, serifVote };
+  return { grayOf, otsu, alignChannels, sharpenRGBA, pruneIncoherentColor, separateInk, estimateSkewDeg, rotateRGBA, ruleMasks, components, detectTables, median, mergeClose, buildTextMask, typicalCharH, segmentLines, lineBaseline, stemWidth, slantDeg, underlineSegments, serifVote };
 })();
 if(typeof module!=='undefined') module.exports = WXI;
 
@@ -11700,6 +11801,7 @@ async function wxAnalyzePage(idx){
   const w = canvas.width, h = canvas.height;
   if(w*h > 16e6) throw new Error('Trang quá lớn để phân tích ở 216 dpi ('+w+'×'+h+' px).');
   let rgba = canvas.getContext('2d', { willReadFrequently: true }).getImageData(0,0,w,h).data;
+  { const al = WXI.alignChannels(rgba, w, h); rgba = al.rgba; if(al.applied) console.log('WORD: căn lại kênh màu', JSON.stringify(al.shifts)); }
   rgba = WXI.sharpenRGBA(rgba, w, h, 0.6); // Sharpen: làm rõ nét chữ mờ do scan/chụp trước khi tách mực/OCR
   let sep = WXI.separateInk(rgba, w, h);
   const skew = WXI.estimateSkewDeg(sep.ink, w, h);
@@ -12090,6 +12192,13 @@ function wxDropGarbage(lines, A){
     const txt = L.words.map(w=>w.text).join('');
     const alnum = (txt.match(/[A-Za-zÀ-ỹ0-9]/g) || []).length;
     if(!alnum) return false;
+    // [MỚI] Dòng quá DẸT so với chiều cao chữ (chỉ gồm vệt gạch/chấm của đường kẻ đứt, dấu vụn) mà OCR vẫn "đọc" ra chuỗi rác
+    if(!L.native && (L.y1-L.y0+1) < A.medH*0.45 && (L.ocrConf||0) < 85) return false;
+    // Chuỗi rác: độ tin cậy thấp và tỉ lệ ký tự lạ (không phải chữ/số/dấu câu thường gặp) cao
+    if(!L.native && (L.ocrConf||0) < 55){
+      const odd = (txt.match(/[^A-Za-zÀ-ỹ0-9.,:;()\/%&+\-–"'°²³]/g) || []).length;
+      if(odd >= 3 && odd/txt.length > 0.25) return false;
+    }
     // Ngoài bảng: dòng cực ngắn (<= 3 ký tự) gần như chắc chắn là bụi/vệt scan, nhất là sát mép trang
     if(L.table < 0 && !L.bullet && alnum <= 3){
       const nearEdge = L.x0 < A.w*0.08 || L.x1 > A.w*0.92 || L.y0 < A.h*0.06 || L.y1 > A.h*0.94;
@@ -12334,6 +12443,8 @@ function wxColorObjects(A){
     const bw = o.x1-o.x0+1, bh = o.y1-o.y0+1;
     const density = count / (bw*bh);
     if(Math.max(bw,bh) > medH*18 && density < 0.05) continue;
+    // [MỚI] Con dấu/chữ ký thật luôn có kích thước 2 chiều đáng kể; vệt mảnh/mảnh vụn nhỏ không bao giờ là con dấu.
+    if(Math.min(bw,bh) < medH*1.6 || Math.max(bw,bh) < medH*3) continue;
     objs.push(o);
   }
   return objs;
@@ -12412,7 +12523,7 @@ function wxFixPhrases(lines){
 
 // Từ viết tắt hành chính thường gặp: nếu OCR sai đúng MỘT ký tự thuộc nhóm dễ nhầm thì sửa lại (vd HƠNS -> HCNS)
 const WX_ABBR = ['HCNS','TNHH','CTCP','BLĐTBXH','HĐQT','ĐHĐCĐ','PCCC','ATLĐ','BHXH','BHYT','CCCD','CMND','HSE','KCS','TP.HCM','SME'];
-const WX_CONFUSABLE = ['CGOƠÔỐỔỒQ0DĐ','Il1|ÍỊ','S5$','B8ĐD','UVŨ','ZNM'];
+const WX_CONFUSABLE = ['CGOƠÔỐỔỒQ0DĐ','Il1|ÍỊT','S5$','B8ĐD','UVŨ','ZNM'];
 function wxFixAbbreviations(lines){
   const conf = (a,b)=> a===b || WX_CONFUSABLE.some(g => g.includes(a) && g.includes(b));
   for(const L of lines){
@@ -12476,6 +12587,7 @@ async function wxBuildPageModel(idx, onStatus){
   for(const L of textLines) wxSplitBullet(L, A);
   const lines = wxDropGarbage(textLines, A);
   wxFixDigitCells(A, lines);
+  wxFixUnitAndRoman(A, lines);
   wxFixPhrases(lines);
   wxFixAbbreviations(lines);
   for(const L of lines) L.text = L.words.map(w=>w.text).join(' ');
@@ -12514,6 +12626,10 @@ async function wxBuildPageModel(idx, onStatus){
       if(cell.isImage) continue; // đã là ảnh do chứa đồ hoạ lớn, không cần xét lại
       const ocrLs = lines.filter(L => L.table === ti && L.cell === cell && !L.native && L.words && L.words.length);
       if(!ocrLs.length) continue; // toàn chữ thật/trống -> không cần kiểm tra độ tin cậy OCR
+      // [MỚI] Ô chỉ có vài ký tự (đơn vị "M³", số thứ tự, "-"...) rất hay bị OCR chấm điểm thấp dù chỉ là ký tự đặc biệt;
+      // chuyển cả ô thành ẢNH sẽ chèn ảnh thừa/mờ vào Word. Chỉ dùng ảnh thay chữ khi ô có đủ nhiều chữ mà vẫn đọc quá tệ.
+      const nAlnum = ocrLs.reduce((s,L)=>s+(L.words.map(w=>w.text).join('').match(/[A-Za-zÀ-ỹ0-9]/g)||[]).length,0);
+      if(nAlnum < 10) continue;
       const avgConf = ocrLs.reduce((s,L)=>s+(L.ocrConf||0),0) / ocrLs.length;
       if(avgConf < OCR_CONF_MIN) cell.isImage = true;
     }
@@ -12603,6 +12719,26 @@ function wxFixDigitCells(A, lines){
   }
 }
 
+// [MỚI] Ô bảng đơn vị "M³" bị OCR đọc thành M3 / MS / M5 / M, ... : nếu trong CÙNG cột có >= 2 ô dạng "M?" và ít nhất
+// một ô đúng là M3/M³ thì chuẩn hoá cả cột thành "M³". Tương tự cột số thứ tự: I, II, III (bị đọc H, IH, UI, l...).
+function wxFixUnitAndRoman(A, lines){
+  const byCol = new Map();
+  for(const L of lines){ if(L.table<0 || !L.cell || !L.words || L.words.length!==1) continue; const k=L.table+':'+L.cell.c0; if(!byCol.has(k)) byCol.set(k,[]); byCol.get(k).push(L); }
+  for(const ls of byCol.values()){
+    const mLike = ls.filter(L=>/^[Mm][3³SsB5$]?[,.;:]?$/.test(L.words[0].text));
+    if(mLike.length >= 2 && mLike.some(L=>/^M[3³]$/.test(L.words[0].text))){
+      for(const L of mLike) L.words[0] = Object.assign({}, L.words[0], { text:'M³' });
+    }
+    const roman = ls.filter(L=>/^(I|II|III|IV|V|VI)$/.test(L.words[0].text));
+    if(roman.length >= 1){
+      const bad = ls.filter(L=>/^(H|HI|IH|UI|Ill|Il|lI|l{2,3}|I{1}l)$/.test(L.words[0].text));
+      for(const L of bad){
+        const t=L.words[0].text; const n = /^(HI|IH|UI|Ill|lll)$/.test(t) ? 'III' : (/^(H|Il|lI)$/.test(t) ? 'II' : null);
+        if(n) L.words[0] = Object.assign({}, L.words[0], { text:n });
+      }
+    }
+  }
+}
 // Điền chữ cho các dòng: dùng chữ thật của PDF nếu có, còn lại OCR
 async function wxFillTextForLines(A, lines, onProgress){
   let remain = await wxApplyNativeText(A, lines);   // chữ thật của PDF (nếu có)
