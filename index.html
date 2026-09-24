@@ -11447,6 +11447,17 @@ const WXI = (function(){
       // lưới: gộp vạch cách nhau < 8px
       const Y = mergeClose(hl.map(g=>g.c), 8), X = mergeClose(vl.map(g=>g.c), 8);
       if(Y.length<2 || X.length<2) continue;
+      // [MỚI] Lưới quá dày đặc với ô CỰC NHỎ (trung vị cả rộng lẫn cao < 28px ≈ 9pt: không thể chứa nổi một dòng chữ) thì không phải
+      // bảng mà là mã QR/mã vạch/hoạ tiết mà bộ dò mã ở trên chưa bắt được (QR quá mờ/nhỏ) -> bỏ, tránh tạo bảng rác trong Word.
+      { const cw=[], ch=[]; for(let i=1;i<X.length;i++) cw.push(X[i]-X[i-1]); for(let i=1;i<Y.length;i++) ch.push(Y[i]-Y[i-1]);
+        if((X.length-1)*(Y.length-1) >= 9 && median(cw) < 28 && median(ch) < 28) continue; }
+      // [MỚI - SỬA LỖI "sọc"] Lưới có QUÁ NHIỀU CỘT so với SỐ HÀNG (vd 1 hàng x hơn 100 "cột hẹp")
+      // không phải bảng dữ liệu thật mà là dải banner màu/hoạ tiết có nhiều biên chữ trắng-trên-nền
+      // màu bị bộ dò lưới bắt nhầm thành hàng loạt cột hẹp liên tiếp — nếu giữ lại, Word sẽ hiện một
+      // hàng có hàng chục/hàng trăm ô rác trông như các vệt sọc dọc. Bảng dữ liệu thật hiếm khi cần
+      // quá 20 cột, và nếu chỉ dò được 1-2 hàng thì càng không thể có hơn 10 cột thật sự.
+      { const nColsRaw = X.length-1, nRowsRaw = Y.length-1;
+        if(nColsRaw > 20 || (nRowsRaw <= 2 && nColsRaw > 10)) continue; }
       const thick = Math.max(2, Math.round(median(hl.map(g=>g.b-g.a+1).concat(vl.map(g=>g.b-g.a+1)))));
       tables.push({ bbox:{x0:X[0],y0:Y[0],x1:X[X.length-1],y1:Y[Y.length-1]}, X, Y, thick, id:b.id, _lab:lab });
     }
@@ -11525,11 +11536,6 @@ const WXI = (function(){
       const y0=Math.max(0,Math.floor(b.y0-m)), y1=Math.min(h-1,Math.ceil(b.y1+m));
       const x0=Math.max(0,Math.floor(b.x0-m)), x1=Math.min(w-1,Math.ceil(b.x1+m));
       for(let y=y0;y<=y1;y++) for(let x=x0;x<=x1;x++){ const i=y*w+x; if(lab[i]===t.id && (hMask[i]||vMask[i])) T[i]=0; }
-      // giãn 1px quanh vạch để không sót viền răng cưa
-      for(let y=y0;y<=y1;y++) for(let x=x0;x<=x1;x++){
-        const i=y*w+x; if(!T[i]) continue;
-        // điểm ink kề một điểm vạch của bảng (đã bị xoá) và bản thân nó nằm ngay trên đường lưới -> xoá
-      }
     }
     // vạch dọc/ngang rất dài nằm NGOÀI bảng (vệt mép giấy, nếp gấp) -> xoá
     const vc = components(vMask, w, h);
@@ -11720,7 +11726,131 @@ const WXI = (function(){
     return { serif, total };
   }
 
-  return { grayOf, otsu, alignChannels, sharpenRGBA, pruneIncoherentColor, separateInk, estimateSkewDeg, rotateRGBA, ruleMasks, components, detectTables, median, mergeClose, buildTextMask, typicalCharH, segmentLines, lineBaseline, stemWidth, slantDeg, underlineSegments, serifVote };
+
+  // ---- [MỚI - SỬA LỖI "mã QR/mã vạch bị nhận nhầm thành BẢNG có nhiều ô rác khi xuất Word"] ----
+  // NGUYÊN NHÂN GỐC: mã QR/Data Matrix gồm hàng trăm ô vuông đen/trắng xen kẽ. Bộ dò đường kẻ (ruleMasks) đo các
+  // "đoạn thẳng dài" bằng run-length có cho phép hở `gap` px; với QR (module nhỏ hơn ~gap), các module đen liền nhau
+  // + viền finder tạo ra HÀNG TRĂM đoạn ngang/dọc giả ⇒ detectTables coi cả QR là một BẢNG lưới (vd 5×10 ô), rồi OCR
+  // từng "ô" ra các ký tự rác ("2", "1", "w"...). Mã QR không phải bảng cũng không phải chữ: phải nhận diện RIÊNG
+  // (trước khi dò bảng/chữ), xoá khỏi mặt nạ mực, và xuất thành ẢNH ĐỘC LẬP (ảnh nổi) đúng vị trí gốc.
+  // NHẬN DIỆN: vùng gọn, gần vuông (hoặc dải thanh dọc = mã vạch), mực đặc ~30–70%, chuyển đen/trắng dày ở CẢ HAI
+  // hướng, không có khoảng trống lớn — chữ thường (mực ~10–25%, có khoảng trắng giữa dòng/từ) và bảng (mực rất thưa)
+  // không bao giờ thoả đồng thời các điều kiện này.
+  // Độ đều đặn của "lưới module": mọi biên đen/trắng của QR nằm trên một lưới bước m (kích thước module). Với mỗi đường quét
+  // lấy các vị trí biên x_j; S(m)=|Σ e^{i·2π·x_j/m}|. R = Σ S² / Σ N (N = số biên): ngẫu nhiên ≈ 1/N... QR thật ≈ 1 (mọi biên thẳng
+  // hàng), chữ (nét cong/chéo, độ rộng nét không đều) thấp hơn hẳn. Trả về R/N trung bình với m tốt nhất trong [2.6, 14] px.
+  function latticeRatio(ink, w, x0, y0, x1, y1, axis){
+    const lines=[];
+    if(axis==='h'){ for(let y=y0;y<=y1;y++){ const t=[]; let p=0; for(let x=x0;x<=x1;x++){ const v=ink[y*w+x]; if(v!==p) t.push(x); p=v; } if(t.length>=2) lines.push(t); } }
+    else { for(let x=x0;x<=x1;x++){ const t=[]; let p=0; for(let y=y0;y<=y1;y++){ const v=ink[y*w+x]; if(v!==p) t.push(y); p=v; } if(t.length>=2) lines.push(t); } }
+    if(!lines.length) return 0;
+    let totN=0; for(const t of lines) totN+=t.length;
+    let best=0;
+    for(let m=2.6;m<=14;m+=0.1){
+      const k=2*Math.PI/m; let s=0;
+      for(const t of lines){ let c=0,sn=0; for(const v of t){ c+=Math.cos(k*v); sn+=Math.sin(k*v); } s+=c*c+sn*sn; }
+      if(s>best) best=s;
+    }
+    return best/totN/(totN/lines.length);
+  }
+  function detectCodeBlocks(ink, w, h){
+    const C = 8;                                   // ô lưới 8px; cửa sổ 2x2 ô = 16px (~ 1-2 module QR)
+    const gw = Math.ceil(w/C), gh = Math.ceil(h/C);
+    const S = w+1, I = new Int32Array(S*(h+1));
+    for(let y=0;y<h;y++){ let run=0; const a=y*S, b=(y+1)*S; for(let x=0;x<w;x++){ run+=ink[y*w+x]; I[b+x+1]=I[a+x+1]+run; } }
+    const sumR = (x0,y0,x1,y1)=>{ x0=Math.max(0,x0); y0=Math.max(0,y0); x1=Math.min(w,x1); y1=Math.min(h,y1); if(x1<=x0||y1<=y0) return 0; return I[y1*S+x1]-I[y0*S+x1]-I[y1*S+x0]+I[y0*S+x0]; };
+    const ratio = new Float32Array(gw*gh);
+    const cand = new Uint8Array(gw*gh);
+    for(let gy=0;gy<gh;gy++) for(let gx=0;gx<gw;gx++){
+      const x0=gx*C, y0=gy*C, x1=Math.min(w,x0+2*C), y1=Math.min(h,y0+2*C);
+      const a=(x1-x0)*(y1-y0); if(a<=0) continue;
+      const r = sumR(x0,y0,x1,y1)/a;
+      ratio[gy*gw+gx]=r;
+      if(r>=0.22 && r<=0.85) cand[gy*gw+gx]=1;
+    }
+    // giãn 1 ô cửa sổ để bắt các "lỗ" (lõi finder đặc, vùng trắng cục bộ trong QR) rồi gán nhãn thành phần (8 lân cận)
+    const dil = new Uint8Array(gw*gh);
+    for(let gy=0;gy<gh;gy++) for(let gx=0;gx<gw;gx++){
+      if(!cand[gy*gw+gx]) continue;
+      for(let dy=-1;dy<=1;dy++){ const yy=gy+dy; if(yy<0||yy>=gh) continue; for(let dx=-1;dx<=1;dx++){ const xx=gx+dx; if(xx>=0&&xx<gw) dil[yy*gw+xx]=1; } }
+    }
+    const seen = new Uint8Array(gw*gh), out = [];
+    for(let s=0;s<gw*gh;s++){
+      if(!dil[s] || seen[s]) continue;
+      const stack=[s]; seen[s]=1; let gx0=gw,gy0=gh,gx1=-1,gy1=-1, nCand=0;
+      while(stack.length){
+        const k=stack.pop(), gx=k%gw, gy=(k/gw)|0;
+        if(cand[k]){ nCand++; if(gx<gx0)gx0=gx; if(gx>gx1)gx1=gx; if(gy<gy0)gy0=gy; if(gy>gy1)gy1=gy; }
+        for(let dy=-1;dy<=1;dy++){ const yy=gy+dy; if(yy<0||yy>=gh) continue; for(let dx=-1;dx<=1;dx++){ const xx=gx+dx; if(xx<0||xx>=gw) continue; const j=yy*gw+xx; if(dil[j]&&!seen[j]){ seen[j]=1; stack.push(j); } } }
+      }
+      if(gx1<0) continue;
+      let bx0=gx0*C, by0=gy0*C, bx1=Math.min(w,(gx1+2)*C), by1=Math.min(h,(gy1+2)*C);   // hộp (nửa mở) theo px
+      let bw=bx1-bx0, bh=by1-by0;
+      if(bw<48 || bh<40) continue;                               // quá nhỏ (dấu chấm, nét chữ đậm)
+      if(bw>w*0.5 || bh>h*0.5) continue;                         // quá lớn (ảnh chụp/nền/khung trang)
+      // tỉ lệ cửa sổ "mã" trong hộp; cửa sổ đặc kín / trống trải quá nhiều -> logo, con dấu đặc, khối chữ
+      let nWin=0, nMid=0, nSolid=0, nBlank=0;
+      for(let gy=gy0;gy<=gy1;gy++) for(let gx=gx0;gx<=gx1;gx++){ const r=ratio[gy*gw+gx]; nWin++; if(cand[gy*gw+gx]) nMid++; if(r>0.95) nSolid++; else if(r<0.05) nBlank++; }
+      if(nMid/nWin < 0.55 || nSolid/nWin > 0.22 || nBlank/nWin > 0.25) continue;
+      const total = sumR(bx0,by0,bx1,by1)/(bw*bh);
+      if(total<0.28 || total>0.72) continue;
+      // (1) phân loại sơ bộ theo mật độ chuyển đen<->trắng; (2) co hộp sát mã (bỏ đường kẻ/khoảng trắng); (3) kiểm tra lại
+      //     trên hộp đã co, gồm phép thử "LƯỚI MODULE" phân biệt QR với chữ đậm cỡ lớn (xem latticeRatio).
+      const transitions = (x0,y0,x1,y1)=>{
+        let tr=0, tc=0;
+        for(let y=y0;y<=y1;y++){ let p=0; for(let x=x0;x<=x1;x++){ const v=ink[y*w+x]; if(v!==p) tr++; p=v; } }
+        for(let x=x0;x<=x1;x++){ let p=0; for(let y=y0;y<=y1;y++){ const v=ink[y*w+x]; if(v!==p) tc++; p=v; } }
+        return { rowT: tr/(y1-y0+1), colT: tc/(x1-x0+1) };
+      };
+      let { rowT, colT } = transitions(bx0,by0,bx1-1,by1-1);
+      const aspect0 = bw/bh;
+      let kind = null;
+      if(rowT >= bw/30 && colT >= bh/30 && aspect0>=0.5 && aspect0<=2.0) kind = 'qr';
+      else if(rowT >= bw/24 && colT < 1.2 && aspect0>=1.4 && bh>=32 && rowT>=8) kind = 'barcode';   // mã vạch 1D: thanh dọc
+      if(!kind) continue;
+      // Hàng/cột "đường kẻ" = có đoạn mực liền ≥ 80% chiều dài hộp (viền ô bảng sát QR). QR không bao giờ có (đoạn liền
+      // dài nhất là viền finder = 7 module ≈ 1/3 cạnh). Hàng/cột rìa có mực < TH (trống/chữ chú thích) cũng bị bỏ.
+      const longestRunRow = (y,xa,xb)=>{ let m=0,r=0; for(let x=xa;x<=xb;x++){ if(ink[y*w+x]){ r++; if(r>m)m=r; } else r=0; } return m; };
+      const longestRunCol = (x,ya,yb)=>{ let m=0,r=0; for(let y=ya;y<=yb;y++){ if(ink[y*w+x]){ r++; if(r>m)m=r; } else r=0; } return m; };
+      const TH = (kind==='qr') ? 0.30 : 0.12;
+      let ty0=by0, ty1=by1-1, tx0=bx0, tx1=bx1-1;
+      const isQR = (kind==='qr');
+      const rowInk = (y)=>{ if(isQR && longestRunRow(y,bx0,bx1-1) >= 0.8*bw) return 0; let c=0; for(let x=bx0;x<bx1;x++) c+=ink[y*w+x]; return c/bw; };
+      while(ty0<ty1 && rowInk(ty0)<TH) ty0++;
+      while(ty1>ty0 && rowInk(ty1)<TH) ty1--;
+      const th_ = ty1-ty0+1;
+      const colInk = (x)=>{ if(isQR && longestRunCol(x,ty0,ty1) >= 0.8*th_) return 0;   // mã vạch: mỗi thanh CHÍNH LÀ một vạch dọc dài -> không coi là đường kẻ
+        let c=0; for(let y=ty0;y<=ty1;y++) c+=ink[y*w+x]; return c/th_; };
+      while(tx0<tx1 && colInk(tx0)<TH) tx0++;
+      while(tx1>tx0 && colInk(tx1)<TH) tx1--;
+      const fw=tx1-tx0+1, fh=ty1-ty0+1;
+      if(fw<40 || fh<32) continue;
+      ({ rowT, colT } = transitions(tx0,ty0,tx1,ty1));
+      if(kind==='qr'){
+        const asp=fw/fh;
+        if(asp<0.6 || asp>1.7) continue;
+        if(rowT < Math.max(7,fw/30) || colT < Math.max(7,fh/30)) continue;          // QR v1 (21 module) đã có ~10 chuyển/dòng
+        const LH = latticeRatio(ink,w,tx0,ty0,tx1,ty1,'h'), LV = latticeRatio(ink,w,tx0,ty0,tx1,ty1,'v');
+        if(LH < 0.45 || LV < 0.45) continue;                                        // QR thật ≥ 0.59 (kể cả mờ/nhiễu/nghiêng); chữ đậm ~0.3
+      }
+      // lề xoá/cắt thích ứng theo cỡ mã (≈3.5% cạnh, 2–8px): phủ viền mờ/răng cưa và góc lệch của mã bị nghiêng nhẹ, nhưng vẫn nhỏ hơn
+      // khoảng cách tới viền ô bảng kề bên (QR trong ô bảng chật vẫn cách viền ≥ ~12px)
+      const pad = Math.max(2, Math.min(8, Math.round(Math.max(fw,fh)*0.035)));
+      out.push({ x0:tx0, y0:ty0, x1:tx1, y1:ty1, kind, pad, ink:+total.toFixed(3) });
+    }
+    return out;
+  }
+  // Xoá (đặt 0) mực trong các hộp — dùng để loại QR/mã vạch khỏi mặt nạ trước khi dò bảng/chữ
+  function clearRects(mask, w, h, rects, pad){
+    for(const r of rects){
+      const p = (r.pad!=null) ? r.pad : (pad||0);
+      const x0=Math.max(0,r.x0-p), x1=Math.min(w-1,r.x1+p), y0=Math.max(0,r.y0-p), y1=Math.min(h-1,r.y1+p);
+      for(let y=y0;y<=y1;y++){ const row=y*w; for(let x=x0;x<=x1;x++) mask[row+x]=0; }
+    }
+    return mask;
+  }
+
+  return { detectCodeBlocks, clearRects, latticeRatio, grayOf, otsu, alignChannels, sharpenRGBA, pruneIncoherentColor, separateInk, estimateSkewDeg, rotateRGBA, ruleMasks, components, detectTables, median, mergeClose, buildTextMask, typicalCharH, segmentLines, lineBaseline, stemWidth, slantDeg, underlineSegments, serifVote };
 })();
 if(typeof module!=='undefined') module.exports = WXI;
 
@@ -11804,13 +11934,21 @@ async function wxAnalyzePage(idx){
   { const al = WXI.alignChannels(rgba, w, h); rgba = al.rgba; if(al.applied) console.log('WORD: căn lại kênh màu', JSON.stringify(al.shifts)); }
   rgba = WXI.sharpenRGBA(rgba, w, h, 0.6); // Sharpen: làm rõ nét chữ mờ do scan/chụp trước khi tách mực/OCR
   let sep = WXI.separateInk(rgba, w, h);
-  const skew = WXI.estimateSkewDeg(sep.ink, w, h);
+  // [MỚI - SỬA LỖI "mã QR bị xuất thành bảng lưới nhiều ô rác trong Word"] Nhận diện mã QR / mã vạch NGAY SAU khi tách mực, TRƯỚC khi ước
+  // lượng độ nghiêng, dò bảng và OCR. Mỗi mã sẽ bị xoá khỏi mặt nạ mực (để không thành bảng/chữ rác) và được xuất thành ẢNH ĐỘC LẬP.
+  let codes = WXI.detectCodeBlocks(sep.ink, w, h);
+  const skew = WXI.estimateSkewDeg(codes.length ? WXI.clearRects(new Uint8Array(sep.ink), w, h, codes, 2) : sep.ink, w, h);
   const skewApplied = Math.abs(skew) >= 0.12;
   if(skewApplied){
     rgba = WXI.rotateRGBA(rgba, w, h, skew, [sep.paper, sep.paper, sep.paper]);
     sep = WXI.separateInk(rgba, w, h);
+    codes = WXI.detectCodeBlocks(sep.ink, w, h);   // toạ độ đã đổi sau khi xoay -> dò lại trên ảnh đã chống nghiêng
   }
   wxRestoreColoredText(sep, w, h);
+  if(codes.length){                                // xoá mã khỏi mực đen VÀ mực màu (viền màu do nén JPEG quanh QR)
+    WXI.clearRects(sep.ink, w, h, codes, 2);
+    WXI.clearRects(sep.color, w, h, codes, 2);
+  }
   const rm = WXI.ruleMasks(sep.ink, w, h, 45, 45, 6);
   const tables = WXI.detectTables(rm.hMask, rm.vMask, w, h);
   const T = WXI.buildTextMask(sep.ink, rm.hMask, rm.vMask, tables, w, h);
@@ -11835,7 +11973,7 @@ async function wxAnalyzePage(idx){
   });
   const bigIds = new Set(big.map(b=>b.id));
   comps = comps.filter(b => !bigIds.has(b.id));
-  return { idx, w, h, rgba, sep, rm, tables, T, cc, medH, comps, big, skew, skewApplied, rotated: !!canvas.__rotated };
+  return { idx, w, h, rgba, sep, rm, tables, T, cc, medH, comps, big, codes, skew, skewApplied, rotated: !!canvas.__rotated };
 }
 
 const wxCenterIn = (c, r) => { const cx=(c.x0+c.x1)/2, cy=(c.y0+c.y1)/2; return cx>=r.x0 && cx<=r.x1 && cy>=r.y0 && cy<=r.y1; };
@@ -12599,6 +12737,13 @@ async function wxBuildPageModel(idx, onStatus){
     const cr = wxCropCanvas(A, reg, null);
     floats.push({ x:cr.x0*WX_PX2PT, y:cr.y0*WX_PX2PT, w:cr.w*WX_PX2PT, h:cr.h*WX_PX2PT, png: await wxCanvasToPng(cr.canvas) });
   }
+  // [MỚI] Mã QR / mã vạch -> ẢNH ĐỘC LẬP (ảnh nổi neo theo toạ độ trang, có thể kéo/thay/xoá trong Word). Chừa lề trắng quanh mã
+  // (vùng yên tĩnh giúp máy quét đọc được) rồi cắt từ ảnh trang gốc — giữ nguyên từng module, KHÔNG qua OCR/dựng bảng.
+  for(const cd of (A.codes || [])){
+    const pad = (cd.pad || 2) + 4;
+    const cr = wxCropCanvas(A, { x0:cd.x0-pad, y0:cd.y0-pad, x1:cd.x1+pad, y1:cd.y1+pad }, null);
+    floats.push({ x:cr.x0*WX_PX2PT, y:cr.y0*WX_PX2PT, w:cr.w*WX_PX2PT, h:cr.h*WX_PX2PT, png: await wxCanvasToPng(cr.canvas), code:cd.kind });
+  }
   for(const o of wxColorObjects(A)){
     const cr = wxCropCanvas(A, o, A.sep.colorDil);
     floats.push({ x:cr.x0*WX_PX2PT, y:cr.y0*WX_PX2PT, w:cr.w*WX_PX2PT, h:cr.h*WX_PX2PT, png: await wxCanvasToPng(cr.canvas), alpha:true });
@@ -12609,7 +12754,6 @@ async function wxBuildPageModel(idx, onStatus){
   let minX = Infinity, maxX = -Infinity;
   for(const L of outLines){ minX = Math.min(minX, L.bullet ? L.bullet.x0 : L.x0); maxX = Math.max(maxX, L.x1); }
   for(const t of A.tables){ minX = Math.min(minX, t.bbox.x0); maxX = Math.max(maxX, t.bbox.x1); }
-  for(const f of floats){ if(!f.alpha && f.x*WX_SC < minX && f.x + f.w < pageWpt) { /* ảnh nổi không ảnh hưởng lề */ } }
   if(!isFinite(minX)){ minX = 72*WX_SC; maxX = A.w - 72*WX_SC; }
   const frame = { L: minX, R: maxX };
   const flow = [];
@@ -12856,9 +13000,24 @@ async function wxApplyNativeText(A, lines){
     const nativePreview = its.map(it=>it.text).join(' ');
     if(looksLikeMissingVietnameseDiacritics_(nativePreview)){ remain.push(L); continue; }
     its.forEach(it=>it.used = true);
+    // [MỚI] Gộp các mục chữ thật liền kề bị PDF tách rời do kerning/dịch chuyển nhỏ (khoảng cách quá
+    // hẹp để là một khoảng trắng thật giữa 2 từ) THÀNH MỘT mục trước khi tách từ — nếu không, bước
+    // tách từ bên dưới sẽ coi mỗi mục là một từ riêng rồi nối tất cả bằng dấu cách, biến một từ liền
+    // mạch như "Ngãi" (bị PDF tách thành "N" + "gãi" do kerning) thành "N gãi" sai lệch.
+    const itsMerged = [];
+    for(const it of its){
+      const prev = itsMerged[itsMerged.length-1];
+      const gap = prev ? (it.x0 - prev.x1) : Infinity;
+      if(prev && gap < 0.18*Math.max(prev.fs, it.fs) && gap > -0.5*Math.max(prev.fs, it.fs) && !/\s$/.test(prev.text) && !/^\s/.test(it.text)){
+        prev.text += it.text; prev.x1 = Math.max(prev.x1, it.x1);
+        if(it.bold) prev.bold = true; if(it.italic) prev.italic = true;
+      } else {
+        itsMerged.push(Object.assign({}, it));
+      }
+    }
     // danh sách từ (theo chữ thật) kèm khoảng x ước lượng theo tỉ lệ ký tự
     const words = [];
-    for(const it of its){
+    for(const it of itsMerged){
       const s = it.text, len = Math.max(1, s.length), wpx = it.x1 - it.x0;
       const re = /\S+/g; let m;
       while((m = re.exec(s))){ words.push({ text:m[0], conf:100, x0: it.x0 + wpx*m.index/len, x1: it.x0 + wpx*(m.index+m[0].length)/len, y0:L.y0, y1:L.y1,
