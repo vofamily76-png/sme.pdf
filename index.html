@@ -98,7 +98,6 @@
     font-size:12.5px;
     white-space:nowrap;
   }
-  .tbtn:disabled{ opacity:.55; cursor:not-allowed; }
   .tbtn:hover{background:#4a5058;border-color:var(--border);}
   .tbtn.active{background:var(--tool-active);border-color:#6a7fa0;}
   .tbtn:disabled{opacity:.4;cursor:not-allowed;}
@@ -851,6 +850,38 @@
         font-weight:600;font-size:12.5px;cursor:pointer;white-space:nowrap;">Select pages</button>
     </div>
     <div id="ewRangeError" style="min-height:16px;color:#ff8a80;font-size:11.5px;margin:-4px 0 8px;"></div>
+
+    <!-- [MỚI - SỬA LỖI "font chữ xuất ra sai (VD: file gốc Times New Roman nhưng Word xuất ra lại
+         thành Arial)"] TRƯỚC ĐÂY: mỗi trang tự "bỏ phiếu" xem có phải chữ có chân (Times New Roman)
+         hay không chỉ dựa vào hình ảnh điểm ảnh (wxInferStyles) — với trang scan/chụp chất lượng
+         thấp, phép "bỏ phiếu" này có thể đoán SAI (như file người dùng phản ánh: cả trang lẽ ra
+         Times New Roman nhưng bị đoán nhầm thành Arial). Giờ cho phép người dùng ẤN ĐỊNH SẴN đúng
+         font của tài liệu gốc (biết chắc, không cần đoán) — khi chọn 1 font cụ thể ở đây, TOÀN BỘ
+         chữ trong file Word xuất ra sẽ dùng ĐÚNG font đó, bỏ qua hoàn toàn bước đoán tự động (xem
+         wxInferStyles/wxExportForcedFont).
+         [MỚI] MẶC ĐỊNH chọn sẵn "Times New Roman" (không phải "Tự động nhận diện" nữa): đây là font
+         gần như CHUẨN CHUNG của văn bản hành chính/báo giá tiếng Việt, và việc "bỏ phiếu" tự động đã
+         chứng minh không đáng tin cho các trang scan/chụp chất lượng thấp — mặc định đúng ngay từ đầu
+         thay vì bắt người dùng phải nhớ tự chọn. Người dùng vẫn có thể đổi lại "Tự động nhận diện"
+         hoặc font khác nếu tài liệu thật sự không phải Times New Roman. -->
+    <div style="margin-bottom:10px;">
+      <label style="display:block; font-size:12.5px; color:#c6cad0; margin-bottom:4px;">
+        Font chữ trong file Word xuất ra
+      </label>
+      <select id="ewFontFamilySelect" style="
+        width:100%; background:#1c1e22; color:#eceff1; border:1px solid #454a52; border-radius:6px;
+        padding:8px 10px; font-size:12.5px;">
+        <option value="Times New Roman" selected>Times New Roman (mặc định)</option>
+        <option value="Arial">Arial</option>
+        <option value="Calibri">Calibri</option>
+        <option value="Courier New">Courier New</option>
+        <option value="">🔎 Tự động nhận diện theo từng trang (có thể đoán sai với ảnh scan mờ)</option>
+      </select>
+      <div style="font-size:11px; color:#9aa0a8; margin-top:3px;">
+        Nếu tài liệu gốc dùng font khác Times New Roman, hãy đổi lại đúng font đó (hoặc chọn "Tự động
+        nhận diện") — áp dụng cho toàn bộ chữ trong file Word xuất ra.
+      </div>
+    </div>
 
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
       <label style="display:flex;align-items:center;gap:8px;font-size:12.5px;cursor:pointer;">
@@ -7520,27 +7551,12 @@ async function ensureEditTextReady(idx){
 // nằm trong ảnh/scan vào danh sách có thể bấm sửa. Nếu OCR lỗi (VD: mất mạng, tường lửa chặn
 // tessdata.projectnaptha.com) thì chỉ bỏ qua trong im lặng — người dùng vẫn sửa được bình thường
 // với phần chữ PDF thật đã có, không bị treo hay chặn thao tác.
-// SỬA LỖI FONT (mất dấu tiếng Việt trong ô sửa của "Edit Text"):
-// Nguyên nhân gốc: một số PDF (đặc biệt PDF xuất từ Word bằng những bộ gõ/bảng mã tiếng Việt cũ,
-// hoặc bị "cắt gọn" bảng ToUnicode khi nhúng font) khiến pdf.js đọc ĐÚNG GLYPH để VẼ trang (nên
-// mắt nhìn thấy "THÔNG BÁO", "Kính gửi..." hiển thị đúng trên canvas) nhưng bảng ToUnicode dùng để
-// TRÍCH XUẤT chuỗi ký tự (getTextContent().items[].str — thứ mà "Edit Text" dùng làm nội dung ban
-// đầu của ô sửa) lại ánh xạ sai sang các ký tự Latin không dấu/gần giống ("THONGBAo",
-// "Kinh gui: Quf kh6ch hirng"...). Đây KHÔNG phải lỗi hiển thị của trình duyệt hay của công cụ vẽ,
-// mà là dữ liệu ToUnicode bị sai ngay trong file PDF gốc, nên không thể "sửa font" mà chỉ có thể
-// lấy lại đúng nội dung bằng cách khác: đọc thẳng ẢNH của trang qua OCR (không phụ thuộc ToUnicode).
-// looksLikeMissingVietnameseDiacritics_/editTextLinesFor() (định nghĩa bên dưới) đã có sẵn cơ chế
-// "nếu dòng PDF thật mất dấu bất thường thì ưu tiên dùng dòng OCR trùng vị trí" — nhưng OCR chạy Ở
-// NỀN (không await) nên nếu người dùng bấm sửa MỘT dòng bị lỗi kiểu này ngay khi vừa mở "Edit Text"
-// (trước khi OCR nền kịp chạy xong), ô sửa vẫn hiện đúng chuỗi lỗi ban đầu. kickOffOcrForEditText()
-// giờ TRẢ VỀ một Promise dùng chung (thay vì chỉ đặt cờ true) để nơi khác (ensureCorrectLineText_)
-// có thể "đợi" đúng 1 lần chạy OCR đó trước khi mở ô sửa cho dòng đang nghi bị lỗi.
-let ocrPrefetchState = {}; // idx -> Promise của lần chạy OCR nền (đang chạy hoặc đã chạy xong)
+let ocrPrefetchState = {}; // idx -> true khi đã chạy xong hoặc đang chạy
 function kickOffOcrForEditText(idx){
   const p = pages[idx];
-  if(!p || p.type !== 'pdf' || p.ocrWords) return Promise.resolve();
-  if(ocrPrefetchState[idx]) return ocrPrefetchState[idx];
-  const promise = runOcrForPage(idx, true).then(()=>{
+  if(!p || p.type !== 'pdf' || p.ocrWords || ocrPrefetchState[idx]) return;
+  ocrPrefetchState[idx] = true;
+  runOcrForPage(idx, true).then(()=>{
     if(activeTool==='edittext' && currentIndex===idx){
       redrawOverlay();
       // OCR chạy nền vừa xong -> có thêm dòng chữ mới (nằm trong ảnh/scan) cần được thêm ngay vào
@@ -7550,48 +7566,6 @@ function kickOffOcrForEditText(idx){
   }).catch(err=>{
     console.warn('OCR chạy nền cho Edit Text thất bại (bỏ qua, vẫn dùng được chữ PDF thật):', err);
   });
-  ocrPrefetchState[idx] = promise;
-  return promise;
-}
-// Trước khi MỞ Ô SỬA cho một dòng: nếu dòng đó có dấu hiệu bị lỗi bảng mã (mất dấu tiếng Việt bất
-// thường — xem looksLikeMissingVietnameseDiacritics_) và OCR của trang chưa có kết quả, CHỜ (có
-// giới hạn thời gian, để không treo vô hạn khi mạng chậm/bị chặn tường lửa) cho OCR nền chạy xong
-// rồi mới lấy lại nội dung dòng ĐÚNG (qua editTextLinesFor, đã tự gộp OCR đè lên chỗ bị lỗi) để mở
-// ô sửa — nhờ vậy người dùng luôn thấy đúng chữ ngay từ lần bấm sửa đầu tiên, không phải sửa nhầm
-// trên chuỗi lỗi rồi lại sửa lại lần 2.
-async function ensureCorrectLineText_(idx, line){
-  const p = pages[idx];
-  if(!p || !line || p.ocrWords || !looksLikeMissingVietnameseDiacritics_(line.text)) return line;
-  const prevCursor = textLayer.style.cursor;
-  textLayer.style.cursor = 'wait';
-  try{
-    await Promise.race([
-      kickOffOcrForEditText(idx),
-      new Promise(resolve=>setTimeout(resolve, 8000)) // đủ chờ OCR 1 trang trong đa số trường hợp
-    ]);
-  }catch(err){ /* lỗi đã được ghi log/bỏ qua bên trong kickOffOcrForEditText, không cần xử lý lại */ }
-  finally{ textLayer.style.cursor = prevCursor; }
-  if(idx !== currentIndex) return line; // người dùng đã chuyển trang trong lúc chờ
-  const freshLines = editTextLinesFor(pages[idx]) || [];
-  return freshLines.find(l => boxesOverlapMostly(l, line)) || line;
-}
-// Tìm dòng chữ gần điểm bấm (px,py) theo ĐÚNG cùng quy tắc bắt dính mà editLineAt() dùng, để dùng
-// riêng cho bước "kiểm tra trước rồi mới đợi OCR nếu cần" ở trên — không làm thay đổi hành vi bắt
-// dính thật sự của editLineAt().
-function findEditLineNear_(px, py, lines){
-  if(!lines || !lines.length) return null;
-  const padX = 5, padY = 6;
-  let line = lines.find(l => px>=l.x0*scale-padX && px<=l.x1*scale+padX && py>=l.y0*scale-padY && py<=l.y1*scale+padY);
-  if(line) return line;
-  const maxSnap = 16;
-  let best = null, bestDist = Infinity;
-  for(const l of lines){
-    const cx = Math.max(l.x0*scale, Math.min(px, l.x1*scale));
-    const cy = Math.max(l.y0*scale, Math.min(py, l.y1*scale));
-    const d = Math.hypot(px-cx, py-cy);
-    if(d < bestDist){ bestDist = d; best = l; }
-  }
-  return (best && bestDist <= maxSnap) ? best : null;
 }
 
 // ---------- Edit Text: click-sửa TRỰC TIẾP trên DOM (không còn dò/đoán toạ độ trên canvas) ----
@@ -7643,14 +7617,9 @@ function buildEditTextClickLayer(idx){
         ev.preventDefault();
         ev.stopPropagation();
         if(activeTool !== 'edittext' || currentIndex !== idx) return;
-        // Nếu dòng vừa bấm nghi bị lỗi bảng mã (mất dấu) -> đợi OCR nền lấy lại đúng nội dung
-        // trước khi mở ô sửa (xem ensureCorrectLineText_ ở trên), tránh mở ô sửa với chữ sai dấu.
-        ensureCorrectLineText_(idx, line).then(freshLine=>{
-          if(activeTool !== 'edittext' || currentIndex !== idx) return;
-          const cx = (freshLine.x0 + (freshLine.x1-freshLine.x0)/2) * scale;
-          const cy = (freshLine.y0 + (freshLine.y1-freshLine.y0)/2) * scale;
-          editLineAt(cx, cy, 'textfix', editTextLinesFor(cur()));
-        });
+        const cx = (line.x0 + (line.x1-line.x0)/2) * scale;
+        const cy = (line.y0 + (line.y1-line.y0)/2) * scale;
+        editLineAt(cx, cy, 'textfix', editTextLinesFor(cur()));
       });
       frag.appendChild(span);
     }
@@ -7664,13 +7633,7 @@ function buildEditTextClickLayer(idx){
     if(activeTool !== 'edittext' || currentIndex !== idx) return;
     ev.preventDefault();
     const {x:px, y:py} = clientToCanvasXY_(overlayCanvas, ev.clientX, ev.clientY);
-    // Dò trước xem điểm bấm có rơi gần một dòng nghi mất dấu không, để có thể đợi OCR (nếu cần)
-    // rồi mới mở ô sửa — cùng lý do như nhánh bấm thẳng vào span ở trên.
-    const nearLine = findEditLineNear_(px, py, lines);
-    ensureCorrectLineText_(idx, nearLine).then(()=>{
-      if(activeTool !== 'edittext' || currentIndex !== idx) return;
-      editLineAt(px, py, 'textfix', editTextLinesFor(cur()));
-    });
+    editLineAt(px, py, 'textfix', editTextLinesFor(cur()));
   };
 }
 
@@ -7942,15 +7905,7 @@ async function runOcrForPage(idx, forEditing){
   }catch(err){
     console.error('Lỗi OCR chi tiết:', err);
     const msg = (err && (err.message || (typeof err === 'string' ? err : JSON.stringify(err)))) || 'Không xác định (xem console để biết chi tiết)';
-    // CHỈ hiện alert khi đây là lần chạy OCR TOÀN TRANG do người dùng chủ động bấm (forEditing=false).
-    // Khi chạy NỀN cho "Edit Text" (forEditing=true, xem kickOffOcrForEditText) mà lỗi (thường do
-    // mất mạng/tường lửa chặn tessdata.projectnaptha.com) thì phải lặng lẽ bỏ qua như comment gốc
-    // của kickOffOcrForEditText đã mô tả — trước đây alert() vẫn bị gọi bất kể forEditing, khiến
-    // người dùng bị hiện hộp thoại lỗi OCR ngay cả khi chỉ đang gõ sửa chữ PDF thật, không hề yêu
-    // cầu OCR.
-    if(!forEditing){
-      alert('Lỗi OCR: '+msg+'\n\nGợi ý: cần kết nối Internet để tải mô hình OCR lần đầu (từ tessdata.projectnaptha.com). Nếu mạng của bạn chặn tên miền này, OCR sẽ không hoạt động.');
-    }
+    alert('Lỗi OCR: '+msg+'\n\nGợi ý: cần kết nối Internet để tải mô hình OCR lần đầu (từ tessdata.projectnaptha.com). Nếu mạng của bạn chặn tên miền này, OCR sẽ không hoạt động.');
     throw err;
   }finally{
     spinner.classList.remove('show');
@@ -9776,17 +9731,6 @@ async function buildWordPageHtml(idx){
   }
 
   if(!lines.length && !tableLines.segments.length && !images.length){
-    // SỬA LỖI "Word xuất ra là 1 ảnh, không sửa được chữ": trước khi chấp nhận chèn ảnh nguyên
-    // trang (không sửa được), thử lấy chữ thật của PDF hoặc chạy OCR toàn trang qua
-    // wxLastResortTextFlow() — xem chú thích đầy đủ tại nơi khai báo hàm đó. Chỉ khi cách này cũng
-    // không ra được chữ nào (trang trống thật, hoặc mất mạng nên OCR không tải được) mới chèn ảnh.
-    try{
-      const textFlow = await wxLastResortTextFlow(idx, 'Times New Roman');
-      if(textFlow && textFlow.length){
-        const paras = textFlow.map(pr => `<p style="margin:0 0 4pt 0;">${escapeHtml(pr.runs[0].t)}</p>`).join('');
-        return `<div style="width:${W.toFixed(2)}pt;margin:0 auto;background:#fff;">${paras}</div>`;
-      }
-    }catch(err){ console.warn('Không lấy được chữ dự phòng cho trang '+(idx+1)+':', err); }
     // Không lấy được chữ (OCR thất bại/không có mạng tải mô hình OCR), cũng không có đường kẻ hay
     // ảnh nhỏ nào -> thay vì trả về một trang trống vô dụng, chèn ẢNH NGUYÊN TRANG để người dùng
     // ít nhất vẫn thấy đúng nội dung trang trong file Word (xem chú thích ở extractPageImagesForWord).
@@ -9916,6 +9860,11 @@ async function openExportWordModal(){
   ewError.textContent = '';
   ewRangeError.textContent = '';
   ewPageRangeInput.value = '';
+  // [MỚI] Hiện lại đúng lựa chọn font đã dùng ở lần xuất TRƯỚC ĐÓ trong phiên làm việc này (mặc định
+  // ban đầu là "Times New Roman" — xem khai báo wxExportForcedFont bên dưới), thay vì luôn ép về
+  // "Tự động nhận diện" mỗi lần mở lại modal.
+  const ewFontSelReset = document.getElementById('ewFontFamilySelect');
+  if(ewFontSelReset) ewFontSelReset.value = wxExportForcedFont;
   if(!pages.length){ alert('Hãy mở một file PDF trước.'); return; }
   ewList.innerHTML = '';
   exportWordModal.style.display = 'flex';
@@ -9969,11 +9918,20 @@ ewSelectAll.addEventListener('change', (e) => {
   updateEwSelectedCount();
 });
 
+// [MỚI - ÉP FONT KHI XUẤT WORD] Mặc định "Times New Roman" (font chuẩn phổ biến của văn bản hành
+// chính/báo giá tiếng Việt) — ép TOÀN BỘ chữ trong file Word xuất ra dùng đúng font này, bỏ qua bước
+// "bỏ phiếu" theo ảnh (wxInferStyles) vốn không đáng tin với ảnh scan/chụp chất lượng thấp. Đặt ""
+// để quay lại "Tự động nhận diện" (hành vi cũ). Giá trị này được GIỮ NGUYÊN theo lựa chọn gần nhất
+// của người dùng ở modal "Export Word" (#ewFontFamilySelect) trong suốt phiên làm việc.
+let wxExportForcedFont = 'Times New Roman';
+
 document.getElementById('ewConfirmBtn').addEventListener('click', async () => {
   const selected = Array.from(ewList.querySelectorAll('.dp-checkbox:checked'))
     .map(cb => parseInt(cb.dataset.idx, 10)).sort((a,b)=>a-b);
   if(!selected.length){ ewError.textContent = 'Hãy chọn ít nhất một trang.'; return; }
   ewError.textContent = '';
+  const ewFontSel = document.getElementById('ewFontFamilySelect');
+  wxExportForcedFont = ewFontSel ? ewFontSel.value : '';
   closeExportWordModal();
   await exportWordSelected(selected);
 });
@@ -11136,13 +11094,35 @@ const WXI = (function(){
     for(let i=0;i<n;i++) hist[gray[i]]++;
     let paper=255, pc=-1;
     for(let g=170; g<256; g++) if(hist[g]>pc){ pc=hist[g]; paper=g; }
-    const color = new Uint8Array(n);
+    const colorRaw = new Uint8Array(n);
     // mực màu: độ bão hoà cao + không quá sáng (loại bỏ vệt hồng nhạt của nền)
     for(let i=0,j=0;i<n;i++,j+=4){
       const r=rgba[j], g=rgba[j+1], b=rgba[j+2];
       const mx = r>g ? (r>b?r:b) : (g>b?g:b);
       const mn = r<g ? (r<b?r:b) : (g<b?g:b);
-      if(mx-mn >= 40 && gray[i] < 235) color[i] = 1;
+      if(mx-mn >= 40 && gray[i] < 235) colorRaw[i] = 1;
+    }
+    // [MỚI - SỬA LỖI "chữ bị ăn mất nét/ảnh chồng đè lên chữ trong file Word xuất ra"] Ảnh scan/chụp
+    // (đặc biệt ảnh nén JPEG) luôn có các ĐỐM MÀU LI TI RỜI RẠC quanh mép chữ đen (răng cưa/nhiễu màu),
+    // KHÔNG phải mực màu thật (con dấu/chữ ký luôn là 1 VỆT/KHỐI mực LIỀN, đặc). Đoạn code bên dưới
+    // (giãn nở rồi xoá mực đen xung quanh) vốn dĩ Ở Ý ĐỊNH BAN ĐẦU là "chỉ giãn quanh vùng màu ĐỦ LỚN,
+    // loại nhiễu lẻ" (xem chú thích cũ) nhưng trước đây CHƯA lọc theo ý đó — khiến hàng loạt đốm nhiễu
+    // rời rạc bị giãn nở LAN RỘNG, nối liền thành 1 khối khổng lồ (tưởng nhầm là 1 con dấu/chữ ký lớn),
+    // vừa xoá mất chữ đen thật ở diện rộng (gây OCR sai/mất nét chữ), vừa tạo ra 1 ảnh gần như trong
+    // suốt phủ đè lên chữ khi xuất Word. Lọc bỏ đốm màu ĐƠN LẺ ngay tại đây: chỉ giữ lại điểm màu nếu
+    // có đủ điểm màu NGAY SÁT nó (mực thật luôn đặc/liền, nhiễu luôn thưa/rời rạc).
+    const color = new Uint8Array(n);
+    for(let y=0;y<h;y++){
+      for(let x=0;x<w;x++){
+        const i = y*w+x;
+        if(!colorRaw[i]) continue;
+        let cnt = 0;
+        for(let dy=-1;dy<=1 && cnt<4;dy++){
+          const yy=y+dy; if(yy<0||yy>=h) continue;
+          for(let dx=-1;dx<=1;dx++){ const xx=x+dx; if(xx<0||xx>=w) continue; if(colorRaw[yy*w+xx]) cnt++; }
+        }
+        if(cnt >= 4) color[i] = 1; // bản thân + tối thiểu 3 điểm màu sát ngay bên cạnh
+      }
     }
     // Histogram chỉ tính trên điểm KHÔNG màu để ngưỡng mực đen không bị con dấu/chữ ký kéo lệch
     const h2 = new Int32Array(256); let tot2=0;
@@ -11153,13 +11133,53 @@ const WXI = (function(){
     const ink = new Uint8Array(n);
     for(let i=0;i<n;i++) if(!color[i] && gray[i] < thr) ink[i] = 1;
     // Giãn mặt nạ màu (hộp 7x7, tách 2 chiều) rồi xoá mực đen trong vùng đó: viền tối/khử răng cưa của
-    // con dấu, chữ ký không bị nhận nhầm thành chữ. Chỉ giãn quanh vùng màu ĐỦ LỚN (loại nhiễu lẻ).
+    // con dấu, chữ ký không bị nhận nhầm thành chữ. Đã lọc bỏ đốm lẻ ở bước trên nên vùng còn lại chắc
+    // chắn là mực màu thật, giãn nở an toàn hơn.
     const R=3;
     const tmp=new Uint8Array(n), dil=new Uint8Array(n);
     for(let y=0;y<h;y++){ const row=y*w; for(let x=0;x<w;x++){ if(color[row+x]){ const a=Math.max(0,x-R), b=Math.min(w-1,x+R); for(let xx=a;xx<=b;xx++) tmp[row+xx]=1; } } }
     for(let x=0;x<w;x++){ for(let y=0;y<h;y++){ if(tmp[y*w+x]){ const a=Math.max(0,y-R), b=Math.min(h-1,y+R); for(let yy=a;yy<=b;yy++) dil[yy*w+x]=1; } } }
     for(let i=0;i<n;i++) if(dil[i]) ink[i]=0;
     return { gray, ink, color, colorDil: dil, thr, paper };
+  }
+
+  // ---- SHARPEN (unsharp mask): làm rõ nét chữ mờ do scan/chụp trước khi tách mực/OCR ----
+  // Áp dụng RIÊNG TỪNG kênh màu (không gộp về mức xám) để không phá vỡ thông tin màu sắc mà
+  // separateInk() cần để phân biệt mực đen/mực màu (con dấu đỏ, chữ ký xanh...) ngay sau đó.
+  // amount ~0.6 là mức vừa phải: đủ làm nét chữ sắc hơn cho OCR mà không tạo viền giả/nhiễu quá đà.
+  function sharpenRGBA(rgba, w, h, amount){
+    amount = amount==null ? 0.6 : amount;
+    const out = new Uint8ClampedArray(rgba.length);
+    out.set(rgba);
+    const n = w*h;
+    // Làm mờ hộp 3x3 tách trục (ngang rồi dọc) cho từng kênh — nhanh hơn nhiều so với vòng lặp 3x3
+    // lồng nhau trực tiếp trên ảnh đầy đủ.
+    for(let ch=0; ch<3; ch++){
+      const tmp = new Float32Array(n);
+      for(let y=0;y<h;y++){
+        const row = y*w;
+        for(let x=0;x<w;x++){
+          const x0=Math.max(0,x-1), x1=Math.min(w-1,x+1);
+          let s=0;
+          for(let xx=x0; xx<=x1; xx++) s += rgba[(row+xx)*4+ch];
+          tmp[row+x] = s/(x1-x0+1);
+        }
+      }
+      const blur = new Float32Array(n);
+      for(let x=0;x<w;x++){
+        for(let y=0;y<h;y++){
+          const y0=Math.max(0,y-1), y1=Math.min(h-1,y+1);
+          let s=0;
+          for(let yy=y0; yy<=y1; yy++) s += tmp[yy*w+x];
+          blur[y*w+x] = s/(y1-y0+1);
+        }
+      }
+      for(let i=0;i<n;i++){
+        const j = i*4+ch;
+        out[j] = rgba[j] + amount*(rgba[j]-blur[i]);
+      }
+    }
+    return out;
   }
 
   // ---- Ước lượng góc nghiêng (độ) từ mặt nạ mực: cực đại hoá "độ gai" của biểu đồ chiếu ngang ----
@@ -11320,8 +11340,8 @@ const WXI = (function(){
           if(vMask[i]){ colCnt[x]++; if(y<colMin[x])colMin[x]=y; if(y>colMax[x])colMax[x]=y; }
         }
       }
-      const hl = groupRows(rowCnt, b.y0, b.y1, Math.max(50, 0.2*bw));
-      const vl = groupRows(colCnt, b.x0, b.x1, Math.max(40, 0.2*bh));
+      const hl = groupRows(rowCnt, b.y0, b.y1, Math.max(30, 0.15*bw));
+      const vl = groupRows(colCnt, b.x0, b.x1, Math.max(25, 0.15*bh));
       if(hl.length<2 || vl.length<2) continue;
       // lưới: gộp vạch cách nhau < 8px
       const Y = mergeClose(hl.map(g=>g.c), 8), X = mergeClose(vl.map(g=>g.c), 8);
@@ -11362,11 +11382,11 @@ const WXI = (function(){
     const vEdge=[], hEdge=[];
     for(let r=0;r<nR;r++){ vEdge[r]=[]; for(let c=0;c<=nC;c++){
       const ya=t.Y[r]+t.thick+1, yb=t.Y[r+1]-t.thick-1;
-      vEdge[r][c] = (c===0||c===nC) ? true : edgeCoverV(vMask,w,h,t.X[c],ya,Math.max(ya,yb),tol) >= 0.6;
+      vEdge[r][c] = (c===0||c===nC) ? true : edgeCoverV(vMask,w,h,t.X[c],ya,Math.max(ya,yb),tol) >= 0.45;
     } }
     for(let r=0;r<=nR;r++){ hEdge[r]=[]; for(let c=0;c<nC;c++){
       const xa=t.X[c]+t.thick+1, xb=t.X[c+1]-t.thick-1;
-      hEdge[r][c] = (r===0||r===nR) ? true : edgeCoverH(hMask,w,h,t.Y[r],xa,Math.max(xa,xb),tol) >= 0.6;
+      hEdge[r][c] = (r===0||r===nR) ? true : edgeCoverH(hMask,w,h,t.Y[r],xa,Math.max(xa,xb),tol) >= 0.45;
     } }
     // gộp ô: union-find trên lưới nR x nC khi cạnh chung KHÔNG tồn tại
     const par=[]; for(let i=0;i<nR*nC;i++) par[i]=i;
@@ -11599,7 +11619,7 @@ const WXI = (function(){
     return { serif, total };
   }
 
-  return { grayOf, otsu, separateInk, estimateSkewDeg, rotateRGBA, ruleMasks, components, detectTables, median, mergeClose, buildTextMask, typicalCharH, segmentLines, lineBaseline, stemWidth, slantDeg, underlineSegments, serifVote };
+  return { grayOf, otsu, sharpenRGBA, separateInk, estimateSkewDeg, rotateRGBA, ruleMasks, components, detectTables, median, mergeClose, buildTextMask, typicalCharH, segmentLines, lineBaseline, stemWidth, slantDeg, underlineSegments, serifVote };
 })();
 if(typeof module!=='undefined') module.exports = WXI;
 
@@ -11612,39 +11632,18 @@ let __wxOcrWorker = null;
 async function wxGetOcrWorker(){
   if(typeof Tesseract === 'undefined') throw new Error('Thư viện Tesseract.js chưa tải được (kiểm tra mạng / tường lửa chặn cdnjs.cloudflare.com).');
   if(__wxOcrWorker) return __wxOcrWorker;
-  // SỬA LỖI "dò được dòng chữ (ink) nhưng OCR luôn ra rỗng -> Word vẫn xuất ảnh": tesseract.min.js
-  // (thư viện chính) tải được từ cdnjs.cloudflare.com — nếu không, ứng dụng đã báo lỗi ngay khi mở.
-  // NHƯNG khi KHỞI TẠO, Tesseract.js còn tự tải thêm 2 thứ nữa từ CDN MẶC ĐỊNH của nó (thường là
-  // unpkg.com — KHÁC HẲN cdnjs.cloudflare.com): (1) mã Worker chạy nền, (2) lõi nhận dạng WASM
-  // (tesseract-core). Nhiều mạng công ty/trường học chặn unpkg.com nhưng KHÔNG chặn
-  // cdnjs.cloudflare.com hay cdn.jsdelivr.net — khi đó thư viện chính vẫn tải được (app mở bình
-  // thường, vẫn dò được dòng/bảng bằng ảnh) nhưng MỌI lần gọi OCR đều âm thầm thất bại, nên trang
-  // luôn phải rơi về phương án chèn ảnh nguyên trang dù đã dò đúng số dòng chữ. Giờ thử LẦN LƯỢT
-  // nhiều tổ hợp CDN khác nhau cho worker/lõi/dữ liệu ngôn ngữ để tăng tối đa khả năng có ít nhất
-  // một tổ hợp lọt qua được tường lửa của người dùng.
-  const attempts = [
-    { opts:{
-        workerPath: 'https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/2.1.4/worker.min.js',
-        corePath:   'https://cdnjs.cloudflare.com/ajax/libs/tesseract.js-core/2.2.0/tesseract-core.wasm.js',
-        langPath:   'https://cdn.jsdelivr.net/npm/@tesseract.js-data/vie/4.0.0_best_int'
-      }, langs:'vie' },
-    { opts:{
-        workerPath: 'https://cdn.jsdelivr.net/npm/tesseract.js@2.1.4/dist/worker.min.js',
-        corePath:   'https://cdn.jsdelivr.net/npm/tesseract.js-core@2.2.0/tesseract-core.wasm.js'
-      }, langs:'eng+vie' },
-    { opts:{}, langs:'eng+vie' }  // để thư viện tự chọn CDN mặc định của nó (đôi khi lại tải được)
-  ];
   const tryCreate = async (opts, langs)=>{
     const w = Tesseract.createWorker(Object.assign({ logger: ()=>{} }, opts));
     await w.load(); await w.loadLanguage(langs); await w.initialize(langs);
     return w;
   };
-  let lastErr = null;
-  for(const a of attempts){
-    try{ __wxOcrWorker = await tryCreate(a.opts, a.langs); return __wxOcrWorker; }
-    catch(err){ lastErr = err; console.warn('WORD: một cấu hình tải OCR thất bại, thử cấu hình khác:', err); }
+  try{
+    __wxOcrWorker = await tryCreate({ langPath: 'https://cdn.jsdelivr.net/npm/@tesseract.js-data/vie/4.0.0_best_int' }, 'vie');
+  }catch(err){
+    console.warn('WORD: không tải được mô hình OCR "best" (jsDelivr) — dùng mô hình mặc định eng+vie:', err);
+    __wxOcrWorker = await tryCreate({}, 'eng+vie');
   }
-  throw new Error('Không khởi tạo được OCR (Tesseract.js) sau khi thử nhiều nguồn CDN khác nhau — mạng/tường lửa có thể đang chặn hết các nguồn này. Chi tiết: ' + ((lastErr && lastErr.message) || lastErr));
+  return __wxOcrWorker;
 }
 
 
@@ -11701,6 +11700,7 @@ async function wxAnalyzePage(idx){
   const w = canvas.width, h = canvas.height;
   if(w*h > 16e6) throw new Error('Trang quá lớn để phân tích ở 216 dpi ('+w+'×'+h+' px).');
   let rgba = canvas.getContext('2d', { willReadFrequently: true }).getImageData(0,0,w,h).data;
+  rgba = WXI.sharpenRGBA(rgba, w, h, 0.6); // Sharpen: làm rõ nét chữ mờ do scan/chụp trước khi tách mực/OCR
   let sep = WXI.separateInk(rgba, w, h);
   const skew = WXI.estimateSkewDeg(sep.ink, w, h);
   const skewApplied = Math.abs(skew) >= 0.12;
@@ -11709,7 +11709,7 @@ async function wxAnalyzePage(idx){
     sep = WXI.separateInk(rgba, w, h);
   }
   wxRestoreColoredText(sep, w, h);
-  const rm = WXI.ruleMasks(sep.ink, w, h, 60, 60, 3);
+  const rm = WXI.ruleMasks(sep.ink, w, h, 45, 45, 6);
   const tables = WXI.detectTables(rm.hMask, rm.vMask, w, h);
   const T = WXI.buildTextMask(sep.ink, rm.hMask, rm.vMask, tables, w, h);
   const cc = WXI.components(T, w, h);
@@ -11787,47 +11787,39 @@ async function wxOcrLines(A, lines, onProgress){
   let done = 0; const total = lines.length * factors.length;
   try{
     for(const L of lines){
-      try{
-        const cands = [];
-        for(const f of factors){
-          const cv = wxLineCanvas(A, L, 8, base*f);
+      const cands = [];
+      for(const f of factors){
+        const cv = wxLineCanvas(A, L, 8, base*f);
+        const { data } = await worker.recognize(cv);
+        const cr = L._crop;
+        cands.push({
+          text: wxNormOcr(data.text), conf: data.confidence || 0,
+          words: (data.words || []).filter(wd => wd.text && wd.text.trim()).map(wd => ({
+            text: wd.text.trim(), conf: wd.confidence,
+            x0: cr.x0 + wd.bbox.x0/cr.scale, x1: cr.x0 + wd.bbox.x1/cr.scale,
+            y0: cr.y0 + wd.bbox.y0/cr.scale, y1: cr.y0 + wd.bbox.y1/cr.scale
+          }))
+        });
+        done++; if(onProgress) onProgress(done, total);
+      }
+      const m = new Map();
+      for(const c of cands){ const k=c.text; const o=m.get(k) || { n:0, conf:0, c }; o.n++; o.conf+=c.conf; if(c.conf>o.c.conf) o.c=c; m.set(k,o); }
+      const best = [...m.values()].sort((p,q)=> q.n-p.n || q.conf-p.conf)[0].c;
+      L.ocrText = best.text; L.ocrConf = best.conf; L.ocrWords = best.words;
+      // Ký tự đơn (vd số thứ tự "1") thường bị PSM 7 bỏ sót -> thử lại với PSM 10 (một ký tự)
+      if(!/[A-Za-zÀ-ỹ0-9]/.test(best.text) && L.comps.length <= 3 && (L.y1-L.y0+1) >= A.medH*0.6 && (L.x1-L.x0+1) <= A.medH*2.2){
+        try{
+          await worker.setParameters({ tessedit_pageseg_mode: '10' });
+          const cv = wxLineCanvas(A, L, 10, base);
           const { data } = await worker.recognize(cv);
-          const cr = L._crop;
-          cands.push({
-            text: wxNormOcr(data.text), conf: data.confidence || 0,
-            words: (data.words || []).filter(wd => wd.text && wd.text.trim()).map(wd => ({
-              text: wd.text.trim(), conf: wd.confidence,
-              x0: cr.x0 + wd.bbox.x0/cr.scale, x1: cr.x0 + wd.bbox.x1/cr.scale,
-              y0: cr.y0 + wd.bbox.y0/cr.scale, y1: cr.y0 + wd.bbox.y1/cr.scale
-            }))
-          });
-          done++; if(onProgress) onProgress(done, total);
-        }
-        const m = new Map();
-        for(const c of cands){ const k=c.text; const o=m.get(k) || { n:0, conf:0, c }; o.n++; o.conf+=c.conf; if(c.conf>o.c.conf) o.c=c; m.set(k,o); }
-        const best = [...m.values()].sort((p,q)=> q.n-p.n || q.conf-p.conf)[0].c;
-        L.ocrText = best.text; L.ocrConf = best.conf; L.ocrWords = best.words;
-        // Ký tự đơn (vd số thứ tự "1") thường bị PSM 7 bỏ sót -> thử lại với PSM 10 (một ký tự)
-        if(!/[A-Za-zÀ-ỹ0-9]/.test(best.text) && L.comps.length <= 3 && (L.y1-L.y0+1) >= A.medH*0.6 && (L.x1-L.x0+1) <= A.medH*2.2){
-          try{
-            await worker.setParameters({ tessedit_pageseg_mode: '10' });
-            const cv = wxLineCanvas(A, L, 10, base);
-            const { data } = await worker.recognize(cv);
-            const t = wxNormOcr(data.text);
-            if(/[A-Za-zÀ-ỹ0-9]/.test(t)){
-              const cr = L._crop;
-              L.ocrText = t; L.ocrConf = data.confidence || 0;
-              L.ocrWords = [{ text:t, conf:data.confidence||0, x0:L.x0, x1:L.x1, y0:L.y0, y1:L.y1 }];
-            }
-          } catch(e){}
-          await worker.setParameters({ tessedit_pageseg_mode: '7' });
-        }
-      }catch(err){
-        // Một dòng OCR lỗi (vd nét mực quá mờ/canvas rỗng) KHÔNG được làm mất chữ của toàn bộ
-        // các dòng khác đã/sẽ nhận dạng được — bỏ qua riêng dòng này, coi như không đọc được.
-        console.warn('WORD: OCR một dòng thất bại, bỏ qua dòng đó:', err);
-        L.ocrText = L.ocrText || ''; L.ocrConf = L.ocrConf || 0; L.ocrWords = L.ocrWords || [];
-        done += factors.length; if(onProgress) onProgress(done, total);
+          const t = wxNormOcr(data.text);
+          if(/[A-Za-zÀ-ỹ0-9]/.test(t)){
+            const cr = L._crop;
+            L.ocrText = t; L.ocrConf = data.confidence || 0;
+            L.ocrWords = [{ text:t, conf:data.confidence||0, x0:L.x0, x1:L.x1, y0:L.y0, y1:L.y1 }];
+          }
+        } catch(e){}
+        await worker.setParameters({ tessedit_pageseg_mode: '7' });
       }
     }
   } finally {
@@ -11922,7 +11914,7 @@ function wxInferStyles(A, lines){
     for(const L of lines){ if(L.nstyle && L.nstyle.serif !== undefined && L.nstyle.serif !== null){ const n=(L.text||'').length||1; if(L.nstyle.serif) sy+=n; else sn+=n; } }
     if(sy + sn > 0) serifFinal = sy >= sn;
   }
-  const family = serifFinal ? 'Times New Roman' : 'Arial';
+  const family = wxExportForcedFont || (serifFinal ? 'Times New Roman' : 'Arial');
   A.family = family;
 
   // 2) Từng dòng: đo đặc trưng thô
@@ -12331,6 +12323,17 @@ function wxColorObjects(A){
     // bỏ nhiễu: quá ít điểm màu và nhỏ
     if(count < 350 && Math.max(o.x1-o.x0, o.y1-o.y0) < medH*2.5) continue;
     if(count < 80) continue;
+    // [MỚI - SỬA LỖI "còn sót ảnh trong suốt chồng đè lên chữ trong file Word xuất ra"] Bước giãn nở
+    // ±3 ô (~12px) ở trên để nối liền các mảnh mực của CÙNG 1 con dấu/chữ ký có thể VÔ TÌNH nối luôn
+    // nhiều đốm mực màu li ti RẢI RÁC khắp trang (nhiễu hạt/vết ố do scan/chụp) thành MỘT khối khổng
+    // lồ trải gần hết trang — dù tổng số điểm màu (count) đủ lớn để qua được bộ lọc nhiễu ở trên, khối
+    // đó vẫn RẤT THƯA (đa số vùng là trống) chứ không đặc như 1 con dấu/chữ ký thật. Ảnh cắt ra từ 1
+    // khối như vậy gần như TRONG SUỐT (chỉ vài đốm mực rải rác hiện ra), khi chèn vào Word sẽ đè lên
+    // ĐÈ CHE MỘT PHẦN chữ thật bên dưới -> loại bỏ SỚM những khối "to nhưng thưa" bất thường này (giữ
+    // lại đúng những con dấu/chữ ký THẬT: nhỏ gọn, mực đặc).
+    const bw = o.x1-o.x0+1, bh = o.y1-o.y0+1;
+    const density = count / (bw*bh);
+    if(Math.max(bw,bh) > medH*18 && density < 0.05) continue;
     objs.push(o);
   }
   return objs;
@@ -12431,59 +12434,8 @@ function wxFixAbbreviations(lines){
 /* ===== WX-D: dựng mô hình trang → tài liệu Word (.docx thật, OOXML) ===== */
 
 // ---------- Mô hình trang ----------
-// SỬA LỖI "vẫn xuất ra Word dạng 1 ảnh duy nhất, không sửa được": trước đây, nếu bước phân tích
-// bố cục bằng ảnh (wxAnalyzePage/wxBuildLines...) NÉM LỖI (throw) trên MỘT trang bất kỳ — ví dụ
-// trang quá lớn, ảnh trang không đọc được pixel, v.v. — lỗi đó văng thẳng lên exportWordSelected(),
-// khiến toàn bộ quá trình xuất Word kiểu mới bị huỷ và trình duyệt hỏi người dùng có muốn chuyển
-// sang bộ xuất "đơn giản" (.doc) hay không. Bộ xuất "đơn giản" đó (exportWordSelectedLegacy_ /
-// buildWordPageHtml) là code CŨ, vẫn còn nguyên lỗi "trang không dò được gì -> chèn ảnh nguyên
-// trang" — nên nếu người dùng bấm Đồng ý ở hộp thoại đó, file Word nhận được vẫn là ẢNH, không sửa
-// được chữ, dù pipeline mới (đã có phương án dự phòng lấy chữ thật/OCR ở wxLastResortTextFlow) hoạt
-// động bình thường cho các trang khác. Giờ mỗi trang được xử lý trong try/catch RIÊNG: nếu phân
-// tích bố cục cho MỘT trang bị lỗi, chỉ trang đó dùng phương án dự phòng chữ thật/OCR (hoặc ảnh,
-// nếu thật sự không còn cách nào khác) — các trang khác và cả file Word vẫn xuất ra bình thường,
-// và không bao giờ phải rơi về bộ xuất Word cũ nữa.
 async function wxBuildPageModel(idx, onStatus){
   const say = (m)=>{ if(onStatus) onStatus(m); };
-  try{
-    return await wxBuildPageModelCore(idx, say);
-  }catch(err){
-    console.warn('WORD: phân tích bố cục trang '+(idx+1)+' bị lỗi, dùng phương án chữ dự phòng:', err);
-    say('Đang dựng nội dung dự phòng cho trang '+(idx+1)+'…');
-    return await wxBuildPageModelFallback(idx);
-  }
-}
-
-// Model tối giản dùng khi wxBuildPageModelCore (phân tích bố cục đầy đủ bằng ảnh) bị lỗi cho một
-// trang cụ thể: lấy kích thước trang thật từ PDF (không phụ thuộc bước phân tích đã lỗi), rồi lấy
-// nội dung bằng CHỮ THẬT (native PDF text, hoặc OCR toàn trang) qua wxLastResortTextFlow() — chỉ
-// khi cả hai cách đó đều không ra được chữ nào mới chèn ảnh nguyên trang, và CHỈ cho riêng trang này.
-async function wxBuildPageModelFallback(idx){
-  const p = pages[idx];
-  let wPt = 595.28, hPt = 841.89; // mặc định khổ A4 nếu không lấy được kích thước thật của trang
-  try{
-    if(p && p.type === 'pdf'){
-      const page = await p.doc.getPage(p.srcPage);
-      const vp = page.getViewport({ scale: 1 });
-      wPt = vp.width; hPt = vp.height;
-    }
-  }catch(err){ console.warn('WORD (dự phòng): không lấy được kích thước trang '+(idx+1)+', dùng khổ A4:', err); }
-  const textFlow = await wxLastResortTextFlow(idx, 'Times New Roman');
-  const model = {
-    wPt, hPt, mL:72, mR:72, mT:54, mB:54,
-    flow: textFlow || [], floats: [], family: 'Times New Roman',
-    empty: !(textFlow && textFlow.length), fallbackPng: null
-  };
-  if(model.empty){
-    try{
-      const shot = await renderPageToCanvas(idx, 2);
-      model.fallbackPng = await wxCanvasToPng(shot);
-    }catch(err){ console.warn('WORD (dự phòng): không tạo được ảnh dự phòng cho trang '+(idx+1)+':', err); }
-  }
-  return model;
-}
-
-async function wxBuildPageModelCore(idx, say){
   say('Đang phân tích ảnh trang '+(idx+1)+'…');
   const A = await wxAnalyzePage(idx);
   const pageWpt = A.w * WX_PX2PT, pageHpt = A.h * WX_PX2PT;
@@ -12551,6 +12503,22 @@ async function wxBuildPageModelCore(idx, say){
   const flow = [];
   for(const p of wxParagraphsForFrame(outLines, frame)) flow.push(p);
 
+  // "OCR thất bại -> dùng ảnh" (theo TỪNG Ô, không chỉ cả trang): nếu các dòng OCR (không phải chữ
+  // thật của PDF/chữ do người dùng gõ — L.native — vốn đã biết chắc chắn đúng) trong một ô có độ tin
+  // cậy trung bình quá thấp, nghĩa là OCR không đọc nổi đúng nội dung ô đó (chữ mờ/nhiễu quá nặng) ->
+  // giữ nguyên ẢNH của đúng ô đó (người đọc vẫn nhìn thấy đúng nội dung gốc bằng mắt) thay vì chèn
+  // chữ OCR sai/rối vào Word — tránh đúng lỗi "chữ mất dấu/lộn xộn" khi ảnh quá xấu để đọc đúng.
+  const OCR_CONF_MIN = 35;
+  for(let ti=0; ti<A.tables.length; ti++){
+    for(const cell of A.tables[ti].cells){
+      if(cell.isImage) continue; // đã là ảnh do chứa đồ hoạ lớn, không cần xét lại
+      const ocrLs = lines.filter(L => L.table === ti && L.cell === cell && !L.native && L.words && L.words.length);
+      if(!ocrLs.length) continue; // toàn chữ thật/trống -> không cần kiểm tra độ tin cậy OCR
+      const avgConf = ocrLs.reduce((s,L)=>s+(L.ocrConf||0),0) / ocrLs.length;
+      if(avgConf < OCR_CONF_MIN) cell.isImage = true;
+    }
+  }
+
   for(let ti=0; ti<A.tables.length; ti++){
     const t = A.tables[ti];
     const tbl = { kind:'tbl', t, top: t.Y[0]*WX_PX2PT, bottom: t.Y[t.Y.length-1]*WX_PX2PT,
@@ -12615,34 +12583,10 @@ async function wxBuildPageModelCore(idx, say){
     flow: out, floats, family: A.family, empty: !flow.length,
     fallbackPng: null
   };
-  if(model.empty){
-    // SỬA LỖI QUAN TRỌNG: điều kiện trước đây là "model.empty && !floats.length" — tức là CHỈ chạy
-    // phương án OCR dự phòng khi trang KHÔNG có bất kỳ ảnh nổi nào (con dấu/chữ ký/logo). Với các
-    // văn bản đã ký/đóng dấu như file báo giá này — luôn có mộc đỏ + chữ ký được nhận diện là "ảnh
-    // nổi" (floats.length > 0) — điều kiện đó khiến phương án OCR dự phòng KHÔNG BAO GIỜ được chạy
-    // tới, dù chữ trên trang hoàn toàn chưa được nhận dạng (flow rỗng): trang cứ thế rơi thẳng vào
-    // nhánh chèn ảnh nguyên trang bên dưới — đúng triệu chứng "vẫn ra ảnh" dù đã có phương án OCR.
-    // Giờ chỉ cần "không dò được dòng/bảng chữ nào" (model.empty) là đã thử OCR dự phòng, không
-    // quan tâm trang có mộc/chữ ký hay không — mộc/chữ ký (floats) vẫn được giữ nguyên như ảnh nổi
-    // đặt chồng lên phần chữ vừa OCR được, giống đúng bản gốc.
-    //
-    // Đây chính là trường hợp file mẫu: PDF là ẢNH CHỤP/SCAN từ giấy thật (không có lớp text điện
-    // tử), nên bước (a) đọc chữ thật của PDF ở wxLastResortTextFlow() chắc chắn thất bại — công cụ
-    // sẽ tự động rơi sang bước (b): chạy Tesseract.js OCR TOÀN TRANG để "biến ảnh thành chữ" đúng
-    // như yêu cầu, trước khi đóng gói vào file Word.
-    const textFlow = await wxLastResortTextFlow(idx, A.family);
-    if(textFlow && textFlow.length){
-      model.flow = textFlow;
-      model.empty = false;
-      model.mT = 54; model.mB = 54; model.mL = 72; model.mR = 72; // lề 1inch/0.75inch mặc định vì không dò được lề thật từ ảnh
-    } else if(!floats.length){
-      // Thật sự không lấy được một chữ nào (trang trống, hoặc mất mạng nên OCR không tải được) VÀ
-      // cũng không có ảnh nổi nào khác -> chèn ảnh nguyên trang để ít nhất không mất nội dung.
-      const shot = await wxRenderComposite(idx, 2);
-      model.fallbackPng = await wxCanvasToPng(shot);
-    }
-    // Nếu OCR cũng thất bại nhưng trang có ảnh nổi (mộc/chữ ký) -> giữ nguyên các ảnh nổi đó, không
-    // chèn thêm ảnh nguyên trang chồng lên (tránh nhân đôi mộc/chữ ký).
+  if(model.empty && !floats.length){
+    // trang không có chữ/bảng/ảnh nào dựng được: chèn ảnh nguyên trang để không mất nội dung
+    const shot = await wxRenderComposite(idx, 2);
+    model.fallbackPng = await wxCanvasToPng(shot);
   }
   return model;
 }
@@ -12767,6 +12711,14 @@ async function wxApplyNativeText(A, lines){
     const its = items.filter(it => { if(it.used) return false; const cx=(it.x0+it.x1)/2, cy=it.base-0.3*it.fs; return cx>=box.x0 && cx<=box.x1 && cy>=box.y0 && cy<=box.y1; }).sort((a,b)=>a.x0-b.x0);
     const cover = its.reduce((s,it)=>s+Math.max(0, Math.min(it.x1,box.x1)-Math.max(it.x0,box.x0)), 0);
     if(!its.length || cover < 0.6*(L.x1-L.x0)){ remain.push(L); continue; }
+    // SỬA LỖI "chữ mất dấu tiếng Việt trong Word xuất ra": một số PDF (đã từng qua OCR/bảng mã cũ
+    // lỗi trước khi đưa vào đây) có sẵn LỚP CHỮ GỐC (native) nhưng lớp đó bị THIẾU DẤU tiếng Việt
+    // hàng loạt (vd "C6Nc TY TNHH" thay vì "CÔNG TY TNHH"), không khớp chữ hiển thị thật trên trang.
+    // Trước đây always tin dùng thẳng chữ gốc bất kể chất lượng. Giờ kiểm tra: chữ gốc của dòng này
+    // nghi mất dấu -> KHÔNG dùng, để lại cho wxOcrLines() bên dưới đọc thẳng ảnh dòng chữ (Tesseract),
+    // đáng tin hơn nhiều cho đúng trường hợp này.
+    const nativePreview = its.map(it=>it.text).join(' ');
+    if(looksLikeMissingVietnameseDiacritics_(nativePreview)){ remain.push(L); continue; }
     its.forEach(it=>it.used = true);
     // danh sách từ (theo chữ thật) kèm khoảng x ước lượng theo tỉ lệ ký tự
     const words = [];
@@ -12794,86 +12746,6 @@ async function wxApplyNativeText(A, lines){
   return remain;
 }
 
-// ---------- SỬA LỖI "file Word xuất ra không sửa được chữ, trông như một tấm ảnh" ----------
-// NGUYÊN NHÂN: wxBuildPageModel() dò bố cục (dòng chữ, bảng, ảnh) HOÀN TOÀN qua phân tích PIXEL
-// của ảnh chụp trang (wxAnalyzePage/wxBuildLines, xem WXI ở trên) — quá trình này tách "mực" khỏi
-// "nền giấy" bằng ngưỡng màu (Otsu) rồi dò từng dòng chữ theo vùng mực đó. Với một số trang có
-// nhiều mảng màu lớn (chữ đỏ, con dấu đỏ, logo, nền hơi ngả màu do scan/máy in...), bước tách mực
-// này có thể thất bại và KHÔNG dò được bất kỳ dòng/bảng nào trên cả trang (flow.length === 0 và
-// floats.length === 0). Trước đây, gặp đúng trường hợp này, code coi như "trang trắng" và chèn
-// NGUYÊN ẢNH CHỤP CẢ TRANG vào file Word để không mất nội dung — nhưng hệ quả là toàn bộ trang trở
-// thành MỘT BỨC ẢNH DUY NHẤT, không bấm/sửa được chữ như file Word bình thường (đúng như phản ánh).
-//
-// CÁCH SỬA: trước khi chấp nhận phương án ảnh (mất khả năng chỉnh sửa), thử lấy lại nội dung dưới
-// dạng CHỮ THẬT có thể sửa được — theo đúng thứ tự ưu tiên chữ vẫn dùng ở nơi khác trong công cụ:
-//   (a) lớp chữ gốc nhúng sẵn trong PDF, đọc bằng page.getTextContent() của pdf.js — có sẵn với
-//       PDF được tạo từ Word/phần mềm văn phòng (như file báo giá mẫu), chính xác 100%, không cần OCR;
-//   (b) nếu trang thực sự là ảnh scan (không có lớp chữ nào), chạy MỘT LƯỢT OCR TOÀN TRANG độc lập
-//       với bước dò dòng bằng ảnh ở trên, để vẫn lấy được văn bản (dàn thành các đoạn xuôi dòng đơn
-//       giản, không giữ được bảng/căn lề như phương án phân tích đầy đủ — nhưng vẫn là CHỮ THẬT có
-//       thể bấm sửa, thay vì một tấm ảnh chết).
-// CHỈ khi cả (a) và (b) đều không lấy được một dòng chữ nào (trang trống thật sự, hoặc mất mạng nên
-// OCR không tải được) thì mới dùng ảnh nguyên trang như phương án cuối cùng, giống hệt trước đây.
-async function wxLastResortTextFlow(idx, family){
-  const p = pages[idx];
-  const fam = family || 'Times New Roman';
-  let rawLines = [];
-
-  // (a) chữ thật nhúng sẵn trong PDF
-  if(p && p.type === 'pdf'){
-    try{
-      const page = await p.doc.getPage(p.srcPage);
-      const vp = page.getViewport({ scale: 1 });
-      const content = await page.getTextContent();
-      const items = content.items.filter(it => it.str && it.str.trim());
-      if(items.length){
-        const rows = [];
-        for(const it of items){
-          const m = pdfjsLib.Util.transform(vp.transform, it.transform);
-          const y = m[5], x = m[4], h = Math.max(1, Math.abs(m[3]));
-          let row = rows.find(r => Math.abs(r.y - y) < Math.max(3, h*0.5));
-          if(!row){ row = { y, items: [] }; rows.push(row); }
-          row.items.push({ x, text: it.str });
-        }
-        rows.sort((a,b) => b.y - a.y); // toạ độ y của pdf.js tăng từ dưới lên -> đảo lại để đọc từ trên xuống
-        for(const row of rows){
-          row.items.sort((a,b) => a.x - b.x);
-          const text = row.items.map(i => i.text).join(' ').replace(/\s+/g,' ').trim();
-          if(text) rawLines.push(text);
-        }
-      }
-    }catch(err){ console.warn('WORD (dự phòng): không đọc được chữ thật của PDF:', err); }
-  }
-
-  // (b) không có chữ thật -> OCR toàn trang một lượt (độc lập với bước dò dòng theo pixel ở trên)
-  if(!rawLines.length){
-    try{
-      const worker = await wxGetOcrWorker();
-      const canvas = await wxRenderComposite(idx, 2);
-      const { data } = await worker.recognize(canvas);
-      rawLines = (data.text || '').split(/\r?\n/).map(s => s.replace(/\s+/g,' ').trim()).filter(Boolean);
-    }catch(err){ console.warn('WORD (dự phòng): OCR toàn trang thất bại:', err); }
-  }
-
-  if(!rawLines.length) return null;
-
-  // Dàn thành các đoạn văn xuôi dòng đơn giản, canh trái, cỡ chữ 12pt — ưu tiên vẫn là CHỮ SỬA
-  // ĐƯỢC hơn là tái hiện đúng bố cục (bố cục chính xác chỉ có được khi bước dò ảnh ở trên thành công).
-  const LH = 14.4; // ~12pt * 1.2, đơn vị point
-  let top = 0;
-  const flow = [];
-  for(const text of rawLines){
-    flow.push({
-      kind: 'p', size: 12,
-      runs: [{ t: text, b:false, i:false, u:false, color:'000000', sz:12, fam }],
-      tabs: [], jc: 'left', indL: 0, indR: 0, first: 0,
-      LH, top, bottom: top + LH, spBefore: 0
-    });
-    top += LH;
-  }
-  return flow;
-}
-
 // ---------- Xuất Word: hàm được nút "Export Word" gọi ----------
 async function exportWordSelected(indices){
   if(!indices || !indices.length){ alert('Hãy chọn ít nhất một trang để xuất.'); return; }
@@ -12881,13 +12753,6 @@ async function exportWordSelected(indices){
   const spinner = document.getElementById('spinner');
   const spinnerLabel = spinner.lastChild;
   spinner.classList.add('show');
-  // KHÓA nút "Export Word Document" trong lúc đang quét/nhận dạng chữ (OCR) và đóng gói file, để
-  // người dùng không bấm thêm lần nữa (mở lại modal / gọi xuất chồng lên lượt đang chạy) trước khi
-  // quá trình nhận dạng chữ (có thể mất vài giây đến vài chục giây tuỳ số trang) hoàn tất. Nút được
-  // mở khoá lại ở khối finally bên dưới dù xuất thành công, lỗi, hay rơi về bộ xuất dự phòng.
-  const exportBtn = document.getElementById('btnExportWord');
-  const exportBtnOldText = exportBtn ? exportBtn.innerHTML : null;
-  if(exportBtn){ exportBtn.disabled = true; exportBtn.innerHTML = '<span class="ic">⏳</span>Đang nhận dạng chữ…'; }
   let fallback = false;
   try{
     const models = [];
@@ -12905,21 +12770,12 @@ async function exportWordSelected(indices){
     a.download = indices.length===pages.length ? base+'.docx' : base+'-trang-'+indices.map(i=>i+1).join('_')+'.docx';
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(()=>URL.revokeObjectURL(a.href), 60000);
-    // Báo cho người dùng biết CHÍNH XÁC trang nào (nếu có) không nhận dạng được chữ và phải xuất
-    // dưới dạng ảnh nguyên trang — để không còn là một lỗi "ảnh ra không rõ vì sao" nữa: nguyên
-    // nhân luôn là OCR không đọc được chữ trên (các) trang đó (hết mạng/CDN OCR bị chặn, hoặc
-    // trang trắng thật sự), CÁC TRANG CÒN LẠI trong cùng file vẫn là chữ sửa được bình thường.
-    const imagePages = models.map((m,k)=> m.fallbackPng ? indices[k]+1 : null).filter(n=>n!==null);
-    if(imagePages.length){
-      alert('Lưu ý: trang '+imagePages.join(', ')+' không nhận dạng được chữ (OCR thất bại — có thể do mất mạng/tường lửa chặn) nên được xuất dưới dạng ẢNH, không sửa được. Các trang còn lại trong file Word vẫn là chữ có thể sửa bình thường. Hãy kiểm tra kết nối mạng rồi thử xuất lại nếu muốn (các) trang đó thành chữ.');
-    }
   }catch(err){
     console.error('Xuất Word (cách mới) lỗi:', err);
     fallback = confirm('Không xuất được Word theo cách phân tích bố cục mới:\n'+((err && err.message) || err)+'\n\nBạn có muốn dùng cách xuất đơn giản (.doc) thay thế không?');
   }finally{
     spinner.classList.remove('show');
     spinnerLabel.textContent = ' Đang xử lý OCR…';
-    if(exportBtn){ exportBtn.disabled = false; exportBtn.innerHTML = exportBtnOldText; }
   }
   if(fallback) return exportWordSelectedLegacy_(indices);
 }
