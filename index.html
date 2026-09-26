@@ -305,11 +305,47 @@
      openEditInput) trùng với đúng màu nền thật của trang tại vị trí đó (giấy trắng, giấy ngả
      vàng, nền màu...) — nhờ vậy ô nhập hoà lẫn vào trang thay vì nổi bật thành một khối trắng.
   */
+  /* SỬA LỖI "khung có khoảng trắng thừa, đè lên hàng chữ bên dưới":
+     1) box-sizing:border-box — trước đây mặc định content-box khiến border/padding CỘNG THÊM ra
+        ngoài đúng bằng width/height mà JS đã đo (sizeToContent/openEditInput dùng scrollHeight),
+        làm khung thật sự cao/rộng hơn vài px so với những gì JS tưởng là "vừa khít". Giờ border-box
+        thì padding/border nằm GỌN TRONG đúng width/height JS đã tính, không đội thêm ra ngoài nữa.
+     2) padding dọc (trên/dưới) đưa về 0 — phần đệm dọc trước đây (1px) tuy nhỏ nhưng cộng với
+        min-height cố định theo px là nguyên nhân chính khiến khung bị "thừa" ở NHỮNG DÒNG CHỮ CỠ
+        NHỎ (chữ nhỏ mà khung vẫn cao tối thiểu 18px cứng) — bỏ hẳn, dựa vào chính chiều cao dòng
+        (line-height) để căn giữa chữ trong khung, không cần đệm cứng.
+     3) min-height ĐỔI TỪ px CỐ ĐỊNH (18px) SANG "em" (1.15em) — vì font-size của #editInput được
+        set ĐỘNG bằng JS theo đúng cỡ chữ gốc của từng dòng (rất đa dạng: có dòng 8px, có dòng
+        24px...), một mốc px cố định chỉ đúng cho MỘT cỡ chữ cụ thể, cỡ khác sẽ hoặc bị dư khoảng
+        trắng (chữ nhỏ) hoặc bị bó/tràn (chữ to). "em" tự nhân theo font-size hiện có của chính ô
+        đó nên LUÔN vừa khít với đúng 1 dòng ở MỌI cỡ chữ — đây là nguyên nhân sâu xa khiến khung
+        "đè lên hàng chữ bên dưới": khung của một dòng chữ NHỎ vẫn bị ép cao tối thiểu 18px, lấn
+        hẳn vào phần đầu của dòng kế tiếp ngay bên dưới nó.
+  */
+  /* SỬA LỖI (lần 2) "khung vẫn còn khoảng trắng thừa + nền đè lên hàng chữ bên dưới":
+     - padding: 2px ngang cũ tuy nhỏ nhưng cộng dồn với line-height 1.15 vẫn tạo cảm giác khung
+       "rộng" hơn cần thiết ở 2 bên chữ — giảm còn 1px, đủ để con trỏ gõ (caret) ở đầu/cuối dòng
+       không bị viền cắt sát mà không tạo khoảng trắng thấy rõ.
+     - line-height/min-height: 1.15 -> 1.08 — 1.15 là hệ số line-height MẶC ĐỊNH khá rộng của
+       trình duyệt cho văn bản thường, cao hơn cần thiết cho một khung chỉ hiển thị ĐÚNG 1 dòng
+       chữ đang sửa; 1.08 vẫn đủ chỗ cho dấu tiếng Việt/đuôi chữ (g,y,p,ệ,ẫ...) không bị cắt,
+       nhưng không còn "ăn" vào phần đầu của dòng chữ ngay bên dưới như 1.15 trước đây.
+     - background: KHÔNG còn set alpha cố định 0.96 ở đây nữa — độ trong suốt giờ được JS tính
+       ĐỘNG (xem openEditInput/hexToRgba): khung đang sửa một dòng ĐÃ có sẵn nền che riêng trên
+       canvas (edit cũ có bg:true) được set trong suốt hơn NHIỀU (nhìn xuyên gần hết xuống trang),
+       vì phần che thật sự nằm ở canvas bên dưới rồi, #editInput không cần tự che thêm nữa; chỉ
+       những dòng CHƯA từng sửa lần nào (chữ gốc PDF vẫn lộ trực tiếp trên canvas ngay dưới khung)
+       mới cần nền gần như đặc, để tránh chữ gốc và chữ đang gõ chồng lên nhau gây rối mắt.
+     - backdrop-filter:blur đã BỎ HẲN: filter này chỉ làm MỜ phần nội dung phía sau khung (không
+       hề ẩn nó đi), nên trước đây vừa không giúp "nhìn xuyên" như mong muốn, vừa cộng thêm hiệu
+       ứng nhòe khó chịu ngay sát mép khung — bỏ đi giúp phần nền bán trong suốt hiển thị RÕ, đúng
+       như tỉ lệ alpha đã set, không còn bị nhòe.
+  */
   #editInput{
     position:absolute;z-index:50;border:1px dashed rgba(0,0,0,.22);background:#fff;color:#111;
-    font-family:Arial,sans-serif;padding:1px 2px;outline:none;
-    white-space:pre-wrap;word-break:break-word;overflow:hidden;
-    min-width:24px;min-height:18px;resize:both;box-shadow:none;
+    font-family:Arial,sans-serif;padding:0 1px;outline:none;box-sizing:border-box;
+    white-space:pre-wrap;word-break:break-word;overflow:hidden;line-height:1.08;
+    min-width:14px;min-height:1.08em;resize:both;box-shadow:none;
   }
   #editInput:focus{ border-color:rgba(0,0,0,.32); }
 
@@ -2927,6 +2963,33 @@ let activeTool = 'select';
 let currentColor = '#e2402c';
 let currentWhiteoutColor = '#ffffff';
 let currentFontColor = '#000000';
+// FIX: Đổi màu text bằng Select không cần Edit Text — màu chữ "đang chờ áp dụng" cho khối chữ hiện
+// đang được CHỌN bằng công cụ Select (selectedEditIndex >= 0), được ghi nhớ tạm khi người dùng chọn
+// màu ở #fontColorSwatch trong lúc KHÔNG có #editInput nào đang mở, và chỉ thật sự áp vào
+// cur().edits[selectedEditIndex] đúng 1 lần khi người dùng bấm lại nút Select (xem
+// applyPendingSelectedTextColor_() và handler .tbtn[data-tool] bên dưới). null = không có gì đang chờ.
+let pendingSelectedTextColor = null;
+// FIX (workflow ĐỘC LẬP mới): Edit Text -> chọn màu -> click text -> Select.
+// Khác với pendingSelectedTextColor ở trên (dành riêng cho công cụ Select, chọn text TRƯỚC rồi mới
+// chọn màu), luồng này dành cho công cụ "Edit Text": người dùng BẤM "Edit Text" -> CHỌN MÀU ở
+// #fontColorSwatch (trong lúc KHÔNG có #editInput nào đang mở) -> CLICK TRỰC TIẾP vào một text
+// object trên PDF (chỉ để GHI NHỚ mục tiêu, tuyệt đối KHÔNG mở #editInput / không yêu cầu sửa nội
+// dung) -> bấm lại nút Select để CHỐT màu vào đúng text vừa click.
+// pendingTextColor: màu đang chờ áp dụng (lưu ở #fontColorSwatch.oninput khi activeTool==='edittext').
+// pendingTextTarget: mục tiêu vừa click, dạng:
+//   { kind:'edit', index }        -> đã là 1 phần tử có sẵn trong cur().edits (text/textfix/ocrfix)
+//   { kind:'line', line, editType, lines } -> chữ GỐC PDF/OCR chưa từng được sửa (chưa có edit
+//     tương ứng); edit cho dòng này CHỈ được TẠO RA khi thật sự COMMIT màu lúc bấm Select (xem
+//     applyPendingTextColorClick_), để không để lại "edit vô hình" nào nếu người dùng không bấm Select.
+// null = không có gì đang chờ. Xem resolvePendingTextClickTarget_() và applyPendingTextColorClick_().
+let pendingTextColor = null;
+let pendingTextTarget = null;
+// Cờ bật/tắt log gỡ lỗi riêng cho luồng đổi màu text bằng Select — mặc định TẮT ở bản chạy thật.
+const DEBUG_TEXT_COLOR = false;
+// DEBUG TẠM THỜI theo yêu cầu: log đúng 4 giai đoạn (chọn màu / click text / click Select / commit
+// màu) để xác định CHÍNH XÁC giai đoạn nào không chạy như mong đợi trên máy thật của người dùng.
+// BẬT true trong bản này để lấy log — PHẢI đặt lại false khi đã xác định xong nguyên nhân.
+const DEBUG_TEXT_COLOR_FLOW = true;
 // [SỬA LỖI FONT khi Edit Text] Font mặc định khi KHÔNG dò được font gốc của dòng chữ. Trước đây luôn là
 // 'Arial' (cứng ở nhiều nơi) nên bấm sửa chữ Times New Roman là chữ bị đổi sang Arial. Tài liệu hành chính
 // tiếng Việt gần như luôn là Times New Roman nên dùng làm mặc định (font gốc dò được từ PDF luôn được ưu tiên
@@ -3081,6 +3144,9 @@ let resizeAspect = 1;        // tỉ lệ w/h gốc của ảnh, giữ nguyên k
 let resizeStartBox = null;   // {x,y,w,h} pdf-space lúc bắt đầu kéo
 let resizeStartPdf = null;   // {x,y} pdf-space của con trỏ lúc bắt đầu kéo
 let resizeTargetEdit = null;
+// FIX: cờ bật/tắt log gỡ lỗi cho luồng Edit Text / Whiteout-Cover sync — mặc định TẮT (false) để
+// không in log liên tục ra console ở bản chạy thật; đổi thành true tạm thời khi cần soi lỗi.
+let DEBUG_EDIT_TEXT = false;
 // Hàm "chốt" (commit) ô nhập sửa chữ đang mở, nếu có — dùng để tránh mất chỉnh sửa cuối cùng
 // khi người dùng gõ xong rồi bấm thẳng vào một nút trên toolbar (Lưu PDF, Xuất Word...) mà
 // KHÔNG click ra chỗ khác trước. Trên Safari/Firefox (macOS), việc bấm vào <button> không luôn
@@ -3207,6 +3273,9 @@ async function closeCurrentPdf_(){
   pendingEditCommit = null;
   activeColorSelectionSpan = null;
   ocrPrefetchState = {};
+  pendingTextColor = null;
+  pendingTextTarget = null;
+  pendingSelectedTextColor = null;
 
   document.getElementById('filename').textContent = '';
   document.getElementById('fileInput').value = '';
@@ -4714,6 +4783,10 @@ async function renderPage(idx, opts){
   currentIndex = idx;
   selectedEditIndex = -1;
   hoverLine = null;
+  // pendingTextTarget (kind:'line') giữ tham chiếu trực tiếp tới object "line" của TRANG cũ — sang
+  // trang khác thì tham chiếu đó không còn hợp lệ, phải huỷ để tránh Select ở trang mới áp nhầm màu.
+  pendingTextColor = null;
+  pendingTextTarget = null;
   document.getElementById('pageNumInput').value = idx+1;
   const p = cur();
   if(!p) return; // phòng trường hợp idx không còn hợp lệ (trang vừa bị xoá bởi thao tác khác)
@@ -5494,6 +5567,32 @@ document.querySelectorAll('.tbtn[data-tool]').forEach(btn=>{
         ensureEditTextReady(currentIndex).then(()=> bulkEditRegion('edittext')).catch(err=>console.warn('Edit Text (vùng chọn) lỗi:', err));
         return;
       }
+      // FIX: Đổi màu text bằng Select không cần Edit Text — nếu đang có 1 khối chữ được CHỌN bằng
+      // Select và người dùng vừa chọn màu mới ở Color Picker (pendingSelectedTextColor), bấm lại
+      // nút Select phải CHỐT ngay màu đó vào khối chữ đang chọn. Phải gọi ở ĐÂY, TRƯỚC dòng
+      // "selectedEditIndex = -1" ngay bên dưới — nếu không, sẽ không còn biết đang áp màu cho khối
+      // chữ nào nữa. Không tạo handler cạnh tranh mới: tích hợp thẳng vào handler chung của mọi nút
+      // công cụ (.tbtn[data-tool]) đã có sẵn, chỉ chạy thêm bước này khi đúng là nút Select.
+      if(DEBUG_TEXT_COLOR_FLOW && tool === 'select'){
+        console.log('[SELECT_CLICK]', {
+          modeBefore: activeTool,
+          selectedEditIndex: selectedEditIndex,
+          pendingTextIndex: pendingTextTarget,
+          pendingTextColor: pendingTextColor
+        });
+      }
+      if(tool === 'select'){
+        applyPendingSelectedTextColor_();
+        // FIX: workflow Edit Text -> chọn màu -> click text -> Select. Phải gọi TRƯỚC dòng
+        // "selectedEditIndex = -1" ngay bên dưới (không tạo handler cạnh tranh mới, tích hợp thẳng
+        // vào handler chung của mọi nút công cụ đã có sẵn).
+        applyPendingTextColorClick_();
+      } else if(tool !== 'edittext' && (pendingTextColor || pendingTextTarget)){
+        // Rời khỏi Edit Text sang một công cụ khác (không phải Select) mà CHƯA bấm Select -> huỷ
+        // màu/mục tiêu đang chờ, tránh áp nhầm màu về sau.
+        pendingTextColor = null;
+        pendingTextTarget = null;
+      }
       activeTool = tool;
       document.querySelectorAll('.tbtn[data-tool]').forEach(b=>b.classList.remove('active'));
       btn.classList.add('active');
@@ -5665,19 +5764,56 @@ document.getElementById('fontColorSwatch').addEventListener('mousedown', ()=>{
 document.getElementById('fontColorSwatch').oninput = (e)=>{
   currentFontColor = e.target.value;
   if(activeColorSelectionSpan && activeColorSelectionSpan.isConnected){
-    // Chỉ đổi màu đúng phần chữ đã bôi đen (span vừa bọc ở mousedown phía trên) — không đụng tới
-    // phần còn lại của đoạn, và cũng không ghi đè ed.color (màu mặc định của cả đoạn) hay gọi
-    // refreshActiveEditInputFont() (vốn sẽ đổi màu container, ảnh hưởng tới phần chữ KHÔNG được chọn).
+    // (GIỮ NGUYÊN) Đang Edit Text và đã bôi đen một phần chữ trong ô đang sửa -> chỉ đổi màu đúng
+    // phần chữ đã bôi đen (span vừa bọc ở mousedown phía trên) — không đụng tới phần còn lại của
+    // đoạn, và cũng không ghi đè ed.color (màu mặc định của cả đoạn) hay gọi refreshActiveEditInputFont()
+    // (vốn sẽ đổi màu container, ảnh hưởng tới phần chữ KHÔNG được chọn).
     activeColorSelectionSpan.style.color = currentFontColor;
     if(activeEditInputEl) activeEditInputEl.dispatchEvent(new Event('input')); // để ô tự tính lại kích thước nếu cần
     return;
   }
-  // Không có vùng bôi đen riêng nào -> hành vi CŨ: đổi màu nguyên cả đoạn.
-  if(activeEditInputEl) recolorWholeActiveEditInput_(currentFontColor);
-  if(pages.length && selectedEditIndex>=0){
-    const ed = cur().edits[selectedEditIndex];
-    if(isTextEdit(ed)){ pushUndo(currentIndex); ed.color = currentFontColor; delete ed.colorRuns; redrawOverlay(); }
+  if(activeEditInputEl){
+    // (GIỮ NGUYÊN) Đang Edit Text, không bôi đen phần nào cụ thể -> đổi màu nguyên cả ô đang sửa
+    // như hành vi cũ.
+    recolorWholeActiveEditInput_(currentFontColor);
+    refreshActiveEditInputFont();
+    return;
   }
+  // FIX: workflow ĐỘC LẬP "Edit Text -> chọn màu -> click text -> Select" (xem khai báo
+  // pendingTextColor/pendingTextTarget và applyPendingTextColorClick_() ở dưới). Không có
+  // #editInput nào đang mở (nếu có đã return ở nhánh phía trên) và đang ở đúng công cụ "Edit Text"
+  // => người dùng vừa chọn màu Ở CHẾ ĐỘ EDIT TEXT, CHƯA hề click vào text nào hoặc đã click rồi
+  // nhưng đang đổi ý sang màu khác. CHỈ ghi nhớ TẠM màu đang chờ (không đụng tới bất kỳ text object
+  // nào ở đây, không pushUndo) — màu thật sự chỉ được CHỐT vào đúng text đã click khi bấm lại nút
+  // Select. KHÔNG được yêu cầu #editInput/activeEditInputEl để làm điều kiện — xem tiếp bên dưới.
+  if(activeTool === 'edittext'){
+    pendingTextColor = currentFontColor;
+    if(DEBUG_TEXT_COLOR_FLOW) console.log('[COLOR_SELECTED]', {
+      mode: activeTool,
+      selectedEditIndex: selectedEditIndex,
+      pendingTextColor: pendingTextColor,
+      currentFontColor: currentFontColor
+    });
+    if(DEBUG_TEXT_COLOR) console.log('[fontColorSwatch] pendingTextColor =', pendingTextColor, 'pendingTextTarget hiện tại =', pendingTextTarget);
+    refreshActiveEditInputFont();
+    return;
+  }
+  // FIX: Đổi màu text bằng Select không cần Edit Text.
+  // KHÔNG có #editInput nào đang mở => người dùng đang dùng công cụ Select và vừa click chọn 1 khối
+  // chữ trên PDF (selectedEditIndex >= 0), giờ chọn màu ở Color Picker. CHƯA áp màu ngay vào
+  // ed.color/pushUndo() ở đây — vì <input type="color"> có thể bắn sự kiện "input" RẤT NHIỀU LẦN
+  // liên tục trong lúc người dùng còn đang kéo chọn màu trong bảng màu của hệ điều hành, nếu
+  // pushUndo() mỗi lần thì Undo sẽ bị dồn rất nhiều bước rác cho đúng 1 thao tác đổi màu. Thay vào
+  // đó chỉ ghi nhớ TẠM vào pendingSelectedTextColor; màu thật sự được CHỐT vào đúng 1 lần
+  // (pushUndo + ed.color + xoá colorRuns) khi người dùng bấm lại nút Select — xem
+  // applyPendingSelectedTextColor_() và handler của .tbtn[data-tool="select"] bên dưới.
+  if(pages.length && selectedEditIndex>=0 && isTextEdit(cur().edits[selectedEditIndex])){
+    pendingSelectedTextColor = currentFontColor;
+    if(DEBUG_TEXT_COLOR) console.log('[fontColorSwatch] pendingSelectedTextColor =', pendingSelectedTextColor, 'cho edit#', selectedEditIndex);
+  }
+  // Không có khối chữ nào đang được chọn (hoặc đang chọn ảnh/whiteout) -> chỉ currentFontColor vừa
+  // cập nhật ở trên có tác dụng (dùng làm màu mặc định cho Add Text/Edit Text tiếp theo); không báo
+  // lỗi, không tạo Undo, không đổi bất kỳ text nào — đúng như yêu cầu.
   refreshActiveEditInputFont();
 };
 // SỬA LỖI (xem "pickingFontColor" ở trên): khi bảng chọn màu của hệ điều hành ĐÓNG LẠI (chọn xong
@@ -5876,6 +6012,119 @@ function newTextOpacityProps_(){
 })();
 // Khi chọn (select) một khối văn bản trên trang, đồng bộ 2 ô Font chữ / Cỡ chữ theo khối đó
 // để người dùng biết đang chỉnh sửa với thông số nào.
+// FIX: Đổi màu text bằng Select không cần Edit Text.
+// Chốt màu "đang chờ" (pendingSelectedTextColor, xem #fontColorSwatch.oninput ở trên) vào ĐÚNG khối
+// chữ đang được chọn bằng công cụ Select (cur().edits[selectedEditIndex]) — gọi đúng 1 lần khi
+// người dùng bấm lại nút Select, PHẢI được gọi TRƯỚC khi selectedEditIndex bị reset về -1 (xem
+// handler .tbtn[data-tool] bên dưới).
+//  - Chỉ áp dụng khi đang chọn MỘT KHỐI CHỮ (isTextEdit) — không áp dụng cho ảnh/whiteout (những
+//    trường hợp này vốn dĩ pendingSelectedTextColor cũng sẽ không bao giờ được set, xem oninput).
+//  - Đổi màu CẢ khối về 1 màu duy nhất: ed.color = pendingSelectedTextColor; xoá hẳn ed.colorRuns
+//    (khác với việc tô màu TỪNG PHẦN chữ khi đang Edit Text — cơ chế đó dùng colorRuns, không đụng
+//    tới ở đây).
+//  - pushUndo() ĐÚNG 1 LẦN cho cả thao tác, không phụ thuộc vào việc Color Picker đã bắn bao nhiêu
+//    sự kiện "input" trong lúc chọn màu.
+function applyPendingSelectedTextColor_(){
+  if(!pendingSelectedTextColor){ return; }
+  if(!pages.length || selectedEditIndex < 0){ pendingSelectedTextColor = null; return; }
+  const ed = cur().edits[selectedEditIndex];
+  if(ed && isTextEdit(ed)){
+    pushUndo(currentIndex);
+    ed.color = pendingSelectedTextColor;
+    delete ed.colorRuns; // chọn cả khối rồi đổi màu -> về lại 1 màu duy nhất cho toàn bộ đoạn
+    currentFontColor = pendingSelectedTextColor;
+    const colorSel = document.getElementById('fontColorSwatch');
+    if(colorSel) colorSel.value = pendingSelectedTextColor;
+    if(DEBUG_TEXT_COLOR) console.log('[applyPendingSelectedTextColor_] áp màu', pendingSelectedTextColor, 'cho edit#', selectedEditIndex);
+    redrawOverlay();
+  }
+  pendingSelectedTextColor = null;
+}
+// FIX (workflow ĐỘC LẬP): Edit Text -> chọn màu -> click text -> Select.
+// CHỐT (commit) pendingTextColor vào ĐÚNG mục tiêu đã ghi nhớ ở pendingTextTarget (xem
+// resolvePendingTextClickTarget_() gọi từ editLineAt()) — gọi đúng 1 lần khi người dùng bấm lại nút
+// Select, PHẢI được gọi TRƯỚC khi selectedEditIndex bị reset về -1 (xem handler .tbtn[data-tool]).
+// Hoàn toàn KHÔNG phụ thuộc vào activeEditInputEl/#editInput — mục tiêu đã được xác định sẵn từ lúc
+// click text, ở đây chỉ còn việc áp màu.
+//  - pendingTextTarget.kind === 'edit': text object NÀY đã có sẵn trong cur().edits (do trước đó đã
+//    từng Add Text/Edit Text, hoặc đã được click qua workflow này rồi) -> đổi thẳng ed.color, xoá
+//    hẳn ed.colorRuns (Cơ chế A: đổi màu CẢ text object — không đụng tới Cơ chế B/colorRuns từng
+//    phần chữ, cơ chế đó chỉ chạy khi thực sự mở Edit Input và bôi đen 1 phần).
+//  - pendingTextTarget.kind === 'line': dòng chữ GỐC PDF/OCR chưa từng được sửa, nên CHƯA có edit
+//    nào để đổi màu — tạo MỘT edit mới NGAY TẠI ĐÂY (dùng lại đúng cách đo khung/che nền như
+//    editLineAt() vẫn dùng khi commit một chỉnh sửa mới), giữ NGUYÊN nội dung chữ gốc (KHÔNG đổi
+//    text) và áp thẳng pendingTextColor — đây là hành động ĐỘC LẬP với việc sửa nội dung chữ.
+// pushUndo() ĐÚNG 1 LẦN cho cả thao tác, không phụ thuộc số sự kiện "input" mà Color Picker bắn ra.
+function applyPendingTextColorClick_(){
+  if(!pendingTextColor || !pendingTextTarget){
+    if(DEBUG_TEXT_COLOR_FLOW) console.log('[SELECT_TARGET] KHÔNG có gì để commit ->', { pendingTextColor, pendingTextTarget });
+    pendingTextColor = null; pendingTextTarget = null; return;
+  }
+  if(!pages.length){ pendingTextColor = null; pendingTextTarget = null; return; }
+  const p = cur();
+  const colorSel = document.getElementById('fontColorSwatch');
+  if(DEBUG_TEXT_COLOR_FLOW){
+    const dbgEd = pendingTextTarget.kind==='edit' ? p.edits[pendingTextTarget.index] : null;
+    console.log('[SELECT_TARGET]', {
+      targetIndex: pendingTextTarget.kind==='edit' ? pendingTextTarget.index : '(chưa có, sẽ tạo mới)',
+      targetType: pendingTextTarget.kind,
+      targetText: pendingTextTarget.kind==='edit' ? (dbgEd && dbgEd.text) : (pendingTextTarget.line && pendingTextTarget.line.text),
+      oldColor: pendingTextTarget.kind==='edit' ? (dbgEd && dbgEd.color) : '(dòng gốc PDF, chưa có ed.color)'
+    });
+  }
+  if(pendingTextTarget.kind === 'edit'){
+    const ed = p.edits[pendingTextTarget.index];
+    if(ed && isTextEdit(ed)){
+      if(DEBUG_TEXT_COLOR_FLOW) console.log('[COLOR_COMMIT]', { index: pendingTextTarget.index, oldColor: ed.color, newColor: pendingTextColor, text: ed.text });
+      pushUndo(currentIndex);
+      ed.color = pendingTextColor;
+      delete ed.colorRuns; // Cơ chế A: đổi màu cả text object -> về lại 1 màu duy nhất cho toàn bộ đoạn
+      currentFontColor = pendingTextColor;
+      if(colorSel) colorSel.value = pendingTextColor;
+      selectedEditIndex = pendingTextTarget.index;
+      redrawOverlay();
+      if(DEBUG_TEXT_COLOR_FLOW) console.log('[COLOR_COMMITTED]', { index: pendingTextTarget.index, color: ed.color, colorRuns: ed.colorRuns });
+      if(DEBUG_TEXT_COLOR) console.log('[applyPendingTextColorClick_] áp màu', pendingTextColor, 'cho edit#', pendingTextTarget.index);
+    } else if(DEBUG_TEXT_COLOR_FLOW){
+      console.log('[COLOR_COMMIT] BỎ QUA vì không tìm thấy text object hợp lệ tại index', pendingTextTarget.index, '-> ed =', ed);
+    }
+  } else if(pendingTextTarget.kind === 'line'){
+    const line = pendingTextTarget.line;
+    const srcFont = inferLineFontForEdit_(p, line);
+    const fontSize = srcFont.size || line.fontSize || 12;
+    const padY = Math.max(3, fontSize*0.35), padX = Math.max(2, fontSize*0.1);
+    const cvL = clampCoverToNeighbors_(pendingTextTarget.lines, line, line.y0 - padY, line.y1 + padY);
+    const cx0 = line.x0 - padX, cy0 = cvL.top, cw = (line.x1-line.x0) + padX*2, ch = cvL.bottom - cvL.top;
+    const bgColor = sampleBackgroundColor(cx0, cy0, cw, ch);
+    const tx0 = line.x0 - 2;
+    const ty0 = line.y0 + (((line.y1 - line.y0) - fontSize*1.15) / 2);
+    const auto = computeAutoBoxSize(line.text, srcFont.family, fontSize, tx0, srcFont.bold, srcFont.italic);
+    if(DEBUG_TEXT_COLOR_FLOW) console.log('[COLOR_COMMIT]', { index: '(mới)', oldColor: '(chữ gốc PDF, chưa có màu riêng)', newColor: pendingTextColor, text: line.text });
+    pushUndo(currentIndex);
+    removeOverlappingTextEdits(p, Math.min(cx0,tx0), Math.min(cy0,ty0), Math.max(cx0+cw, tx0+auto.w), Math.max(cy0+ch, ty0+auto.h));
+    const newIdx = p.edits.length;
+    p.edits.push({
+      type: pendingTextTarget.editType, x: tx0, y: ty0, w: auto.w, h: auto.h,
+      coverX: cx0, coverY: cy0, coverW: cw, coverH: ch,
+      text: line.text, fontSize, fontFamily: srcFont.family, color: pendingTextColor,
+      bold: srcFont.bold, italic: srcFont.italic, underline: false, align: 'left', bg:true, bgColor,
+      ...newTextOpacityProps_(),
+      srcX0: line.x0, srcY0: line.y0, srcX1: line.x1, srcY1: line.y1,
+      origLineW: line.x1 - line.x0,
+      nativeItemIdxs: line.itemIdxs || null
+    });
+    currentFontColor = pendingTextColor;
+    if(colorSel) colorSel.value = pendingTextColor;
+    selectedEditIndex = newIdx;
+    redrawOverlay();
+    if(DEBUG_TEXT_COLOR_FLOW) console.log('[COLOR_COMMITTED]', { index: newIdx, color: p.edits[newIdx].color, colorRuns: p.edits[newIdx].colorRuns });
+    if(DEBUG_TEXT_COLOR) console.log('[applyPendingTextColorClick_] tạo edit mới #', newIdx, 'áp màu', pendingTextColor);
+  } else if(DEBUG_TEXT_COLOR_FLOW){
+    console.log('[COLOR_COMMIT] BỎ QUA vì pendingTextTarget.kind không hợp lệ:', pendingTextTarget);
+  }
+  pendingTextColor = null;
+  pendingTextTarget = null;
+}
 function syncFontControlsToSelection(){
   if(!pages.length || selectedEditIndex<0) return;
   const ed = cur().edits[selectedEditIndex];
@@ -6404,6 +6653,8 @@ document.getElementById('btnUndo').onclick = ()=>{
   if(st && st.length){
     cur().edits = JSON.parse(st.pop());
     selectedEditIndex = -1;
+    pendingTextColor = null;
+    pendingTextTarget = null;
     redrawOverlay();
   }
 };
@@ -6413,6 +6664,8 @@ document.getElementById('btnClearPage').onclick = ()=>{
     pushUndo(currentIndex);
     cur().edits = [];
     selectedEditIndex = -1;
+    pendingTextColor = null;
+    pendingTextTarget = null;
     redrawOverlay();
   }
 };
@@ -6744,7 +6997,36 @@ function openEditInput(screenX, screenY, screenW, screenH, initialText, onCommit
   // của trang tại vị trí đang sửa (đã lấy mẫu pixel thật từ canvas, xem sampleBackgroundColor) để
   // set làm nền cho ô nhập — nhờ vậy khi đang gõ, ô nhập hoà lẫn với màu giấy/nền xung quanh thay
   // vì luôn hiện thành một khối TRẮNG CỨNG rõ rệt tách biệt khỏi phần còn lại của tài liệu.
-  inp.style.background = sampleBackgroundColor(screenX/scale, screenY/scale, Math.max(1,screenW/scale), Math.max(1,screenH/scale));
+  // SỬA LỖI "nền đè kín, cảm giác một lớp UI khác chặn tầm nhìn": trước đây set thẳng màu ĐẶC 100%
+  // (background:'#rrggbb'). Ở ĐA SỐ trường hợp — sửa lại một chữ ĐÃ TỪNG được sửa trước đó — phần
+  // che nền THẬT SỰ (giấu chữ gốc PDF bên dưới) đã được vẽ SẴN trên canvas (getCoverRect/drawEdit,
+  // độc lập với #editInput này), nên nền của #editInput không cần đặc 100% nữa — chỉ cần gần như
+  // đặc (96%) để chữ đang gõ vẫn rõ, nhưng vẫn "nhìn xuyên thấu" được một chút, không còn cảm giác
+  // một khối bịt kín cứng nhắc. Dùng lại đúng hexToRgba() đã có sẵn trong file (không tạo hàm mới).
+  // LƯU Ý QUAN TRỌNG (không đẩy alpha xuống thấp hơn nữa/không trong suốt hẳn): với đúng LẦN ĐẦU
+  // TIÊN bấm sửa một dòng chữ gốc PDF CHƯA từng được sửa (chưa có edit/cover nào trong p.edits),
+  // chữ GỐC thật vẫn đang hiển thị trực tiếp trên pdfCanvas NGAY BÊN DƯỚI #editInput — nếu nền ở
+  // đây trong suốt hẳn (hoặc dùng mix-blend-mode kiểu 'multiply' với nền trắng, vốn không có tác
+  // dụng che gì cả), chữ gốc và chữ mới đang gõ sẽ CHỒNG LÊN NHAU, rối mắt hơn hẳn so với hiện tại
+  // — đây là lý do khoảng bán-trong-suốt (96%) được chọn: vừa đủ "xuyên thấu" cho các dòng lân cận
+  // nhìn có chiều sâu tự nhiên hơn, vừa đủ đặc để không lộ chữ gốc chồng chữ mới ở lần sửa đầu tiên.
+  // SỬA LỖI (lần 2) "nền đè lên hàng chữ bên dưới, không nhìn xuyên được tài liệu gốc lúc gõ":
+  // Trước đây LUÔN dùng alpha cố định 0.96 (gần như đặc) + backdrop-filter:blur cho MỌI trường
+  // hợp, bất kể dòng đang sửa đã có sẵn 1 lớp nền che (cover) trên canvas hay chưa — khiến ô nhập
+  // luôn trông như một khối gần như bịt kín, kể cả khi việc "che chữ gốc" đã có canvas lo rồi.
+  // "opts.hasCover" (xem các nơi gọi openEditInput — editLineAt/dblclick reopen) cho biết: dòng
+  // đang sửa CÓ SẴN edit cũ với `bg:true` không, tức đã có 1 hình chữ nhật che chữ gốc PDF được vẽ
+  // SẴN trên canvas, độc lập với #editInput này (getCoverRect/drawEdit). Nếu có:
+  //   -> #editInput được set gần như TRONG SUỐT (alpha thấp) vì không còn gì cần tự che thêm nữa,
+  //      nhờ vậy nhìn xuyên thấy rõ trang tài liệu/các dòng lân cận ngay cả trong lúc đang gõ.
+  // Nếu KHÔNG (đang sửa lần đầu một dòng chữ GỐC PDF/OCR, chữ gốc vẫn hiển thị trực tiếp trên
+  // pdfCanvas ngay dưới khung, chưa có cover nào) -> vẫn cần giữ nền gần như đặc, nếu không chữ gốc
+  // và chữ mới đang gõ sẽ chồng lên nhau, rối mắt hơn hẳn (xem giải thích gốc ở trên).
+  const hasCover = !!opts.hasCover;
+  const editBgHex = sampleBackgroundColor(screenX/scale, screenY/scale, Math.max(1,screenW/scale), Math.max(1,screenH/scale));
+  inp.style.background = hexToRgba(editBgHex, hasCover ? 0.5 : 0.92);
+  // backdrop-filter:blur ĐÃ BỎ (xem chú thích ở CSS #editInput phía trên) — chỉ làm nội dung phía
+  // sau bị nhòe chứ không giúp "nhìn xuyên" hơn, mâu thuẫn với đúng mục tiêu ở đây.
   // Dùng đúng font chữ / cỡ chữ đang được chọn trên thanh công cụ (currentFontFamily/currentFontSize)
   // thay vì luôn cứng Arial — nhờ đó ô nhập liệu hiển thị đúng như chữ sẽ được lưu, và nếu người
   // dùng đổi 2 ô "Font chữ"/"Cỡ chữ" trong lúc đang gõ, chữ trong ô sẽ đổi theo NGAY LẬP TỨC
@@ -6805,7 +7087,12 @@ function openEditInput(screenX, screenY, screenW, screenH, initialText, onCommit
 
   inp.innerHTML = buildEditableHtmlFromRuns_(initialText || '', opts.colorRuns, defaultColor);
   inp.style.width = Math.max(screenW, 80)+'px';
-  inp.style.height = Math.max(screenH, 22)+'px';
+  // Chiều cao khởi tạo (trước khi sizeToContent() đo lại chính xác theo scrollHeight ngay bên
+  // dưới): dùng fontPx*1.08 (khớp với CSS min-height:1.08em — đã siết lại từ 1.15em cũ, xem chú
+  // thích ở CSS #editInput) thay vì hằng số 22px cố định cũ — để ngay cả trong 1 khung hình đầu
+  // tiên (trước khi JS kịp đo lại), khung không bị "nháy" to hơn hẳn mức cần thiết đối với các
+  // dòng chữ cỡ nhỏ.
+  inp.style.height = Math.max(screenH, fontPx*1.08)+'px';
   pageWrap.appendChild(inp);
   activeEditInputEl = inp;
   sizeToContent();
@@ -6997,6 +7284,11 @@ overlayCanvas.addEventListener('mousedown', (e)=>{
       return;
     }
     const idx = hitTestEdits(px, py);
+    // FIX: Đổi màu text bằng Select không cần Edit Text — nếu người dùng bấm chọn một khối chữ
+    // KHÁC (hoặc bấm ra vùng trống) trong khi vẫn còn một màu "đang chờ áp dụng" (pendingSelectedTextColor)
+    // dành cho khối chữ được chọn TRƯỚC ĐÓ, huỷ luôn màu chờ đó — tránh áp nhầm màu sang khối chữ
+    // vừa chọn mới nếu lỡ bấm lại nút Select sau đó.
+    if(idx !== selectedEditIndex) pendingSelectedTextColor = null;
     selectedEditIndex = idx;
     if(idx>=0){
       pushUndo(currentIndex);
@@ -7236,7 +7528,198 @@ function clampCoverToNeighbors_(lines, line, top, bottom){
     bottom: Math.max(line.y1, Math.min(bottom, nextMid)),
   };
 }
+// FIX: Prevent Whiteout from covering neighboring text lines
+// Giống hệt clampCoverToNeighbors_ nhưng xét theo trục NGANG (x) thay vì trục dọc (y) — dùng để
+// khung nền che không tràn sang chữ/cột ở bên TRÁI hoặc bên PHẢI khi trang PDF có nhiều cột hoặc
+// nhiều khối chữ đặt sát nhau theo chiều ngang (ví dụ bảng biểu, form nhiều ô trên cùng 1 hàng).
+function clampCoverHorizontally_(lines, line, left, right){
+  if(!lines || !lines.length || !line) return { left, right };
+  const cxLine = (line.x0 + line.x1) / 2;
+  let prevMid = -Infinity, nextMid = Infinity;
+  for(const o of lines){
+    if(!o || o === line) continue;
+    // Chỉ xét dòng nằm cùng khoảng dọc (cùng hàng/cùng dòng ngang) với dòng này — ứng viên là cột
+    // hoặc ô bên cạnh, không phải dòng trên/dưới (dòng trên/dưới đã có clampCoverToNeighbors_ lo).
+    if(!(Math.min(o.y1, line.y1) > Math.max(o.y0, line.y0))) continue;
+    // Bỏ qua phần tử chồng lấn theo chiều ngang với dòng này (thuộc cùng 1 khối chữ, không phải
+    // cột/ô khác).
+    if(o.x1 > line.x0 && o.x0 < line.x1) continue;
+    const cxO = (o.x0 + o.x1) / 2;
+    if(cxO < cxLine) prevMid = Math.max(prevMid, (o.x1 + line.x0) / 2);
+    else nextMid = Math.min(nextMid, (line.x1 + o.x0) / 2);
+  }
+  return {
+    left: Math.min(line.x0, Math.max(left, prevMid)),
+    right: Math.max(line.x1, Math.min(right, nextMid)),
+  };
+}
+// FIX: Keep Text Bounding Box independent from Whiteout/Cover Box
+// Đồng bộ lại KHUNG NỀN CHE (ed.coverX/coverY/coverW/coverH) của một chỉnh sửa chữ (ed) dựa trên
+// khung Text Bounding Box HIỆN TẠI (ed.x/ed.y/ed.w/ed.h) — gọi hàm này mỗi khi khung chữ vừa được
+// người dùng kéo chỉnh xong (resize bằng 8 tay cầm của công cụ Select).
+//
+// Nguyên tắc (xem yêu cầu ở đầu file/khung trò chuyện — mục A, B, C, D, F):
+//  1) KHÔNG bao giờ đụng tới ed.x/ed.y/ed.w/ed.h (khung chữ) — hàm này CHỈ ghi 4 trường cover*.
+//  2) Vùng CẦN che tối thiểu ("want") = hợp (union) giữa khung chữ hiện tại và vùng chữ GỐC của PDF
+//     (ed.srcX0..srcY1, nếu có) — nhờ vậy khung chữ dù bị kéo NHỎ lại cỡ nào, chữ gốc phía dưới vẫn
+//     không bao giờ lộ ra; và nếu khung chữ được kéo RỘNG ra, vùng che cũng nới theo (trong giới hạn
+//     ở bước 3).
+//  3) Vùng ĐƯỢC PHÉP che tối đa ("safe") = không vượt quá điểm giữa (midpoint) khoảng cách với dòng
+//     chữ lân cận (trên/dưới: clampCoverToNeighbors_; trái/phải/cột khác: clampCoverHorizontally_).
+//  4) Cover cuối cùng = GIAO giữa (2) và (3) -> co giãn theo khung chữ mới nhưng tuyệt đối không
+//     tràn sang dòng/cột lân cận, giải quyết đúng lỗi "Whiteout đè lên dòng trên/dưới".
+// Hàm dùng lại đúng các hàm sẵn có (editTextLinesFor, clampCoverToNeighbors_) thay vì dựng hệ thống
+// song song mới, theo đúng yêu cầu.
+// FIX (theo yêu cầu người dùng): "Kéo chỉnh khung Text Box thì viền trắng (nền che) phải ĐI CÙNG
+// với khung này" — trước đây (xem lịch sử comment ở trên) vùng CẦN che tối thiểu luôn là HỢP giữa
+// khung chữ hiện tại và vùng chữ GỐC của PDF (srcX0..srcY1), mục đích là để kéo khung chữ nhỏ cỡ
+// nào cũng không bao giờ lộ lại chữ gốc. Hệ quả không mong muốn: nếu dòng chữ gốc rộng/cao hơn
+// khung chữ mà người dùng vừa kéo nhỏ lại, viền trắng vẫn "neo" theo kích thước dòng gốc đó, nhìn
+// như viền trắng không hề co theo Text Box đang kéo — đúng như phản ánh của người dùng.
+// Từ giờ, vùng CẦN che chỉ còn dựa vào ĐÚNG khung Text Box hiện tại (ed.x/y/w/h) + một khoảng đệm
+// (padX/padY) cố định nhỏ, KHÔNG còn cộng thêm vùng chữ gốc nữa -> viền trắng luôn bám sát, co giãn
+// 1:1 theo đúng khung người dùng đang kéo. Vùng AN TOÀN tối đa quanh dòng/cột lân cận (bước 3 ở
+// dưới) vẫn được giữ nguyên, để nếu người dùng kéo khung LỚN hơn hẳn, viền trắng vẫn không bao giờ
+// tràn sang đè lên dòng/cột chữ bên cạnh — chỉ bỏ đúng phần ép "không được nhỏ hơn dòng gốc".
+// Đánh đổi: nếu người dùng chủ động kéo khung nhỏ hơn hẳn dòng chữ GỐC của PDF (thường không cần
+// thiết vì lúc đó chữ mới đã đủ ngắn), phần rìa dòng gốc ngoài khung có thể không còn được che kín
+// tuyệt đối — đây là lựa chọn CÓ CHỦ ĐÍCH theo đúng yêu cầu "viền trắng đi theo Text Box", áp dụng
+// đúng cho hành động kéo TAY (manualBox) chứ không đụng tới các nhánh tự nới khung theo nội dung
+// gõ mới (auto-grow) ở nơi khác trong file.
+function syncCoverToSafeArea_(ed){
+  if(!ed || !ed.bg || !isTextEdit(ed)) return; // chỉ áp dụng cho khối chữ có nền che (Edit Text/OCR fix/Text fix)
+  const p = cur();
+  if(!p) return;
+  const lines = editTextLinesFor(p) || [];
+  const fontSize = ed.fontSize || 12;
+  const padY = Math.max(3, fontSize*0.35), padX = Math.max(2, fontSize*0.1);
+
+  // Dòng chữ GỐC chỉ còn dùng để TRA CỨU các dòng lân cận thật quanh nó (bước an toàn ở dưới),
+  // không còn dùng để ép cover phải lớn hơn nó nữa (xem giải thích ở trên).
+  const hasSrc = typeof ed.srcX0 === 'number' && typeof ed.srcY0 === 'number' &&
+                 typeof ed.srcX1 === 'number' && typeof ed.srcY1 === 'number';
+  const srcX0 = hasSrc ? ed.srcX0 : ed.x, srcY0 = hasSrc ? ed.srcY0 : ed.y;
+  const srcX1 = hasSrc ? ed.srcX1 : ed.x+ed.w, srcY1 = hasSrc ? ed.srcY1 : ed.y+ed.h;
+  const pseudoLine = { x0:srcX0, x1:srcX1, y0:srcY0, y1:srcY1 };
+
+  // (2) Vùng CẦN che = ĐÚNG khung Text Box hiện tại + đệm nhỏ — bám sát 1:1 theo khung đang kéo.
+  const wantX0 = ed.x - padX;
+  const wantY0 = ed.y - padY;
+  const wantX1 = ed.x + ed.w + padX;
+  const wantY1 = ed.y + ed.h + padY;
+
+  // (3) Vùng an toàn tối đa quanh dòng/cột lân cận — vẫn giữ để kéo khung LỚN hơn không tràn sang
+  // dòng/cột chữ bên cạnh.
+  const safeV = clampCoverToNeighbors_(lines, pseudoLine, wantY0, wantY1);
+  const safeH = clampCoverHorizontally_(lines, pseudoLine, wantX0, wantX1);
+
+  // (4) Cover cuối = giao giữa (2) và (3): co giãn ĐÚNG theo khung chữ, chỉ bị chặn bớt khi khung
+  // được kéo lớn tới mức chạm dòng/cột lân cận.
+  const cX0 = Math.max(wantX0, safeH.left);
+  const cY0 = Math.max(wantY0, safeV.top);
+  const cX1 = Math.min(wantX1, safeH.right);
+  const cY1 = Math.min(wantY1, safeV.bottom);
+
+  ed.coverX = cX0;
+  ed.coverY = cY0;
+  ed.coverW = Math.max(1, cX1 - cX0);
+  ed.coverH = Math.max(1, cY1 - cY0);
+
+  if(DEBUG_EDIT_TEXT){
+    console.log('[syncCoverToSafeArea_]', { box:{x:ed.x,y:ed.y,w:ed.w,h:ed.h}, cover:{x:ed.coverX,y:ed.coverY,w:ed.coverW,h:ed.coverH} });
+  }
+}
+// FIX (workflow ĐỘC LẬP): Edit Text -> chọn màu -> click text -> Select.
+// Khi đang ở công cụ "Edit Text" VÀ đã có màu đang chờ (pendingTextColor, người dùng vừa chọn ở
+// Color Picker trong lúc KHÔNG mở #editInput nào — xem #fontColorSwatch.oninput), một cú CLICK vào
+// text chỉ nhằm mục đích GHI NHỚ mục tiêu (pendingTextTarget) để chờ bấm Select — TUYỆT ĐỐI không
+// được mở #editInput, không yêu cầu bất kỳ thao tác sửa nội dung/Space/Enter/Tab nào. Dùng lại
+// CHÍNH cơ chế xác định dòng chữ (hit-test theo "lines"/hitTestEdits) mà editLineAt() vẫn dùng,
+// không tạo hệ thống hit-test thứ hai.
+function resolvePendingTextClickTarget_(px, py, editType, customLines){
+  const p = cur();
+  const lines = customLines || (editType==='ocrfix' ? p.ocrLines : p.nativeLines);
+  let line = null;
+  if(lines && lines.length){
+    const padX = 5, padY = 6;
+    line = lines.find(l => px>=l.x0*scale-padX && px<=l.x1*scale+padX && py>=l.y0*scale-padY && py<=l.y1*scale+padY);
+    if(!line){
+      const maxSnap = 16;
+      let best = null, bestDist = Infinity;
+      for(const l of lines){
+        const cx = Math.max(l.x0*scale, Math.min(px, l.x1*scale));
+        const cy = Math.max(l.y0*scale, Math.min(py, l.y1*scale));
+        const d = Math.hypot(px-cx, py-cy);
+        if(d < bestDist){ bestDist = d; best = l; }
+      }
+      if(best && bestDist <= maxSnap) line = best;
+    }
+  }
+  if(!line){
+    // Không trúng dòng chữ gốc/OCR nào ở gần điểm bấm -> kiểm tra có đúng đang bấm vào MỘT TEXT OBJECT
+    // đã có sẵn trong edits không (Add Text/Edit Text trước đó). Chỉ TEXT mới được ghi nhận làm mục
+    // tiêu — bấm trúng ảnh/whiteout/highlight/vẽ tay thì KHÔNG được coi là mục tiêu đổi màu chữ.
+    const hitIdx = hitTestEdits(px, py);
+    if(hitIdx >= 0 && isTextEdit(p.edits[hitIdx])){
+      pendingTextTarget = { kind:'edit', index: hitIdx };
+      selectedEditIndex = hitIdx;
+      syncFontControlsToSelection();
+      if(DEBUG_TEXT_COLOR) console.log('[resolvePendingTextClickTarget_] chọn text object có sẵn #', hitIdx);
+    } else {
+      // Bấm ra vùng trống hoặc trúng object không phải text -> không có mục tiêu, huỷ mục tiêu cũ
+      // (nếu có) để tránh áp nhầm màu khi bấm Select sau đó.
+      pendingTextTarget = null;
+      selectedEditIndex = -1;
+      if(DEBUG_TEXT_COLOR) console.log('[resolvePendingTextClickTarget_] không trúng text nào, huỷ pendingTextTarget');
+    }
+    hoverLine = null;
+    redrawOverlay();
+    return;
+  }
+  // Trúng đúng một dòng chữ gốc PDF/OCR. Nếu dòng này đã có sẵn 1 edit trùng vị trí (đã từng sửa
+  // trước đó) thì ghi nhận mục tiêu là chính edit đó; nếu CHƯA, ghi nhận mục tiêu là dòng chữ gốc —
+  // edit tương ứng cho dòng gốc này CHỈ được TẠO RA khi thật sự COMMIT màu lúc bấm Select (xem
+  // applyPendingTextColorClick_), để không để lại edit "vô hình" nào nếu người dùng không bấm Select.
+  const existing = findOverlappingTextEdit(p.edits, line.x0, line.y0, line.x1, line.y1);
+  if(existing){
+    pendingTextTarget = { kind:'edit', index: existing.index };
+    selectedEditIndex = existing.index;
+  } else {
+    pendingTextTarget = { kind:'line', line, editType, lines };
+    selectedEditIndex = -1;
+  }
+  syncFontControlsToSelection();
+  hoverLine = null;
+  redrawOverlay();
+  if(DEBUG_TEXT_COLOR) console.log('[resolvePendingTextClickTarget_] pendingTextTarget =', pendingTextTarget);
+}
 function editLineAt(px, py, editType, customLines){
+  // FIX (workflow ĐỘC LẬP): Edit Text -> chọn màu -> click text -> Select — xem giải thích đầy đủ ở
+  // khai báo pendingTextColor/pendingTextTarget và resolvePendingTextClickTarget_()/
+  // applyPendingTextColorClick_() ở trên. Phải chặn NGAY TỪ ĐÂY (đầu editLineAt — nơi DUY NHẤT mà
+  // mọi cú click vào text lúc đang ở công cụ Edit Text đều đi qua, dù bấm qua overlayCanvas hay qua
+  // #textLayer/span), để KHÔNG bao giờ mở #editInput trong lúc đang có màu chờ áp dụng.
+  if(DEBUG_TEXT_COLOR_FLOW && activeTool === 'edittext' && (editType === 'textfix' || editType === 'ocrfix')){
+    // Log NGAY LÚC VÀO editLineAt() lúc đang ở Edit Text, TRƯỚC khi biết có chặn được hay không —
+    // nếu pendingTextColor rỗng ở đây dù bạn vừa chọn màu, nghĩa là màu đã bị mất/không được lưu
+    // giữa lúc chọn màu và lúc click text (lỗi nằm ở GIAI ĐOẠN 1, không phải ở click).
+    console.log('[TEXT_CLICKED]', {
+      clickedX: px, clickedY: py,
+      pendingTextColor: pendingTextColor,
+      selectedEditIndexBefore: selectedEditIndex
+    });
+  }
+  if(activeTool === 'edittext' && pendingTextColor && (editType === 'textfix' || editType === 'ocrfix')){
+    resolvePendingTextClickTarget_(px, py, editType, customLines);
+    if(DEBUG_TEXT_COLOR_FLOW) console.log('[TEXT_CLICKED] sau khi resolve ->', {
+      hitIndex: pendingTextTarget && pendingTextTarget.kind==='edit' ? pendingTextTarget.index : -1,
+      pendingTextTargetKind: pendingTextTarget ? pendingTextTarget.kind : null,
+      selectedEditIndex: selectedEditIndex,
+      pendingTextIndex: pendingTextTarget,
+      pendingTextColor: pendingTextColor
+    });
+    return;
+  }
   const p = cur();
   const lines = customLines || (editType==='ocrfix' ? p.ocrLines : p.nativeLines);
   let line = null;
@@ -7295,7 +7778,7 @@ function editLineAt(px, py, editType, customLines){
         }
         else { p.edits.splice(hitIdx,1); selectedEditIndex = -1; }
         redrawOverlay();
-      }, { fixedBox: !!ed.manualBox, colorRuns: ed.colorRuns, defaultColor: ed.color });
+      }, { fixedBox: !!ed.manualBox, colorRuns: ed.colorRuns, defaultColor: ed.color, hasCover: !!ed.bg });
       return;
     }
     // Vùng hoàn toàn trống -> cho phép gõ chữ MỚI ngay tại đúng điểm vừa bấm, không giới hạn
@@ -7368,6 +7851,27 @@ function editLineAt(px, py, editType, customLines){
     existing ? !!existing.edit.underline : false,
     existing ? (existing.edit.align || 'left') : 'left'
   );
+  // FIX (đổi màu chữ bằng Edit Text -> chọn màu -> click text -> Select không có tác dụng, phải gõ
+  // thêm Space/đổi nội dung mới thấy màu cập nhật):
+  // Nguyên nhân gốc nằm ở đúng điều kiện "không có gì thay đổi -> bỏ qua" ngay bên dưới
+  // (`if(val === initialText && ... currentFontColor === (existing ? ... : currentFontColor) ...)`).
+  // Khi dòng chữ này CHƯA từng được sửa (existing = null/undefined, tức đang sửa lần đầu một dòng
+  // chữ GỐC của PDF/OCR), vế so sánh màu cũ viết là `(existing ? (existing.edit.color||'#000000') :
+  // currentFontColor)` — nhánh else của nó trả về CHÍNH `currentFontColor`, nên biểu thức trở thành
+  // `currentFontColor === currentFontColor`, LUÔN LUÔN đúng bất kể người dùng vừa đổi màu gì ở
+  // #fontColorSwatch. Kết quả: nếu người dùng CHỈ đổi màu (không gõ thêm chữ nào), toàn bộ điều kiện
+  // "không đổi gì" bị đánh giá là true một cách sai lệch -> hàm return sớm, không hề tạo/cập nhật edit
+  // nào -> màu vừa chọn bị ô nhập âm thầm loại bỏ ngay khi "chốt" (commit khi blur, ví dụ do bấm nút
+  // Select). Đây chính là lý do trước đây phải gõ thêm dấu cách hoặc sửa nội dung: khi đó val !==
+  // initialText nên điều kiện "không đổi gì" sai ngay từ điều kiện đầu tiên, hàm mới chạy tiếp xuống
+  // nhánh thực sự lưu `color: currentFontColor` vào edit mới.
+  // Cách sửa: chụp lại "màu tại thời điểm MỞ ô nhập" (baseColor) làm chuẩn để so sánh — đúng bằng giá
+  // trị mà setActiveEditFont() vừa gán cho currentFontColor ở trên (existing.edit.color cho dòng đã
+  // từng sửa, hoặc giữ nguyên currentFontColor hiện tại cho dòng gốc chưa từng sửa) — rồi so sánh
+  // currentFontColor (đọc lại lúc COMMIT, sau khi người dùng đã chọn màu mới) với baseColor này thay
+  // vì so sánh currentFontColor với chính nó. Biến này được khai báo ở phạm vi editLineAt() nên vẫn
+  // giữ đúng giá trị gốc bên trong closure onCommit dù currentFontColor có đổi tiếp sau đó.
+  const baseColor = existing ? (existing.edit.color || currentFontColor) : currentFontColor;
 
   openEditInput(sx, sy, sw, sh, initialText, (val, colorRuns)=>{
     val = normalizeEditText(val);
@@ -7379,7 +7883,7 @@ function editLineAt(px, py, editType, customLines){
     const sameColorRuns = JSON.stringify(colorRuns||null) === JSON.stringify((existing && existing.edit.colorRuns) || null);
     if(val === initialText && currentFontFamily === baseFamily
        && currentFontSize === roundFontSize_(existing ? existing.edit.fontSize : baseSize)
-       && currentFontColor === (existing ? (existing.edit.color || '#000000') : currentFontColor)
+       && currentFontColor === baseColor
        && sameColorRuns
        && currentBold === baseBold
        && currentItalic === baseItalic
@@ -7512,7 +8016,7 @@ function editLineAt(px, py, editType, customLines){
       p.edits.push({ type:'whiteout', x: cx0, y: cy0, w: cw, h: ch, color:'#ffffff', bgColor });
     }
     redrawOverlay();
-  }, { fixedBox: !!(existing && existing.edit.manualBox), colorRuns: existing ? existing.edit.colorRuns : null, defaultColor: existing ? existing.edit.color : currentFontColor });
+  }, { fixedBox: !!(existing && existing.edit.manualBox), colorRuns: existing ? existing.edit.colorRuns : null, defaultColor: existing ? existing.edit.color : currentFontColor, hasCover: !!(existing && existing.edit.bg) });
 }
 
 overlayCanvas.addEventListener('dblclick', (e)=>{
@@ -7544,7 +8048,7 @@ overlayCanvas.addEventListener('dblclick', (e)=>{
       }
       else { edits.splice(idx,1); selectedEditIndex = -1; }
       redrawOverlay();
-    }, { fixedBox: !!ed.manualBox, colorRuns: ed.colorRuns, defaultColor: ed.color });
+    }, { fixedBox: !!ed.manualBox, colorRuns: ed.colorRuns, defaultColor: ed.color, hasCover: !!ed.bg });
   }
 });
 
@@ -7664,6 +8168,12 @@ overlayCanvas.addEventListener('mousemove', (e)=>{
     const edT = resizeTargetEdit;
     edT.x = nx; edT.y = ny; edT.w = nw; edT.h = nh;
     edT.manualBox = true; // <- CHỐT kích thước khung tại thời điểm này
+    // FIX: Prevent Whiteout from covering neighboring text lines — mỗi lần khung chữ đổi kích
+    // thước, tính lại NGAY khung nền che (coverX/Y/W/H) theo khung chữ mới, giới hạn trong vùng an
+    // toàn quanh dòng lân cận. Nhờ đó: kéo khung NHỎ lại -> whiteout cũng thu nhỏ theo; kéo khung
+    // LỚN hơn -> whiteout không bao giờ tự phình vượt quá điểm giữa với dòng trên/dưới/trái/phải.
+    // (Xem syncCoverToSafeArea_ ở trên; hàm này không hề đụng tới edT.x/y/w/h vừa được gán.)
+    if(edT.bg) syncCoverToSafeArea_(edT);
     redrawOverlay();
   } else if(resizingImage && resizeTargetEdit){
     // Kéo tay cầm góc: tính lại w/h mới sao cho góc đối diện (resizeAnchor) đứng yên, và luôn
