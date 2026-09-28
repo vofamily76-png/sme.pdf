@@ -278,6 +278,27 @@
   }
   #floatingHighlightBtn:hover{ background:var(--accent-dim); }
 
+  /* ===== NÚT "Sửa lỗi Font (OCR)" nổi cạnh #editInput =====
+     Dùng cho trường hợp PDF tiếng Việt bị lỗi bảng mã (thiếu bảng ToUnicode) khiến chữ bóc ra từ
+     PDF (pdf.js getTextContent / textItems) hiện thành chuỗi rác trong #editInput (vd "Eon gid bdn"
+     thay vì "Đơn giá bán"). Nút này cắt đúng vùng ảnh tương ứng trên #pdfCanvas rồi chạy lại
+     Tesseract.js (ngôn ngữ 'vie') để nhận diện lại CHỮ THẬT từ ảnh — không phụ thuộc bảng mã lỗi
+     của font gốc — rồi ghi đè kết quả vào #editInput. Khi lưu, chữ này đi qua đúng pipeline export
+     hiện có (buildEditedOutDoc/getVietFontBytes+embedFont) vốn ĐÃ nhúng sẵn font tiếng Việt riêng
+     (không dùng font gốc của PDF) nên không cần sửa gì thêm ở khâu xuất file. */
+  #ocrFixBtn{
+    position:absolute; z-index:55; display:none; align-items:center; gap:5px;
+    background:#e2402c; color:#fff; border:none; border-radius:5px; padding:4px 8px;
+    font-size:11.5px; cursor:pointer; box-shadow:0 2px 10px rgba(0,0,0,.35); white-space:nowrap;
+  }
+  #ocrFixBtn:hover{ background:#c9331f; }
+  #ocrFixBtn.attention{ animation:ocrFixPulse 1.1s infinite; }
+  @keyframes ocrFixPulse{ 0%,100%{ box-shadow:0 2px 10px rgba(0,0,0,.35), 0 0 0 0 rgba(226,64,44,.55);} 50%{ box-shadow:0 2px 10px rgba(0,0,0,.35), 0 0 0 5px rgba(226,64,44,0);} }
+  #ocrFixBtn:disabled{ opacity:.6; cursor:not-allowed; animation:none; }
+  /* Vòng tròn xem trước kích thước nét Paint đi theo con trỏ chuột (đúng bằng độ dày nét sẽ vẽ) */
+  #paintCursor{ position:absolute; pointer-events:none; display:none; z-index:45; border-radius:50%;
+    border:1px solid rgba(255,255,255,.95); box-shadow:0 0 0 1px rgba(0,0,0,.65); transform:translate(-50%,-50%); }
+
   /* Toast báo kết quả "sửa thật" (NativeTextEngine) sau khi lưu PDF — cho người dùng biết rõ
      bao nhiêu dòng được sửa THẬT trực tiếp trên văn bản gốc (không qua whiteout+vẽ đè) và bao
      nhiêu dòng phải tự động dùng lại cách che+vẽ đè (do font bị cắt gọn thiếu glyph, có định
@@ -1288,6 +1309,12 @@
   <button class="tbtn" data-tool="erase" id="toolErase" title="Xóa nét vẽ do Paint tạo ra — kéo chuột qua nét cần xóa"><span class="ic">🧽</span>Eraser</button>
   <button class="tbtn" data-tool="whiteout" id="toolWhiteout"><span class="ic">▭</span>Text overlay</button>
   <input type="color" id="colorSwatch" value="#e2402c" title="Màu">
+  <span id="paintSizeWrap" title="Kích thước nét vẽ Paint — kéo thanh trượt hoặc gõ số (pt). Phím [ giảm, ] tăng." style="display:none;align-items:center;gap:5px;font-size:11.5px;color:var(--text-dim);margin-left:2px;">
+    Nét
+    <input type="range" id="paintSizeRange" min="0.5" max="50" step="0.5" value="2.5" style="width:90px;">
+    <input type="number" id="paintSizeInput" min="0.5" max="100" step="0.5" value="2.5" style="width:54px;background:#1c1e22;color:var(--text-light);border:1px solid var(--border);border-radius:5px;padding:4px 5px;font-size:12px;">
+    <span id="paintSizeDotBox" style="display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border:1px solid var(--border);border-radius:5px;background:#fff;"><span id="paintSizeDot" style="display:block;border-radius:50%;background:#e2402c;"></span></span>
+  </span>
   <span style="display:inline-flex;align-items:center;gap:4px;font-size:11.5px;color:var(--text-dim);margin-left:2px;">
     <input type="color" id="whiteoutColorSwatch" value="#ffffff" title="Chọn màu che (Whiteout) tùy ý">Color overlay
   </span>
@@ -2785,7 +2812,7 @@ function rawRectFromDisplay_(rotInfo, dx, dy, dw, dh){
   };
 }
 
-async function drawEditOnPdfPage(page, ed, rotInfo, font, fallbackFont, outDoc, embedCache, fauxBold){
+async function drawEditOnPdfPage(page, ed, rotInfo, font, fallbackFont, outDoc, embedCache, fauxBold, resolveRunFont){
   const rotDeg = rotInfo.rot ? degrees(rotInfo.rot) : undefined;
   if(ed.type === 'image'){
     const embedded = await embedImageForEdit_(outDoc, ed, embedCache);
@@ -2820,6 +2847,11 @@ async function drawEditOnPdfPage(page, ed, rotInfo, font, fallbackFont, outDoc, 
       const cb_ = getCoverRect(ed);
       const rr = rawRectFromDisplay_(rotInfo, cb_.x, cb_.y, cb_.w, cb_.h);
       page.drawRectangle({ x: rr.x, y: rr.y, width: rr.width, height: rr.height, color: rgb(br,bg2,bb) });
+    }
+    // Rich Text: có đoạn mang font/cỡ/đậm/nghiêng/gạch chân riêng -> vẽ từng đoạn bằng ĐÚNG font của nó.
+    if(resolveRunFont && richHasExtras_(ed.colorRuns)){
+      await richDrawPdf_(page, ed, rotInfo, resolveRunFont, fallbackFont);
+      return;
     }
     const [r,g,b] = hexToRgbFloats(ed.color || '#000000');
     const fontSize = ed.fontSize || 12;
@@ -2928,7 +2960,9 @@ async function drawEditOnPdfPage(page, ed, rotInfo, font, fallbackFont, outDoc, 
         start: { x: p1.x, y: p1.y },
         end: { x: p2.x, y: p2.y },
         thickness: ed.width||2.5,
-        color: rgb(r,g,b)
+        color: rgb(r,g,b),
+        // Đầu nét tròn: các đoạn thẳng nối nhau không bị hở/khấc ở khúc cua khi nét dày, khớp với xem trước (lineCap round).
+        lineCap: (PDFLib.LineCapStyle ? PDFLib.LineCapStyle.Round : undefined)
       });
     }
   }
@@ -3052,7 +3086,9 @@ function refreshActiveEditInputFont(){
   activeEditInputEl.style.color = currentFontColor;
   activeEditInputEl.style.fontWeight = currentBold ? 'bold' : 'normal';
   activeEditInputEl.style.fontStyle = currentItalic ? 'italic' : 'normal';
-  activeEditInputEl.style.textDecoration = currentUnderline ? 'underline' : 'none';
+  // Rich Text: text-decoration của thẻ cha KHÔNG thể bị span con "tắt", nên khi ô đã có <span> thì gạch chân
+  // chỉ được thể hiện qua từng span (data-u); chỉ dùng gạch chân của #editInput khi chưa có span nào.
+  activeEditInputEl.style.textDecoration = (!activeEditInputEl.querySelector('span') && currentUnderline) ? 'underline' : 'none';
   activeEditInputEl.style.textAlign = currentAlign === 'justify' ? 'justify' : currentAlign; // xem ghi chú currentAlign
   activeEditInputEl.dispatchEvent(new Event('input')); // để ô tự tính lại kích thước khung theo font mới
 }
@@ -3125,6 +3161,8 @@ let tesseractWorker = null;
 
 let drawingFreehand = false;
 let freehandPoints = [];
+// Độ dày nét Paint (đơn vị pt của trang PDF, giống ed.width). Người dùng chỉnh bằng thanh trượt/ô số cạnh nút Paint.
+let currentPaintWidth = 2.5;
 let erasingFreehand = false; // đang kéo chuột với công cụ Eraser để xóa nét Paint
 const ERASE_RADIUS_SCREEN = 12; // bán kính vùng xóa tính theo pixel màn hình
 let draggingRect = false;
@@ -5292,7 +5330,7 @@ function drawEdit(ctx, e, s){
     const prevAlpha_ = ctx.globalAlpha;
     ctx.globalAlpha = prevAlpha_ * editOpacity_(e);
     try{
-      wrapText(ctx, e.text, e.x*s+2, e.y*s+1, e.w*s-4, e.fontSize*s*1.15, e.underline, e.align, e.colorRuns, e.color || '#000000');
+      wrapText(ctx, e.text, e.x*s+2, e.y*s+1, e.w*s-4, e.fontSize*s*1.15, e.underline, e.align, e.colorRuns, e.color || '#000000', { ff: e.fontFamily || '', fs: e.fontSize, b: !!e.bold, i: !!e.italic, u: !!e.underline, color: e.color || '#000000', s });
     } finally {
       ctx.globalAlpha = prevAlpha_;
     }
@@ -5370,7 +5408,12 @@ function applyOriginalSpacing(ctx, e, s){
 //               bị ngắt) vẫn canh trái như quy ước thông thường của mọi trình soạn thảo văn bản.
 // Phải bẻ dòng xong hết (2 bước: bẻ dòng rồi mới vẽ) thay vì vừa bẻ vừa vẽ như bản cũ, vì cần biết
 // trước dòng nào là "dòng cuối của đoạn" để quyết định có kéo giãn justify hay không.
-function wrapText(ctx, text, x, y, maxWidth, lineHeight, underline, align, colorRuns, baseColor){
+function wrapText(ctx, text, x, y, maxWidth, lineHeight, underline, align, colorRuns, baseColor, richBase){
+  // Rich Text: có đoạn mang font/cỡ/đậm/nghiêng/gạch chân riêng -> dùng đường vẽ riêng theo từng đoạn.
+  if(richBase && richHasExtras_(colorRuns)){
+    richDrawCanvas_(ctx, String(text), x, y, maxWidth, align, colorRuns, richBase, richBase.s);
+    return;
+  }
   align = align || 'left';
   const paragraphs = String(text).split('\n');
   // allLines: mảng { text, start, isLastOfParagraph } theo đúng thứ tự hiển thị từ trên xuống.
@@ -5605,6 +5648,7 @@ document.querySelectorAll('.tbtn[data-tool]').forEach(btn=>{
       selectedEditIndex = -1;
       hoverLine = null;
       overlayCanvas.className = 'tool-' + activeTool;
+      refreshPaintSizeUi_(); // Paint: hiện/ẩn cụm chỉnh kích thước nét theo công cụ đang chọn
       try{ redrawOverlay(); }catch(err){ console.warn('Không vẽ lại được lớp overlay:', err); }
       // Chuẩn bị sẵn dữ liệu vị trí từng dòng chữ ngay khi chọn công cụ, để việc "trỏ chuột vào đâu highlight
       // sửa được ngay đó" hoạt động mượt mà mà không phải đợi tới lần bấm chuột đầu tiên.
@@ -5638,7 +5682,70 @@ document.querySelectorAll('.tbtn[data-tool]').forEach(btn=>{
   };
 });
 document.getElementById('toolSelect').classList.add('active');
-document.getElementById('colorSwatch').oninput = (e)=> currentColor = e.target.value;
+document.getElementById('colorSwatch').oninput = (e)=>{ currentColor = e.target.value; refreshPaintSizeUi_(); };
+
+// ================== PAINT: chỉnh kích thước nét vẽ ==================
+// Trước đây độ dày nét bị ghi cứng 2.5 (xem nơi vẽ xem trước và nơi lưu nét). Nay lấy từ currentPaintWidth:
+// thanh trượt #paintSizeRange + ô số #paintSizeInput (2 ô luôn đồng bộ), chấm xem trước #paintSizeDot và
+// vòng tròn #paintCursor đi theo con trỏ trên trang. Nét đã vẽ lưu độ dày riêng (ed.width) nên đổi cỡ về
+// sau không làm đổi các nét cũ. Giá trị nhớ lại giữa các lần mở (localStorage, có try/catch).
+const PAINT_MIN_ = 0.5, PAINT_MAX_ = 100;
+function clampPaintWidth_(v){
+  const n = Number(v);
+  if(!isFinite(n)) return currentPaintWidth;
+  return Math.round(Math.max(PAINT_MIN_, Math.min(PAINT_MAX_, n))*2)/2; // bước 0.5
+}
+const paintCursorEl_ = document.createElement('div');
+paintCursorEl_.id = 'paintCursor';
+pageWrap.appendChild(paintCursorEl_);
+function refreshPaintSizeUi_(){
+  const wrap = document.getElementById('paintSizeWrap');
+  if(!wrap) return;
+  wrap.style.display = (activeTool === 'draw') ? 'inline-flex' : 'none';
+  const r = document.getElementById('paintSizeRange'), n = document.getElementById('paintSizeInput');
+  if(r && r.value !== String(currentPaintWidth)) r.value = String(currentPaintWidth);
+  if(n && document.activeElement !== n) n.value = String(currentPaintWidth);
+  const dot = document.getElementById('paintSizeDot');
+  if(dot){
+    const d = Math.max(2, Math.min(26, currentPaintWidth*scale));
+    dot.style.width = d+'px'; dot.style.height = d+'px'; dot.style.background = currentColor;
+  }
+  paintCursorEl_.style.width = Math.max(2, currentPaintWidth*scale)+'px';
+  paintCursorEl_.style.height = Math.max(2, currentPaintWidth*scale)+'px';
+  paintCursorEl_.style.background = hexToRgba(currentColor, 0.3);
+  if(activeTool !== 'draw') paintCursorEl_.style.display = 'none';
+}
+function setPaintWidth_(v){
+  currentPaintWidth = clampPaintWidth_(v);
+  try{ localStorage.setItem('paintBrushWidth', String(currentPaintWidth)); }catch(err){}
+  refreshPaintSizeUi_();
+}
+try{ const saved = parseFloat(localStorage.getItem('paintBrushWidth')); if(isFinite(saved) && saved > 0) currentPaintWidth = clampPaintWidth_(saved); }catch(err){}
+document.getElementById('paintSizeRange').oninput = (e)=> setPaintWidth_(e.target.value);
+document.getElementById('paintSizeInput').oninput = (e)=>{
+  const raw = Number(e.target.value);
+  if(!isFinite(raw) || raw <= 0) return; // đang gõ dở -> đợi
+  setPaintWidth_(raw);
+};
+document.getElementById('paintSizeInput').onchange = (e)=>{ e.target.value = String(currentPaintWidth); refreshPaintSizeUi_(); };
+// Vòng tròn xem trước đi theo chuột (chỉ khi đang ở công cụ Paint). Dùng chung hệ toạ độ canvas nên vẫn đúng khi trang xoay.
+overlayCanvas.addEventListener('mousemove', (e)=>{
+  if(activeTool !== 'draw' || !pages.length){ paintCursorEl_.style.display = 'none'; return; }
+  const {x, y} = clientToCanvasXY_(overlayCanvas, e.clientX, e.clientY);
+  paintCursorEl_.style.left = x+'px'; paintCursorEl_.style.top = y+'px';
+  paintCursorEl_.style.display = 'block';
+});
+overlayCanvas.addEventListener('mouseleave', ()=>{ paintCursorEl_.style.display = 'none'; });
+// Phím tắt [ và ] giảm/tăng cỡ nét khi đang ở công cụ Paint (không chặn khi đang gõ trong ô nhập).
+window.addEventListener('keydown', (e)=>{
+  if(activeTool !== 'draw' || (e.key !== '[' && e.key !== ']')) return;
+  if(e.ctrlKey || e.metaKey || e.altKey) return;
+  const ae = document.activeElement;
+  if(ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.isContentEditable)) return;
+  e.preventDefault();
+  const step = currentPaintWidth >= 20 ? 2 : (currentPaintWidth >= 5 ? 1 : 0.5);
+  setPaintWidth_(currentPaintWidth + (e.key === ']' ? step : -step));
+});
 document.getElementById('whiteoutColorSwatch').oninput = (e)=>{
   currentWhiteoutColor = e.target.value;
   // Nếu đang chọn (select) một khối "che" có sẵn trên trang, đổi màu ngay lập tức theo màu vừa chọn
@@ -5697,7 +5804,7 @@ function resizeTextEditToFitContent(ed){
   // theo nội dung hay theo kiểu chữ nữa. Đây chính là yêu cầu "điều chỉnh xong thì khung lưu lại
   // tại thời điểm đó chứ không tự động to ra".
   if(ed && ed.manualBox) return;
-  const auto = computeAutoBoxSize(ed.text, ed.fontFamily, ed.fontSize, ed.x, ed.bold, ed.italic);
+  const auto = computeAutoBoxSize(ed.text, ed.fontFamily, ed.fontSize, ed.x, ed.bold, ed.italic, ed.colorRuns);
   if(ed.bg){
     // Đã có nền che (bg) -> khung mới vẫn phải đủ để (a) tiếp tục che kín chữ gốc (minCover) và
     // (b) chứa hết nội dung theo kiểu chữ mới (auto) — giống hệt logic dùng khi sửa nội dung.
@@ -5709,10 +5816,16 @@ function resizeTextEditToFitContent(ed){
   }
 }
 document.getElementById('fontFamilySelect').onchange = (e)=>{
+  // Rich Text: đang mở ô sửa -> có vùng bôi đen thì CHỈ đổi font đoạn đó; không có thì đổi font cả ô.
+  if(activeEditInputEl && activeEditInputEl.isConnected){
+    richHandleToolbarStyle_('ff', e.target.value);
+    richRefocusEditor_(); richToolbarKeepOpen_ = false; richSavedSel_ = null;
+    return;
+  }
   currentFontFamily = e.target.value;
   if(pages.length && selectedEditIndex>=0){
     const ed = cur().edits[selectedEditIndex];
-    if(isTextEdit(ed)){ pushUndo(currentIndex); ed.fontFamily = currentFontFamily; resizeTextEditToFitContent(ed); redrawOverlay(); }
+    if(isTextEdit(ed)){ pushUndo(currentIndex); ed.fontFamily = currentFontFamily; richStripRunProp_(ed,'ff'); resizeTextEditToFitContent(ed); redrawOverlay(); }
   }
   refreshActiveEditInputFont();
 };
@@ -5726,10 +5839,12 @@ document.getElementById('fontSizeInput').oninput = (e)=>{
   // đợi người dùng gõ tiếp thay vì ép về 14 giữa chừng gây khó chịu.
   const raw = Number(e.target.value);
   if(!isFinite(raw) || raw<=0) return;
+  // Rich Text: đang mở ô sửa -> có vùng bôi đen thì CHỈ đổi cỡ chữ đoạn đó; không có thì đổi cả ô.
+  if(activeEditInputEl && activeEditInputEl.isConnected){ richHandleToolbarStyle_('fs', roundFontSize_(raw)); return; }
   currentFontSize = roundFontSize_(raw);
   if(pages.length && selectedEditIndex>=0){
     const ed = cur().edits[selectedEditIndex];
-    if(isTextEdit(ed)){ pushUndo(currentIndex); ed.fontSize = currentFontSize; resizeTextEditToFitContent(ed); redrawOverlay(); }
+    if(isTextEdit(ed)){ pushUndo(currentIndex); ed.fontSize = currentFontSize; richStripRunProp_(ed,'fs'); resizeTextEditToFitContent(ed); redrawOverlay(); }
   }
   refreshActiveEditInputFont();
 };
@@ -5738,11 +5853,12 @@ document.getElementById('fontSizeInput').oninput = (e)=>{
 document.getElementById('fontSizeInput').onchange = (e)=>{
   const raw = Number(e.target.value);
   if(!isFinite(raw) || raw<=0){ e.target.value = String(currentFontSize); return; }
+  if(activeEditInputEl && activeEditInputEl.isConnected){ richHandleToolbarStyle_('fs', roundFontSize_(raw)); return; } // Rich Text (xem oninput)
   currentFontSize = roundFontSize_(raw);
   e.target.value = String(currentFontSize);
   if(pages.length && selectedEditIndex>=0){
     const ed = cur().edits[selectedEditIndex];
-    if(isTextEdit(ed)){ pushUndo(currentIndex); ed.fontSize = currentFontSize; resizeTextEditToFitContent(ed); redrawOverlay(); }
+    if(isTextEdit(ed)){ pushUndo(currentIndex); ed.fontSize = currentFontSize; richStripRunProp_(ed,'fs'); resizeTextEditToFitContent(ed); redrawOverlay(); }
   }
   refreshActiveEditInputFont();
 };
@@ -5848,6 +5964,16 @@ document.getElementById('fontColorSwatch').addEventListener('blur', ()=>{
 // Select) thì áp dụng ngay lên khối đó; dù có chọn hay không, trạng thái mới cũng được lưu lại làm
 // mặc định cho chữ sắp gõ tiếp theo (giống Word/Google Docs: bật Đậm rồi gõ tiếp thì chữ mới cũng đậm).
 function toggleTextStyle(prop){
+  // Rich Text: đang mở ô sửa -> có vùng bôi đen thì CHỈ bật/tắt định dạng cho đoạn đó (như Word);
+  // không có vùng bôi đen thì bật/tắt cho cả ô (hành vi cũ).
+  if(activeEditInputEl && activeEditInputEl.isConnected){
+    const rp = prop==='bold' ? 'b' : (prop==='italic' ? 'i' : 'u');
+    const selOff = richCurrentSelOffsets_();
+    if(selOff){ richToggleOnSelection_(activeEditInputEl, selOff, rp); richSavedSel_ = selOff; return; }
+    const curVal = rp==='b' ? currentBold : (rp==='i' ? currentItalic : currentUnderline);
+    richHandleToolbarStyle_(rp, !curVal);
+    return;
+  }
   if(prop==='bold') currentBold = !currentBold;
   else if(prop==='italic') currentItalic = !currentItalic;
   else if(prop==='underline') currentUnderline = !currentUnderline;
@@ -5857,6 +5983,7 @@ function toggleTextStyle(prop){
     if(isTextEdit(ed)){
       pushUndo(currentIndex);
       ed.bold = currentBold; ed.italic = currentItalic; ed.underline = currentUnderline;
+      richStripRunProp_(ed,'b'); richStripRunProp_(ed,'i'); richStripRunProp_(ed,'u');
       resizeTextEditToFitContent(ed);
       redrawOverlay();
     }
@@ -6696,7 +6823,11 @@ function measureTextWidth(text, font){
 // wrapTextForPdfFont), rồi tính ra kích thước khung vừa đủ chứa HẾT nội dung (rộng tối đa tới
 // mép phải trang, cao đủ cho đúng số dòng sau khi ngắt) — nhờ vậy những gì hiển thị trên màn hình
 // (canvas) và những gì xuất ra file PDF luôn khớp nhau, không bao giờ bị "mất chữ" vì tràn trang.
-function computeAutoBoxSize(text, fontFamily, fontSize, x, bold, italic){
+function computeAutoBoxSize(text, fontFamily, fontSize, x, bold, italic, runs){
+  // Rich Text: nội dung có đoạn khác cỡ/font/đậm/nghiêng -> đo theo từng đoạn (xem computeAutoBoxSizeRich_).
+  if(runs && richHasExtras_(runs)){
+    return computeAutoBoxSizeRich_(text, { color:'#000000', ff:fontFamily, fs:fontSize, b:!!bold, i:!!italic, u:false }, runs, x);
+  }
   const c = measureTextWidth._c || (measureTextWidth._c = document.createElement('canvas').getContext('2d'));
   // SỬA LỖI "đang gõ thấy 1 hàng thẳng, nhưng vừa xong sửa thì tự động xuống dòng" (ví dụ chữ "NAM"
   // trong "CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM" bị rớt xuống dòng dưới): TRƯỚC ĐÂY hàm này đo bề rộng
@@ -6869,16 +7000,8 @@ function escapeHtmlForEdit_(s){
 // Dựng sẵn nội dung HTML ban đầu cho ô contenteditable từ (text thuần, colorRuns đã lưu — nếu có).
 // Không có colorRuns -> toàn bộ text dùng 1 màu fallbackColor (đúng như trước khi có tính năng này).
 function buildEditableHtmlFromRuns_(text, colorRuns, fallbackColor){
-  const runs = (colorRuns && colorRuns.length) ? colorRuns : [{ text: String(text||''), color: fallbackColor }];
-  let html = '';
-  for(const run of runs){
-    const color = run.color || fallbackColor;
-    const parts = String(run.text||'').split('\n');
-    const escaped = parts.map(escapeHtmlForEdit_).join('<br>');
-    if(escaped) html += `<span style="color:${color}">${escaped}</span>`;
-    else if(parts.length>1) html += '<br>'.repeat(parts.length-1); // đoạn chỉ toàn dấu xuống dòng, không có ký tự nào
-  }
-  return html || '';
+  // Mở rộng (Rich Text): mỗi run có thể mang thêm font/cỡ/đậm/nghiêng/gạch chân — xem richBuildHtml_.
+  return richBuildHtml_(text, colorRuns, fallbackColor);
 }
 // Gộp các đoạn liên tiếp CÙNG MÀU thành 1 đoạn duy nhất, để colorRuns lưu lại gọn nhất có thể.
 function mergeAdjacentColorRuns_(runs){
@@ -6894,29 +7017,556 @@ function mergeAdjacentColorRuns_(runs){
 // nhau) — đi qua từng node con theo thứ tự, "kế thừa" màu từ span cha xuống, coi <br> hoặc <div>/<p>
 // (trường hợp trình duyệt tự bọc dòng bằng thẻ khối khi dán nội dung/gõ Enter) là 1 ký tự xuống dòng.
 function extractColorRunsFromEditable_(root, fallbackColor){
-  const runs = [];
-  function walk(node, color){
-    if(node.nodeType === Node.TEXT_NODE){
-      if(node.nodeValue) runs.push({ text: node.nodeValue, color });
-      return;
-    }
-    if(node.nodeType !== Node.ELEMENT_NODE) return;
-    const tag = node.tagName;
-    if(tag === 'BR'){ runs.push({ text:'\n', color }); return; }
-    let childColor = color;
-    const inlineColor = node.style && node.style.color ? cssColorToHex_(node.style.color) : null;
-    if(inlineColor) childColor = inlineColor;
-    else if(tag === 'FONT' && node.getAttribute('color')) childColor = node.getAttribute('color');
-    const isBlock = (tag === 'DIV' || tag === 'P');
-    if(isBlock && runs.length) runs.push({ text:'\n', color: childColor });
-    for(const child of node.childNodes) walk(child, childColor);
-  }
-  for(const child of root.childNodes) walk(child, fallbackColor);
-  return mergeAdjacentColorRuns_(runs);
+  // Mở rộng (Rich Text): trả về các run {text,color,+ff/fs/b/i/u nếu khác định dạng chung} — xem richExtractRuns_.
+  return richExtractRuns_(root, richBaseFromGlobals_(fallbackColor));
 }
 function plainTextFromRuns_(runs){
   return runs.map(r=>r.text).join('');
 }
+// ================== RICH TEXT (định dạng riêng từng từ/cụm từ — kiểu Microsoft Word) ==================
+// MÔ HÌNH DỮ LIỆU: mỗi "run" (đoạn chữ liên tiếp cùng định dạng) trong ed.colorRuns giờ có thể mang
+// thêm các thuộc tính GHI ĐÈ so với định dạng chung của cả đoạn (ed.fontFamily/fontSize/bold/...):
+//   { text, color, ff?: họ font, fs?: cỡ chữ (pt), b?: đậm, i?: nghiêng, u?: gạch chân }
+// Thuộc tính nào KHÔNG có mặt = kế thừa từ định dạng chung của edit (không lưu thừa). Nếu không run nào
+// có thuộc tính mở rộng (ff/fs/b/i/u) thì mọi đường vẽ/xuất giữ NGUYÊN hành vi cũ (chỉ tô màu từng phần).
+const RICH_EXTRA_KEYS_ = ['ff','fs','b','i','u'];
+function richHasExtras_(runs){
+  if(!runs || !runs.length) return false;
+  for(const r of runs){
+    for(const k of RICH_EXTRA_KEYS_){ if(r[k] !== undefined && r[k] !== null) return true; }
+  }
+  return false;
+}
+// Định dạng ĐẦY ĐỦ của 1 run sau khi điền phần thiếu từ định dạng chung "base".
+function richFullStyle_(run, base){
+  return {
+    color: run.color || base.color,
+    ff: run.ff !== undefined && run.ff !== null ? run.ff : base.ff,
+    fs: run.fs !== undefined && run.fs !== null ? Number(run.fs) : Number(base.fs),
+    b: run.b !== undefined && run.b !== null ? !!run.b : !!base.b,
+    i: run.i !== undefined && run.i !== null ? !!run.i : !!base.i,
+    u: run.u !== undefined && run.u !== null ? !!run.u : !!base.u
+  };
+}
+function richStyleKey_(st){ return st.color+'|'+st.ff+'|'+st.fs+'|'+(st.b?1:0)+(st.i?1:0)+(st.u?1:0); }
+// Mảng định dạng theo TỪNG KÝ TỰ: arr[k] = định dạng đầy đủ của ký tự thứ k trong text.
+function richStyleAtChars_(text, runs, base){
+  const arr = [];
+  const baseStyle = richFullStyle_({}, base);
+  for(const run of (runs || [])){
+    const st = richFullStyle_(run, base);
+    const t = String(run.text || '');
+    for(let k=0;k<t.length;k++) arr.push(st);
+  }
+  while(arr.length < String(text).length) arr.push(baseStyle);
+  return arr;
+}
+function richFontCss_(st, mul){
+  return `${st.i?'italic ':''}${st.b?'bold ':''}${Math.max(0.5, st.fs*mul)}px ${pdfFontFamilyStack(st.ff)}`;
+}
+// THUẬT TOÁN BẺ DÒNG DÙNG CHUNG cho canvas xem trước, đo khung tự động và xuất PDF — chỉ khác nhau ở
+// hàm đo "measure(text, style)". Trả về mảng dòng:
+//   { segs:[{text, style}], width, maxFs, start, isLastOfParagraph, spaces }
+// Mỗi dòng có thể gồm nhiều đoạn (seg) khác định dạng; chiều cao dòng lấy theo cỡ chữ LỚN NHẤT trong dòng.
+function richLayout_(text, styleAt, maxWidth, measure, fallbackFs){
+  const lines = [];
+  let offset = 0;
+  const paras = String(text).split('\n');
+  for(const para of paras){
+    const atoms = [];
+    let i = 0;
+    while(i < para.length){
+      if(para[i] === ' '){ atoms.push({ start: offset+i, text: ' ', isSpace: true }); i++; }
+      else {
+        let j = i;
+        while(j < para.length && para[j] !== ' ') j++;
+        atoms.push({ start: offset+i, text: para.slice(i, j), isSpace: false });
+        i = j;
+      }
+    }
+    for(const a of atoms){
+      a.segs = [];
+      let k = 0;
+      while(k < a.text.length){
+        const st = styleAt[a.start+k];
+        let m = k+1;
+        while(m < a.text.length && styleAt[a.start+m] === st) m++;
+        a.segs.push({ text: a.text.slice(k, m), style: st });
+        k = m;
+      }
+      a.width = 0;
+      for(const s of a.segs) a.width += measure(s.text, s.style);
+    }
+    const paraLines = [];
+    let cur = [], curW = 0, hasWord = false, afterBreak = false;
+    const flush = ()=>{ paraLines.push(cur); cur = []; curW = 0; hasWord = false; };
+    for(const a of atoms){
+      if(a.isSpace){
+        if(cur.length === 0 && afterBreak) continue; // bỏ dấu cách ở đầu dòng mới sau khi bẻ
+        cur.push(a); curW += a.width;
+      } else {
+        if(hasWord && curW + a.width > maxWidth){
+          while(cur.length && cur[cur.length-1].isSpace){ curW -= cur[cur.length-1].width; cur.pop(); }
+          flush(); afterBreak = true;
+        }
+        cur.push(a); curW += a.width; hasWord = true;
+      }
+    }
+    paraLines.push(cur);
+    paraLines.forEach((atomsOfLine, idx)=>{
+      const segs = [];
+      let width = 0, maxFs = 0, spaces = 0;
+      for(const a of atomsOfLine){
+        if(a.isSpace) spaces++;
+        width += a.width;
+        for(const s of a.segs){
+          const last = segs[segs.length-1];
+          if(last && last.style === s.style) last.text += s.text; else segs.push({ text: s.text, style: s.style });
+          if(s.style.fs > maxFs) maxFs = s.style.fs;
+        }
+      }
+      if(!maxFs){
+        const st0 = styleAt[offset];
+        maxFs = st0 ? st0.fs : (fallbackFs || 12);
+      }
+      lines.push({ segs, width, maxFs, start: atomsOfLine.length ? atomsOfLine[0].start : offset, isLastOfParagraph: idx === paraLines.length-1, spaces });
+    });
+    offset += para.length + 1;
+  }
+  return lines;
+}
+// ---- Vẽ lên CANVAS xem trước (đơn vị: pixel màn hình, "s" = scale hiện tại) ----
+function richDrawCanvas_(ctx, text, x, y, maxWidth, align, runs, base, s){
+  align = align || 'left';
+  const styleAt = richStyleAtChars_(text, runs, base);
+  const measure = (t, st)=>{ ctx.font = richFontCss_(st, s); return ctx.measureText(t).width; };
+  ctx.save();
+  ctx.textBaseline = 'alphabetic';
+  ctx.wordSpacing = '0px';
+  // Dung sai 1.5% khi quyết định ngắt dòng: bề rộng chữ đo ở các mức zoom khác nhau có thể lệch nhau vài
+  // pixel do làm tròn advance của font — không để 1 từ cuối rớt xuống dòng dưới chỉ vì sai số đó.
+  const lines = richLayout_(text, styleAt, maxWidth * 1.015, measure, base.fs);
+  let cy = y;
+  for(const ln of lines){
+    const baseline = cy + ln.maxFs*s*0.85; // cùng công thức với bản xuất PDF (baseYDisp = y + fs*0.85)
+    let lx = x, extra = 0;
+    if(align === 'center') lx = x + Math.max(0, (maxWidth - ln.width)/2);
+    else if(align === 'right') lx = x + Math.max(0, maxWidth - ln.width);
+    else if(align === 'justify' && !ln.isLastOfParagraph && ln.spaces > 0 && ln.width < maxWidth) extra = (maxWidth - ln.width)/ln.spaces;
+    let cx = lx;
+    for(const seg of ln.segs){
+      ctx.font = richFontCss_(seg.style, s);
+      ctx.fillStyle = seg.style.color;
+      const segX0 = cx;
+      if(extra){
+        for(const part of seg.text.split(/( )/)){
+          if(part === '') continue;
+          if(part === ' '){ cx += ctx.measureText(' ').width + extra; }
+          else { ctx.fillText(part, cx, baseline); cx += ctx.measureText(part).width; }
+        }
+      } else {
+        ctx.fillText(seg.text, cx, baseline);
+        cx += ctx.measureText(seg.text).width;
+      }
+      if(seg.style.u && seg.text.trim()){
+        const uy = baseline + seg.style.fs*s*0.1;
+        ctx.strokeStyle = seg.style.color;
+        ctx.lineWidth = Math.max(1, seg.style.fs*s*0.055);
+        ctx.beginPath(); ctx.moveTo(segX0, uy); ctx.lineTo(cx, uy); ctx.stroke();
+      }
+    }
+    cy += ln.maxFs*s*1.15;
+  }
+  ctx.restore();
+}
+// ---- Đo khung tự động (đơn vị: pt) khi có định dạng riêng từng đoạn ----
+function computeAutoBoxSizeRich_(text, base, runs, x){
+  const c = measureTextWidth._c || (measureTextWidth._c = document.createElement('canvas').getContext('2d'));
+  const pageW = (pages.length && pdfCanvas.width) ? (pdfCanvas.width / scale) : 800;
+  const maxWidth = Math.max(80, pageW - x - 8);
+  const t = String(text || ' ');
+  const styleAt = richStyleAtChars_(t, runs, base);
+  const measure = (str, st)=>{ c.font = richFontCss_(st, 1); return c.measureText(str).width; };
+  const lines = richLayout_(t, styleAt, maxWidth, measure, base.fs);
+  let neededW = 0, h = 0;
+  for(const ln of lines){ neededW = Math.max(neededW, ln.width); h += ln.maxFs*1.15; }
+  return { w: Math.min(maxWidth, Math.max(24, neededW * 1.02 + 5)), h: Math.max(base.fs*1.2, h + 2) };
+}
+// Bề rộng TỰ NHIÊN (không bẻ dòng) lớn nhất của nội dung đang gõ, tính bằng pixel màn hình — dùng cho
+// sizeToContent() của #editInput khi nội dung có nhiều cỡ chữ/font khác nhau.
+function richNaturalWidthPx_(text, runs, base, s){
+  const c = measureTextWidth._c || (measureTextWidth._c = document.createElement('canvas').getContext('2d'));
+  const t = String(text || ' ');
+  const styleAt = richStyleAtChars_(t, runs, base);
+  const measure = (str, st)=>{ c.font = richFontCss_(st, s); return c.measureText(str).width; };
+  const lines = richLayout_(t, styleAt, 1e9, measure, base.fs);
+  let w = 0;
+  for(const ln of lines) w = Math.max(w, ln.width);
+  return w;
+}
+// ---- Vẽ vào PDF (pdf-lib) — mỗi đoạn dùng ĐÚNG font/cỡ/đậm/nghiêng/gạch chân/màu của nó ----
+async function richDrawPdf_(page, ed, rotInfo, resolveRunFont, fallbackFont){
+  const base = { color: ed.color || '#000000', ff: ed.fontFamily || '', fs: ed.fontSize || 12, b: !!ed.bold, i: !!ed.italic, u: !!ed.underline };
+  const text = String(ed.text);
+  const styleAt = richStyleAtChars_(text, ed.colorRuns, base);
+  const keyOf = (st)=> (st.ff || '') + '|' + (st.b ? 'b' : 'r') + (st.i ? 'i' : '');
+  const fontMap = new Map();
+  const styles = new Set(styleAt);
+  styles.add(richFullStyle_({}, base));
+  for(const st of styles){
+    const k = keyOf(st);
+    if(!fontMap.has(k)) fontMap.set(k, await resolveRunFont({ fontFamily: st.ff, bold: st.b, italic: st.i }));
+  }
+  const measure = (t2, st)=>{
+    const rf = fontMap.get(keyOf(st));
+    try{ return rf.font.widthOfTextAtSize(t2, st.fs); }catch(e){ return t2.length*st.fs*0.55; }
+  };
+  const maxWidth = Math.max((ed.w - 4)*1.04, base.fs);
+  const lines = richLayout_(text, styleAt, maxWidth, measure, base.fs);
+  const textAlign = ed.align || 'left';
+  const textOpacity = editOpacity_(ed);
+  const opacityOpt = textOpacity < 1 ? { opacity: textOpacity } : {};
+  const rotDeg = rotInfo.rot ? degrees(rotInfo.rot) : undefined;
+  let lineTop = ed.y;
+  for(const ln of lines){
+    const baseY = lineTop + ln.maxFs*0.85;
+    let startX = ed.x + 2, extra = 0;
+    if(textAlign === 'center') startX = ed.x + 2 + Math.max(0, (maxWidth - ln.width)/2);
+    else if(textAlign === 'right') startX = ed.x + 2 + Math.max(0, maxWidth - ln.width);
+    else if(textAlign === 'justify' && !ln.isLastOfParagraph && ln.spaces > 0 && ln.width < maxWidth) extra = (maxWidth - ln.width)/ln.spaces;
+    let cx = startX;
+    for(const seg of ln.segs){
+      const st = seg.style;
+      const rf = fontMap.get(keyOf(st));
+      const [r, g, b] = hexToRgbFloats(st.color);
+      // Chỉ giả lập nghiêng (xSkew) khi họ font KHÔNG có mặt chữ nghiêng thật (Times New Roman có sẵn).
+      const asset = FONT_FAMILY_ASSETS[st.ff || ''];
+      const hasRealItalic = !!(asset && ((st.b && st.i) ? asset.boldItalicB64 : asset.italicB64));
+      const skew = (st.i && !hasRealItalic) ? degrees(12) : undefined;
+      const segX0 = cx;
+      const pieces = extra ? seg.text.split(/( )/).filter(p => p !== '') : [seg.text];
+      for(const piece of pieces){
+        const w = measure(piece, st);
+        if(piece !== ' '){
+          const pivot = rotInfo.toRaw(cx, baseY);
+          drawStyledText(page, piece, { x: pivot.x, y: pivot.y, size: st.fs, font: rf.font, color: rgb(r,g,b), xSkew: skew, rotate: rotDeg, ...opacityOpt }, fallbackFont, rf.fauxBold);
+        }
+        cx += w + (piece === ' ' ? extra : 0);
+      }
+      if(st.u && seg.text.trim()){
+        const uy = baseY - st.fs*0.12;
+        const p1 = rotInfo.toRaw(segX0, uy), p2 = rotInfo.toRaw(cx, uy);
+        page.drawLine({ start: { x: p1.x, y: p1.y }, end: { x: p2.x, y: p2.y }, thickness: Math.max(0.6, st.fs*0.055), color: rgb(r,g,b), ...opacityOpt });
+      }
+    }
+    lineTop += ln.maxFs*1.15;
+  }
+}
+
+// ============ PHẦN TRONG Ô SỬA (#editInput): đọc / dựng / bọc vùng chọn bằng <span> ============
+function richEscAttr_(s){
+  return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+// Định dạng chung hiện tại của ô đang sửa (khớp với những gì sẽ được lưu vào ed.* khi commit).
+function richBaseFromGlobals_(fallbackColor){
+  return { color: fallbackColor || currentFontColor || '#000000', ff: currentFontFamily, fs: currentFontSize, b: !!currentBold, i: !!currentItalic, u: !!currentUnderline };
+}
+// Đọc các thuộc tính định dạng GHI ĐÈ tường minh trên 1 phần tử (span). Chỉ trả về key nào thực sự có.
+function richReadSpanProps_(el){
+  const o = {};
+  if(!el || el.nodeType !== 1) return o;
+  const c = el.style && el.style.color ? cssColorToHex_(el.style.color) : null;
+  if(c) o.color = c;
+  else if(el.tagName === 'FONT' && el.getAttribute('color')) o.color = cssColorToHex_(el.getAttribute('color')) || el.getAttribute('color');
+  if(el.hasAttribute('data-ff')) o.ff = el.getAttribute('data-ff');
+  if(el.hasAttribute('data-fs')){ const n = parseFloat(el.getAttribute('data-fs')); if(isFinite(n) && n > 0) o.fs = n; }
+  if(el.hasAttribute('data-b')) o.b = el.getAttribute('data-b') === '1';
+  if(el.hasAttribute('data-i')) o.i = el.getAttribute('data-i') === '1';
+  if(el.hasAttribute('data-u')) o.u = el.getAttribute('data-u') === '1';
+  return o;
+}
+function richSetSpanProp_(span, prop, val){
+  if(prop === 'color') span.style.color = val;
+  else if(prop === 'ff'){ span.setAttribute('data-ff', val); span.style.fontFamily = pdfFontFamilyStack(val); }
+  else if(prop === 'fs'){ span.setAttribute('data-fs', String(val)); span.style.fontSize = Math.max(1, val*scale) + 'px'; }
+  else if(prop === 'b'){ span.setAttribute('data-b', val ? '1' : '0'); span.style.fontWeight = val ? 'bold' : 'normal'; }
+  else if(prop === 'i'){ span.setAttribute('data-i', val ? '1' : '0'); span.style.fontStyle = val ? 'italic' : 'normal'; }
+  else if(prop === 'u'){ span.setAttribute('data-u', val ? '1' : '0'); span.style.textDecoration = val ? 'underline' : 'none'; }
+}
+function richClearSpanProp_(span, prop){
+  if(prop === 'ff'){ span.removeAttribute('data-ff'); span.style.removeProperty('font-family'); }
+  else if(prop === 'fs'){ span.removeAttribute('data-fs'); span.style.removeProperty('font-size'); }
+  else if(prop === 'b'){ span.removeAttribute('data-b'); span.style.removeProperty('font-weight'); }
+  else if(prop === 'i'){ span.removeAttribute('data-i'); span.style.removeProperty('font-style'); }
+  else if(prop === 'u'){ span.removeAttribute('data-u'); span.style.removeProperty('text-decoration'); }
+}
+// Đọc TOÀN BỘ nội dung ô contenteditable thành các run có định dạng ĐẦY ĐỦ (kế thừa từ span cha xuống).
+function richExtractFullRuns_(root, base){
+  const raw = [];
+  function walk(node, st){
+    if(node.nodeType === Node.TEXT_NODE){ if(node.nodeValue) raw.push({ text: node.nodeValue, st }); return; }
+    if(node.nodeType !== Node.ELEMENT_NODE) return;
+    const tag = node.tagName;
+    if(tag === 'BR'){ raw.push({ text: '\n', st }); return; }
+    const ov = richReadSpanProps_(node);
+    const childSt = Object.keys(ov).length ? Object.assign({}, st, ov) : st;
+    const isBlock = (tag === 'DIV' || tag === 'P');
+    if(isBlock && raw.length) raw.push({ text: '\n', st: childSt });
+    for(const child of node.childNodes) walk(child, childSt);
+  }
+  const baseSt = richFullStyle_({}, base);
+  for(const child of root.childNodes) walk(child, baseSt);
+  return richMergeFull_(raw);
+}
+function richMergeFull_(arr){
+  const out = [];
+  for(const r of arr){
+    if(!r.text) continue;
+    const last = out[out.length-1];
+    if(last && richStyleKey_(last.st) === richStyleKey_(r.st)) last.text += r.text;
+    else out.push({ text: r.text, st: r.st });
+  }
+  return out;
+}
+// Rút gọn: chỉ giữ thuộc tính mở rộng KHÁC với định dạng chung (base) — để dữ liệu lưu gọn nhất có thể.
+function richCompactRuns_(fullRuns, base){
+  return fullRuns.map(r=>{
+    const o = { text: r.text, color: r.st.color };
+    if(r.st.ff !== base.ff) o.ff = r.st.ff;
+    if(Math.abs(Number(r.st.fs) - Number(base.fs)) > 1e-6) o.fs = roundFontSize_(r.st.fs);
+    if(!!r.st.b !== !!base.b) o.b = !!r.st.b;
+    if(!!r.st.i !== !!base.i) o.i = !!r.st.i;
+    if(!!r.st.u !== !!base.u) o.u = !!r.st.u;
+    return o;
+  });
+}
+function richExtractRuns_(root, base){
+  return richCompactRuns_(richExtractFullRuns_(root, base), base);
+}
+// Dựng HTML ô sửa từ các run: mỗi run là 1 <span> PHẲNG (không lồng nhau) mang đủ thuộc tính tường minh.
+// Luôn ghi tường minh data-u (gạch chân) cho mọi span vì CSS text-decoration của thẻ cha KHÔNG thể bị thẻ
+// con "tắt" đi — nên gạch chân của cả ô chỉ được thể hiện qua từng span, không dựa vào thẻ #editInput.
+function richBuildHtml_(text, runs, fallbackColor){
+  const list = (runs && runs.length) ? runs : [{ text: String(text || ''), color: fallbackColor }];
+  let html = '';
+  for(const run of list){
+    const color = run.color || fallbackColor;
+    const parts = String(run.text || '').split('\n');
+    const escaped = parts.map(escapeHtmlForEdit_).join('<br>');
+    if(!escaped){
+      if(parts.length > 1) html += '<br>'.repeat(parts.length-1);
+      continue;
+    }
+    let style = `color:${color}`;
+    let attrs = '';
+    if(run.ff !== undefined && run.ff !== null){ attrs += ` data-ff="${richEscAttr_(run.ff)}"`; style += `;font-family:${pdfFontFamilyStack(run.ff)}`; }
+    if(run.fs !== undefined && run.fs !== null){ attrs += ` data-fs="${Number(run.fs)}"`; style += `;font-size:${Math.max(1, Number(run.fs)*scale)}px`; }
+    if(run.b !== undefined && run.b !== null){ attrs += ` data-b="${run.b ? 1 : 0}"`; style += `;font-weight:${run.b ? 'bold' : 'normal'}`; }
+    if(run.i !== undefined && run.i !== null){ attrs += ` data-i="${run.i ? 1 : 0}"`; style += `;font-style:${run.i ? 'italic' : 'normal'}`; }
+    const u = (run.u !== undefined && run.u !== null) ? !!run.u : !!currentUnderline;
+    attrs += ` data-u="${u ? 1 : 0}"`; style += `;text-decoration:${u ? 'underline' : 'none'}`;
+    html += `<span${attrs} style="${richEscAttr_(style)}">${escaped}</span>`;
+  }
+  return html;
+}
+// ---- Quy đổi vùng chọn (Range) <-> vị trí ký tự (offset) trong chuỗi text thuần của ô sửa ----
+function richTextLenOfFragment_(frag){
+  const tmp = document.createElement('div');
+  tmp.appendChild(frag);
+  return plainTextFromRuns_(richExtractFullRuns_(tmp, richBaseFromGlobals_())).length;
+}
+function richOffsetsOfRange_(inp, range){
+  const pre = document.createRange();
+  pre.selectNodeContents(inp);
+  pre.setEnd(range.startContainer, range.startOffset);
+  const a = richTextLenOfFragment_(pre.cloneContents());
+  pre.setEnd(range.endContainer, range.endOffset);
+  const b = richTextLenOfFragment_(pre.cloneContents());
+  return { a, b };
+}
+function richSelectOffsets_(inp, a, b){
+  let pos = 0, sNode = null, sOff = 0, eNode = null, eOff = 0;
+  function idx(n){ return Array.prototype.indexOf.call(n.parentNode.childNodes, n); }
+  function walk(node){
+    if(sNode && eNode) return;
+    if(node.nodeType === Node.TEXT_NODE){
+      const len = node.nodeValue.length;
+      if(!sNode && a <= pos + len){ sNode = node; sOff = a - pos; }
+      if(!eNode && b <= pos + len){ eNode = node; eOff = b - pos; }
+      pos += len;
+      return;
+    }
+    if(node.nodeType !== Node.ELEMENT_NODE) return;
+    if(node.tagName === 'BR'){
+      if(!sNode && a <= pos){ sNode = node.parentNode; sOff = idx(node); }
+      if(!eNode && b <= pos){ eNode = node.parentNode; eOff = idx(node); }
+      pos += 1;
+      return;
+    }
+    for(const ch of node.childNodes) walk(ch);
+  }
+  walk(inp);
+  try{
+    const r = document.createRange();
+    if(sNode) r.setStart(sNode, sOff); else { r.selectNodeContents(inp); r.collapse(false); }
+    if(eNode) r.setEnd(eNode, eOff); else r.setEnd(inp, inp.childNodes.length);
+    const sel = window.getSelection();
+    sel.removeAllRanges(); sel.addRange(r);
+  }catch(err){}
+}
+// Áp 1 thuộc tính (prop: 'ff'|'fs'|'b'|'i'|'u') cho ĐÚNG đoạn ký tự [a,b) đang bôi đen: tách các run tại
+// 2 đầu mút, đổi thuộc tính của phần nằm trong vùng chọn, rồi dựng lại các <span> phẳng — phần chữ KHÔNG
+// được bôi đen giữ nguyên định dạng cũ. Dựng lại toàn bộ (thay vì bọc/tách thẻ từng phần) để tránh thẻ
+// lồng nhau và các trường hợp vùng chọn nằm giữa nhiều span khác nhau.
+function richApplyPropToOffsets_(inp, a, b, prop, val){
+  const base = richBaseFromGlobals_(inp.dataset.defaultColor);
+  const full = richExtractFullRuns_(inp, base);
+  const out = [];
+  let pos = 0;
+  for(const r of full){
+    const s0 = pos, s1 = pos + r.text.length;
+    pos = s1;
+    const lo = Math.max(a, s0), hi = Math.min(b, s1);
+    if(hi <= lo){ out.push(r); continue; }
+    if(lo > s0) out.push({ text: r.text.slice(0, lo - s0), st: r.st });
+    out.push({ text: r.text.slice(lo - s0, hi - s0), st: Object.assign({}, r.st, { [prop]: val }) });
+    if(hi < s1) out.push({ text: r.text.slice(hi - s0), st: r.st });
+  }
+  const runs = richCompactRuns_(richMergeFull_(out), base);
+  // Không có gì thay đổi (vd sự kiện "change" của ô Cỡ chữ bắn lại sau "input" với đúng giá trị đã áp) ->
+  // bỏ qua, KHÔNG dựng lại nội dung — dựng lại sẽ làm mất vùng bôi đen đang có một cách vô ích.
+  if(JSON.stringify(runs) === JSON.stringify(richCompactRuns_(full, base))) return;
+  inp.innerHTML = richBuildHtml_(plainTextFromRuns_(runs), runs, base.color);
+  inp.style.textDecoration = 'none';
+  // Chỉ khôi phục vùng chọn khi #editInput đang giữ focus (khi con trỏ đang ở ô Cỡ chữ/Font trên thanh công
+  // cụ thì không được chọn lại nội dung ở đây, kẻo cướp mất focus của ô đang gõ).
+  if(document.activeElement === inp) richSelectOffsets_(inp, a, b);
+  inp.dispatchEvent(new Event('input')); // để ô tự đo lại kích thước theo nội dung mới
+}
+// Vùng chọn [a,b) có TOÀN BỘ ký tự đang bật thuộc tính boolean prop ('b'|'i'|'u') hay không (để bật/tắt).
+function richSelectionAllHave_(inp, sel, prop){
+  const full = richExtractFullRuns_(inp, richBaseFromGlobals_(inp.dataset.defaultColor));
+  let pos = 0, any = false;
+  for(const r of full){
+    const s0 = pos, s1 = pos + r.text.length;
+    pos = s1;
+    if(Math.min(sel.b, s1) <= Math.max(sel.a, s0)) continue;
+    any = true;
+    if(!r.st[prop]) return false;
+  }
+  return any;
+}
+// Không có vùng bôi đen -> đổi định dạng CHUNG của cả ô: gỡ ghi đè cùng loại trên mọi span để cả đoạn đồng nhất.
+function richApplyWholeProp_(inp, prop, val){
+  inp.querySelectorAll('span').forEach(sp=>{
+    if(prop === 'u') richSetSpanProp_(sp, 'u', !!val);
+    else richClearSpanProp_(sp, prop);
+  });
+}
+// Bỏ ghi đè cùng loại trong ed.colorRuns khi người dùng đổi định dạng CẢ khối bằng công cụ Select.
+function richStripRunProp_(ed, prop){
+  if(!ed || !ed.colorRuns) return;
+  for(const r of ed.colorRuns) delete r[prop];
+}
+
+// ---- Trạng thái tương tác thanh công cụ <-> ô sửa ----
+// richToolbarKeepOpen_: true trong lúc người dùng đang thao tác ô Font/Cỡ chữ (chiếm focus) — blur của
+// #editInput sẽ bỏ qua, không commit (cùng ý tưởng pickingFontColor). richSavedSel_: vùng bôi đen đã ghi
+// nhớ (theo offset ký tự) lúc bấm vào các ô đó, vì lúc ấy vùng chọn thật của trình duyệt có thể mất.
+let richToolbarKeepOpen_ = false;
+let richSavedSel_ = null;
+function richCaptureSelection_(){
+  const inp = activeEditInputEl;
+  if(!inp || !inp.isConnected) return null;
+  const sel = window.getSelection();
+  if(sel && sel.rangeCount){
+    const r = sel.getRangeAt(0);
+    if(!r.collapsed && inp.contains(r.commonAncestorContainer)){
+      const o = richOffsetsOfRange_(inp, r);
+      if(o.b > o.a) return o;
+    }
+  }
+  return null;
+}
+function richCurrentSelOffsets_(){
+  return richCaptureSelection_() || (richToolbarKeepOpen_ ? richSavedSel_ : null);
+}
+function richRefocusEditor_(){
+  const inp = activeEditInputEl;
+  if(!inp || !inp.isConnected) return;
+  // Chụp lại vùng bôi đen đã nhớ TRƯỚC khi focus(): inp.focus() làm ô Font/Cỡ chữ đang giữ focus bị blur, mà
+  // blur handler của chúng cũng gọi lại hàm này và xoá richSavedSel_ — nếu đọc richSavedSel_ SAU focus() thì
+  // lượt gọi bên ngoài sẽ thấy null và thu vùng chọn về con trỏ ở cuối ô.
+  const saved = richSavedSel_;
+  inp.focus();
+  if(saved) richSelectOffsets_(inp, saved.a, saved.b);
+  else {
+    try{
+      const r = document.createRange();
+      r.selectNodeContents(inp); r.collapse(false);
+      const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(r);
+    }catch(err){}
+  }
+}
+// Xử lý 1 thay đổi định dạng từ thanh công cụ KHI đang mở ô sửa. Trả về true nếu đã xử lý (ô đang mở).
+//  - Có vùng bôi đen: chỉ áp cho đúng vùng đó.
+//  - Không có: đổi định dạng CHUNG của cả ô (giống hành vi cũ) và gỡ ghi đè cùng loại của các đoạn.
+function richHandleToolbarStyle_(prop, val){
+  const inp = activeEditInputEl;
+  if(!inp || !inp.isConnected) return false;
+  const sel = richCurrentSelOffsets_();
+  if(sel){
+    richApplyPropToOffsets_(inp, sel.a, sel.b, prop, val);
+    richSavedSel_ = sel;
+    return true;
+  }
+  if(prop === 'ff') currentFontFamily = val;
+  else if(prop === 'fs') currentFontSize = val;
+  else if(prop === 'b') currentBold = !!val;
+  else if(prop === 'i') currentItalic = !!val;
+  else if(prop === 'u') currentUnderline = !!val;
+  richApplyWholeProp_(inp, prop, val);
+  refreshStyleToggleButtons();
+  refreshActiveEditInputFont();
+  return true;
+}
+// Bật/tắt B/I/U cho vùng bôi đen: nếu MỌI ký tự trong vùng đã bật thì tắt, ngược lại bật (như Word).
+function richToggleOnSelection_(inp, sel, prop){
+  const nv = !richSelectionAllHave_(inp, sel, prop);
+  richApplyPropToOffsets_(inp, sel.a, sel.b, prop, nv);
+}
+(function richWireToolbar_(){
+  ['fontFamilySelect','fontSizeInput'].forEach(id=>{
+    const el = document.getElementById(id);
+    if(!el) return;
+    // mousedown (pha capture) chạy TRƯỚC khi trình duyệt chuyển focus -> #editInput blur.
+    el.addEventListener('mousedown', ()=>{
+      if(activeEditInputEl && activeEditInputEl.isConnected){
+        // Chỉ ghi đè vùng chọn đã nhớ khi lần này thực sự đọc được vùng chọn mới: bấm liên tiếp nhiều lần
+        // (nhấp đúp/nhấp 3 để bôi đen số trong ô Cỡ chữ) sẽ khiến vùng chọn của #editInput đã mất ở các lần sau.
+        const cap = richCaptureSelection_();
+        if(!richToolbarKeepOpen_ || cap) richSavedSel_ = cap;
+        richToolbarKeepOpen_ = true;
+      }
+    }, true);
+    el.addEventListener('blur', (ev)=>{
+      if(!richToolbarKeepOpen_) return;
+      // Focus chuyển sang ô Font/Cỡ chữ khác trên thanh công cụ -> KHÔNG trả focus về ô sửa (kẻo cướp mất
+      // focus của chính ô người dùng đang thao tác); giữ nguyên vùng bôi đen đã nhớ để ô kia dùng tiếp.
+      const rt = ev.relatedTarget;
+      if(rt && (rt.id === 'fontFamilySelect' || rt.id === 'fontSizeInput')) return;
+      richToolbarKeepOpen_ = false;
+      richRefocusEditor_();
+      richSavedSel_ = null;
+    });
+  });
+  // B / I / U: không cho nút cướp focus khỏi ô đang sửa -> giữ nguyên vùng bôi đen.
+  ['btnBold','btnItalic','btnUnderline'].forEach(id=>{
+    const el = document.getElementById(id);
+    if(el) el.addEventListener('mousedown', (e)=>{ if(activeEditInputEl && activeEditInputEl.isConnected) e.preventDefault(); });
+  });
+})();
+
 // Áp màu "colorHex" cho đúng phần văn bản đang được người dùng bôi đen (chọn) bên trong ô đang sửa
 // "inp" — bọc phần đã chọn vào 1 <span style="color:..."> mới. Trả về chính <span> vừa tạo (để có
 // thể cập nhật màu LIÊN TỤC ngay trong lúc người dùng còn đang kéo chọn màu trên bảng màu, xem
@@ -6966,8 +7616,12 @@ let activeColorSelectionSpan = null;
 function recolorWholeActiveEditInput_(colorHex){
   if(!activeEditInputEl) return;
   const inp = activeEditInputEl;
-  const text = plainTextFromRuns_(extractColorRunsFromEditable_(inp, colorHex));
-  inp.innerHTML = buildEditableHtmlFromRuns_(text, null, colorHex);
+  // Rich Text: đổi màu CẢ đoạn nhưng GIỮ NGUYÊN font/cỡ chữ/đậm/nghiêng/gạch chân riêng từng đoạn (chỉ ép chung 1 màu).
+  const full = richExtractFullRuns_(inp, richBaseFromGlobals_(colorHex));
+  full.forEach(r=>{ r.st = Object.assign({}, r.st, { color: colorHex }); });
+  const runs = richCompactRuns_(richMergeFull_(full), richBaseFromGlobals_(colorHex));
+  inp.dataset.defaultColor = colorHex;
+  inp.innerHTML = richBuildHtml_(plainTextFromRuns_(runs), runs, colorHex);
   try{
     const r = document.createRange();
     r.selectNodeContents(inp);
@@ -6979,6 +7633,7 @@ function recolorWholeActiveEditInput_(colorHex){
 
 function openEditInput(screenX, screenY, screenW, screenH, initialText, onCommit, opts){
   opts = opts || {};
+  richToolbarKeepOpen_ = false; richSavedSel_ = null; // Rich Text: xoá trạng thái tương tác toolbar của lần sửa trước
   // Nếu đang có một ô nhập khác còn mở (chưa chốt), chốt nó lại trước để không bao giờ mất
   // chỉnh sửa trước đó, kể cả trong các trường hợp trình duyệt không tự bắn "blur" đúng lúc.
   flushPendingEdit();
@@ -6992,6 +7647,7 @@ function openEditInput(screenX, screenY, screenW, screenH, initialText, onCommit
   const inp = document.createElement('div');
   inp.contentEditable = 'true';
   inp.id = 'editInput';
+  inp.dataset.defaultColor = defaultColor; // Rich Text: màu chung của cả đoạn (dùng khi đọc/dựng lại các run)
   inp.style.left = screenX+'px'; inp.style.top = screenY+'px';
   // QUAN TRỌNG (chỉnh trực tiếp lên text gốc, không phải một layer khác): lấy đúng màu nền thật
   // của trang tại vị trí đang sửa (đã lấy mẫu pixel thật từ canvas, xem sampleBackgroundColor) để
@@ -7073,7 +7729,13 @@ function openEditInput(screenX, screenY, screenW, screenH, initialText, onCommit
     }
     const text = getPlainText() || initialText || '';
     const measureFont = `${currentItalic?'italic ':''}${currentBold?'bold ':''}${Math.max(1, currentFontSize*scale)}px ${pdfFontFamilyStack(currentFontFamily)}`;
-    const neededW = Math.min(pageMaxW, Math.max(screenW, measureTextWidth(text, measureFont) + 10));
+    let textW = measureTextWidth(text, measureFont);
+    // Rich Text: khi có đoạn khác cỡ/font/đậm/nghiêng thì đo từng đoạn theo ĐÚNG font của nó.
+    try{
+      const rr = extractColorRunsFromEditable_(inp, defaultColor);
+      if(richHasExtras_(rr)) textW = richNaturalWidthPx_(text, rr, richBaseFromGlobals_(defaultColor), scale);
+    }catch(err){}
+    const neededW = Math.min(pageMaxW, Math.max(screenW, textW + 10));
     inp.style.width = neededW+'px';
     inp.style.height = 'auto';
     const neededH = Math.min(pageMaxH, inp.scrollHeight);
@@ -7115,7 +7777,26 @@ function openEditInput(screenX, screenY, screenW, screenH, initialText, onCommit
     if(pendingEditCommit === commit) pendingEditCommit = null;
     if(activeEditInputEl === inp) activeEditInputEl = null;
     activeColorSelectionSpan = null;
-    const runs = extractColorRunsFromEditable_(inp, defaultColor);
+    let runs = extractColorRunsFromEditable_(inp, defaultColor);
+    // Rich Text: nếu MỌI đoạn cùng chung 1 giá trị của một thuộc tính (font/cỡ/đậm/nghiêng/gạch chân) — ví dụ
+    // ô đang được bôi đen toàn bộ rồi bấm B — thì đó thực chất là định dạng CHUNG của cả đoạn: nâng lên thành
+    // định dạng chung (currentBold/currentFontSize...) để lưu vào ed.bold/ed.fontSize... như trước đây, thay vì
+    // lưu thành các run riêng lẻ. Chỉ khi có SỰ KHÁC NHAU giữa các đoạn mới cần giữ run riêng.
+    try{
+      const fullU = richExtractFullRuns_(inp, richBaseFromGlobals_(defaultColor));
+      if(fullU.length){
+        const uni = (k)=> fullU.every(r=> r.st[k] === fullU[0].st[k]);
+        if(uni('ff')) currentFontFamily = fullU[0].st.ff;
+        if(uni('fs')) currentFontSize = roundFontSize_(fullU[0].st.fs);
+        if(uni('b')) currentBold = !!fullU[0].st.b;
+        if(uni('i')) currentItalic = !!fullU[0].st.i;
+        if(uni('u')) currentUnderline = !!fullU[0].st.u;
+        runs = richCompactRuns_(fullU, richBaseFromGlobals_(defaultColor));
+      }
+    }catch(err){ console.warn('Rich Text: không gom được định dạng chung', err); }
+    // Chuẩn hoá NFC + gộp dấu cách thừa NGAY TRONG TỪNG RUN để tổng độ dài các run luôn khớp đúng với
+    // chuỗi text cuối cùng (nếu không, vị trí ký tự của định dạng từng đoạn sẽ bị lệch sau khi chuẩn hoá).
+    runs.forEach(r=>{ r.text = String(r.text).normalize('NFC').split('\n').map(l=>l.replace(/[ \t\u00A0]{2,}/g,' ')).join('\n'); });
     const val = plainTextFromRuns_(runs);
     if(inp.parentNode) inp.parentNode.removeChild(inp);
     // colorRuns chỉ thật sự cần lưu khi có TỪ 2 MÀU KHÁC NHAU trở lên trong cùng đoạn (người dùng đã
@@ -7123,8 +7804,11 @@ function openEditInput(screenX, screenY, screenW, screenH, initialText, onCommit
     // đại đa số) thì trả về null, để nơi gọi lưu edit gọn như trước khi có tính năng này (chỉ 1
     // ed.color), và mọi chỗ khác (đổi màu nguyên cả đoạn qua thanh công cụ khi không có gì được bôi
     // đen...) hoạt động y hệt như cũ.
-    const distinctColors = new Set(runs.map(r=>r.color));
-    const colorRuns = distinctColors.size > 1 ? runs : null;
+    // Rich Text: lưu runs khi có TỪ 2 kiểu định dạng khác nhau trở lên, hoặc khi có bất kỳ đoạn nào mang
+    // định dạng riêng (font/cỡ/đậm/nghiêng/gạch chân) — kể cả khi chỉ có 1 đoạn duy nhất.
+    const distinctKeys = new Set(runs.map(r=>JSON.stringify([r.color, r.ff, r.fs, r.b, r.i, r.u])));
+    const colorRuns = (distinctKeys.size > 1 || richHasExtras_(runs)) ? runs : null;
+    richToolbarKeepOpen_ = false; richSavedSel_ = null;
     onCommit(val, colorRuns);
   }
   pendingEditCommit = commit;
@@ -7154,6 +7838,14 @@ function openEditInput(screenX, screenY, screenW, screenH, initialText, onCommit
     // dòng khi bấm Enter như với <textarea> nữa (mặc định của contenteditable là tạo thêm 1 thẻ khối
     // <div>/<p> mới, phá vỡ cấu trúc phẳng mà extractColorRunsFromEditable_ cần) — nên từ giờ TỰ xử
     // lý Enter bằng cách chèn thẳng 1 <br> vào đúng vị trí con trỏ (xem insertLineBreakAtCaret_).
+    // Rich Text: Ctrl/Cmd + B / I / U áp dụng cho ĐÚNG vùng đang bôi đen (thay vì để trình duyệt tự chèn
+    // thẻ <b>/<i>/<u> mà cơ chế lưu run không đọc được).
+    if((ev.ctrlKey || ev.metaKey) && !ev.altKey && !ev.shiftKey && ['b','i','u'].indexOf(String(ev.key).toLowerCase()) >= 0){
+      ev.preventDefault();
+      const kk = String(ev.key).toLowerCase();
+      toggleTextStyle(kk==='b' ? 'bold' : (kk==='i' ? 'italic' : 'underline'));
+      return;
+    }
     if(ev.key==='Enter' && (ev.ctrlKey || ev.metaKey)){ ev.preventDefault(); commit(); }
     else if(ev.key==='Enter'){ ev.preventDefault(); insertLineBreakAtCaret_(); sizeToContent(); }
     else if(ev.key==='Escape'){
@@ -7196,7 +7888,7 @@ function openEditInput(screenX, screenY, screenW, screenH, initialText, onCommit
     // báo "pickingFontColor" và ở mousedown/blur của #fontColorSwatch phía trên): nếu lần "blur"
     // này xảy ra vì người dùng vừa bấm vào #fontColorSwatch để mở bảng chọn màu, BỎ QUA, không
     // commit() — giữ ô đang sửa mở cho tới khi bảng chọn màu đó tự đóng lại.
-    if(pickingFontColor) return;
+    if(pickingFontColor || richToolbarKeepOpen_) return; // Rich Text: đang thao tác ô Font/Cỡ chữ -> giữ ô sửa mở
     commit();
   });
 }
@@ -7222,7 +7914,7 @@ overlayCanvas.addEventListener('mousedown', (e)=>{
       if(val && val.trim()){
         pushUndo(currentIndex);
         const newIdx = cur().edits.length;
-        const auto = computeAutoBoxSize(val, currentFontFamily, currentFontSize, pdfP.x, currentBold, currentItalic);
+        const auto = computeAutoBoxSize(val, currentFontFamily, currentFontSize, pdfP.x, currentBold, currentItalic, colorRuns);
         cur().edits.push({type:'text', x:pdfP.x, y:pdfP.y, w:auto.w, h:auto.h, text:val, fontSize:currentFontSize, fontFamily: currentFontFamily, color: currentFontColor, colorRuns, bold: currentBold, italic: currentItalic, underline: currentUnderline, align: currentAlign, bg:false, ...newTextOpacityProps_()});
         selectedEditIndex = newIdx;
         redrawOverlay();
@@ -7768,7 +8460,7 @@ function editLineAt(px, py, editType, customLines){
           // Nếu người dùng đã tự canh khung bằng công cụ Select thì GIỮ NGUYÊN khung đó (chữ mới chỉ
           // việc tự ngắt dòng bên trong), không tự động phình to ra nữa.
           if(!ed.manualBox){
-            const auto = computeAutoBoxSize(val, ed.fontFamily, ed.fontSize, ed.x, ed.bold, ed.italic);
+            const auto = computeAutoBoxSize(val, ed.fontFamily, ed.fontSize, ed.x, ed.bold, ed.italic, colorRuns);
             const minCover = computeMinCoverSize(ed);
             ed.w = Math.max(minCover.w, auto.w);
             ed.h = Math.max(minCover.h, auto.h);
@@ -7791,7 +8483,7 @@ function editLineAt(px, py, editType, customLines){
       val = normalizeEditText(val);
       if(val && val.trim()){
         pushUndo(currentIndex);
-        const auto = computeAutoBoxSize(val, currentFontFamily, currentFontSize, pdfP.x, currentBold, currentItalic);
+        const auto = computeAutoBoxSize(val, currentFontFamily, currentFontSize, pdfP.x, currentBold, currentItalic, colorRuns);
         removeOverlappingTextEdits(p, pdfP.x, pdfP.y, pdfP.x+auto.w, pdfP.y+auto.h);
         const newIdx = p.edits.length;
         p.edits.push({
@@ -7941,7 +8633,7 @@ function editLineAt(px, py, editType, customLines){
         // Nếu khung này đã được người dùng tự kéo chỉnh bằng công cụ Select (manualBox) thì GIỮ
         // NGUYÊN — chữ mới chỉ tự ngắt dòng bên trong khung đã canh, không tự phình to ra nữa.
         if(!existing.edit.manualBox){
-          const auto = computeAutoBoxSize(val, existing.edit.fontFamily, existing.edit.fontSize, existing.edit.x, existing.edit.bold, existing.edit.italic);
+          const auto = computeAutoBoxSize(val, existing.edit.fontFamily, existing.edit.fontSize, existing.edit.x, existing.edit.bold, existing.edit.italic, colorRuns);
           const minCover = computeMinCoverSize(existing.edit);
           existing.edit.w = Math.max(minCover.w, auto.w);
           existing.edit.h = Math.max(minCover.h, auto.h);
@@ -7978,7 +8670,7 @@ function editLineAt(px, py, editType, customLines){
       //  - Khung nền che: giữ nguyên rộng rãi như cũ (cx0/cy0/cw/ch) để chữ gốc bị che kín tuyệt đối.
       const tx0 = line.x0 - 2;
       const ty0 = line.y0 + (((line.y1 - line.y0) - fontSize*1.15) / 2);
-      const auto = computeAutoBoxSize(val, currentFontFamily, fontSize, tx0, currentBold, currentItalic);
+      const auto = computeAutoBoxSize(val, currentFontFamily, fontSize, tx0, currentBold, currentItalic, colorRuns);
       const finalW = auto.w;
       const finalH = auto.h;
       // Dọn mọi chỉnh sửa khác (kể cả whiteout/text cũ) chồng lấn lên vùng SẮP tạo, để tuyệt đối
@@ -8038,7 +8730,7 @@ overlayCanvas.addEventListener('dblclick', (e)=>{
         // Nới khung vừa đủ chứa hết nội dung mới, không bao giờ hẹp hơn nội dung thực tế
         // (xem computeAutoBoxSize) — tránh chữ bị tràn ra ngoài trang khi xuất PDF.
         if(!ed.manualBox){
-          const auto = computeAutoBoxSize(val, ed.fontFamily || 'Arial', ed.fontSize || 12, ed.x, ed.bold, ed.italic);
+          const auto = computeAutoBoxSize(val, ed.fontFamily || 'Arial', ed.fontSize || 12, ed.x, ed.bold, ed.italic, colorRuns);
           const minCover = computeMinCoverSize(ed);
           ed.w = Math.max(minCover.w, auto.w);
           ed.h = Math.max(minCover.h, auto.h);
@@ -8103,7 +8795,7 @@ overlayCanvas.addEventListener('mousemove', (e)=>{
     const pdfP = toPdfSpace(px,py);
     freehandPoints.push(pdfP);
     redrawOverlay();
-    octx.strokeStyle = currentColor; octx.lineWidth = 2.5*scale; octx.lineCap='round'; octx.lineJoin='round';
+    octx.strokeStyle = currentColor; octx.lineWidth = currentPaintWidth*scale; octx.lineCap='round'; octx.lineJoin='round';
     octx.beginPath();
     freehandPoints.forEach((pt,i)=>{ const s = toScreenSpace(pt.x,pt.y); if(i===0) octx.moveTo(s.x,s.y); else octx.lineTo(s.x,s.y); });
     octx.stroke();
@@ -8252,9 +8944,12 @@ window.addEventListener('mouseup', (e)=>{
   if(draggingSelected){ draggingSelected = false; dragOffset = null; redrawOverlay(); }
   if(drawingFreehand){
     drawingFreehand = false;
+    // Bấm một cái không kéo (chỉ 1 điểm) -> tạo 1 "chấm" tròn đúng cỡ nét (2 điểm trùng nhau + đầu nét tròn),
+    // hữu ích khi dùng nét to. Trước đây bị bỏ qua vì yêu cầu tối thiểu 2 điểm.
+    if(freehandPoints.length === 1) freehandPoints = [freehandPoints[0], { x: freehandPoints[0].x, y: freehandPoints[0].y }];
     if(freehandPoints.length>1){
       pushUndo(currentIndex);
-      cur().edits.push({type:'draw', points:freehandPoints, color: currentColor, width:2.5});
+      cur().edits.push({type:'draw', points:freehandPoints, color: currentColor, width: currentPaintWidth});
     }
     freehandPoints = []; redrawOverlay();
   }
@@ -8665,6 +9360,128 @@ async function getWorker(){
   return tesseractWorker;
 }
 
+// ---------- Nút nổi "Sửa lỗi Font (OCR)" cạnh #editInput ----------
+// Heuristic đơn giản để GỢI Ý (không cần chính xác 100%) một dòng có thể đã bị lỗi bảng mã font
+// (thiếu ToUnicode): không có bất kỳ ký tự có dấu tiếng Việt nào NHƯNG lại có cụm phụ âm bất
+// thường liền nhau (kiểu "Eon gid bdn" — sản phẩm điển hình của việc dịch sai bảng mã VNI/TCVN cũ).
+function looksLikeGarbledVietnamese_(str){
+  const s = String(str||'').trim();
+  if(s.length < 3) return false;
+  const hasDiacritics = /[ăâđêôơưàáảãạằắẳẵặầấẩẫậèéẻẽẹềếểễệìíỉĩịòóỏõọồốổỗộờớởỡợùúủũụừứửữựỳýỷỹỵ]/i.test(s);
+  const weirdCluster = /[bcdfghjklmnpqrstvxz]{4,}/i.test(s);
+  return !hasDiacritics && weirdCluster;
+}
+
+const ocrFixBtn = document.createElement('button');
+ocrFixBtn.id = 'ocrFixBtn';
+ocrFixBtn.type = 'button';
+ocrFixBtn.innerHTML = '🩹 Sửa lỗi Font (OCR)';
+ocrFixBtn.title = 'Chữ hiện đang bị rác do lỗi bảng mã? Cắt đúng vùng ảnh này trên trang và chạy lại OCR (tiếng Việt) để nhận diện lại chữ thật.';
+document.body.appendChild(ocrFixBtn);
+
+// Định vị lại nút ngay cạnh #editInput hiện có (nếu đang mở), đặt ở góc dưới-phải khung đang sửa.
+function positionOcrFixBtn_(){
+  const inp = document.getElementById('editInput');
+  if(!inp || !inp.parentNode){ ocrFixBtn.style.display = 'none'; return; }
+  const left = inp.offsetLeft + inp.offsetWidth + 6;
+  const top = inp.offsetTop;
+  ocrFixBtn.style.left = Math.max(0, left) + 'px';
+  ocrFixBtn.style.top = Math.max(0, top) + 'px';
+  ocrFixBtn.style.display = 'flex';
+  ocrFixBtn.classList.toggle('attention', looksLikeGarbledVietnamese_(inp.textContent));
+}
+
+// #editInput được tạo/xoá động (xem openEditInput/commit ở trên) — dùng MutationObserver theo dõi
+// #pageWrap để tự hiện/ẩn/định vị lại nút này, KHÔNG cần sửa trực tiếp vào hàm openEditInput/commit.
+if(typeof pageWrap !== 'undefined' && pageWrap){
+  const ocrFixObserver = new MutationObserver(()=>{ positionOcrFixBtn_(); });
+  ocrFixObserver.observe(pageWrap, { childList:true });
+}
+// #editInput có thể tự đổi kích thước khi người dùng gõ thêm chữ (sizeToContent) — theo dõi luôn
+// input/resize để nút bám sát đúng góc khung đang sửa mọi lúc.
+document.addEventListener('input', (ev)=>{ if(ev.target && ev.target.id === 'editInput') positionOcrFixBtn_(); }, true);
+window.addEventListener('resize', positionOcrFixBtn_);
+
+// Bấm nút KHÔNG được làm #editInput mất focus/blur trước khi kịp xử lý (giống floatingHighlightBtn ở trên).
+ocrFixBtn.addEventListener('mousedown', (e)=> e.preventDefault());
+ocrFixBtn.addEventListener('click', async ()=>{
+  const inp = document.getElementById('editInput');
+  if(!inp) return;
+  const spinner = document.getElementById('spinner');
+  const spinnerLabel = spinner.lastChild;
+  const prevLabel = spinnerLabel ? spinnerLabel.textContent : '';
+  ocrFixBtn.disabled = true;
+  spinner.classList.add('show');
+  if(spinnerLabel) spinnerLabel.textContent = ' Đang cắt ảnh & chạy OCR (vie)…';
+  try{
+    // BƯỚC 1+2: lấy bounding box hiện tại của #editInput trên MÀN HÌNH, quy đổi 2 góc về đúng hệ
+    // toạ độ pixel GỐC (chưa xoay) của #pdfCanvas — dùng lại đúng clientToCanvasXY_ đã có sẵn trong
+    // file (cùng cách floatingHighlightBtn/handleTextSelectionForHighlight đang dùng), để vẫn ra
+    // đúng toạ độ ngay cả khi trang đang xoay 90/180/270°.
+    const r = inp.getBoundingClientRect();
+    const c1 = clientToCanvasXY_(pdfCanvas, r.left, r.top);
+    const c2 = clientToCanvasXY_(pdfCanvas, r.right, r.bottom);
+    const pad = 3;
+    const x0 = Math.max(0, Math.min(c1.x, c2.x) - pad);
+    const y0 = Math.max(0, Math.min(c1.y, c2.y) - pad);
+    const x1 = Math.min(pdfCanvas.width, Math.max(c1.x, c2.x) + pad);
+    const y1 = Math.min(pdfCanvas.height, Math.max(c1.y, c2.y) + pad);
+    const sx = Math.round(x0), sy = Math.round(y0);
+    const sw = Math.max(1, Math.round(x1 - x0));
+    const sh = Math.max(1, Math.round(y1 - y0));
+
+    // Cắt vùng ảnh THẬT (pixel) của trang từ #pdfCanvas — không đụng gì tới text layer/font lỗi —
+    // rồi phóng to lên (3x, cùng hệ số dùng ở runOcrForPage) để Tesseract nhận diện chính xác hơn.
+    const upscale = 3;
+    const tmp = document.createElement('canvas');
+    tmp.width = sw * upscale; tmp.height = sh * upscale;
+    const tctx = tmp.getContext('2d');
+    tctx.imageSmoothingEnabled = true;
+    tctx.fillStyle = '#ffffff';
+    tctx.fillRect(0, 0, tmp.width, tmp.height);
+    tctx.drawImage(pdfCanvas, sx, sy, sw, sh, 0, 0, tmp.width, tmp.height);
+
+    // BƯỚC 3+4: chạy Tesseract.js (worker dùng chung, đã nạp sẵn ngôn ngữ 'vie' — xem getWorker()).
+    const worker = await getWorker();
+    const { data } = await worker.recognize(tmp);
+    const recognized = String(data && data.text || '').replace(/[ \t]+/g, ' ').trim();
+    if(!recognized){
+      alert('OCR không nhận diện được chữ nào trong vùng này. Thử phóng to (Zoom) trang lên rồi bấm lại.');
+      return;
+    }
+
+    // BƯỚC 5: GHI ĐÈ chuỗi rác trong #editInput bằng kết quả OCR (giữ nguyên các dòng nếu có nhiều
+    // dòng). Khi người dùng chốt (commit) ô này như bình thường, giá trị mới sẽ được lưu vào
+    // cur().edits với type 'ocrfix'/'textfix' — đi qua ĐÚNG pipeline xuất PDF đã có sẵn của ứng
+    // dụng (buildEditedOutDoc -> editFont = outDoc.embedFont(getVietFontBytes(),...)), tức LUÔN
+    // dùng font tiếng Việt được NHÚNG RIÊNG, không bao giờ dùng lại font gốc lỗi của PDF.
+    inp.innerHTML = '';
+    const lines = recognized.split(/\n+/);
+    lines.forEach((line, idx)=>{
+      inp.appendChild(document.createTextNode(line));
+      if(idx < lines.length - 1) inp.appendChild(document.createElement('br'));
+    });
+    inp.dispatchEvent(new Event('input')); // để #editInput tự đo lại kích thước theo nội dung mới
+    try{
+      const range = document.createRange();
+      range.selectNodeContents(inp);
+      range.collapse(false);
+      const sel = window.getSelection();
+      sel.removeAllRanges(); sel.addRange(range);
+    }catch(err){}
+    inp.focus();
+    positionOcrFixBtn_();
+  }catch(err){
+    console.error('Lỗi khi Sửa lỗi Font (OCR):', err);
+    const msg = (err && (err.message || (typeof err === 'string' ? err : JSON.stringify(err)))) || 'Không xác định (xem console để biết chi tiết)';
+    alert('Lỗi khi chạy OCR: ' + msg + '\n\nGợi ý: cần kết nối Internet để tải mô hình OCR lần đầu (từ tessdata.projectnaptha.com).');
+  }finally{
+    ocrFixBtn.disabled = false;
+    spinner.classList.remove('show');
+    if(spinnerLabel) spinnerLabel.textContent = prevLabel;
+  }
+});
+
 async function renderPageToCanvas(idx, renderScale){
   const p = pages[idx];
   const tmp = document.createElement('canvas');
@@ -8992,7 +9809,7 @@ async function buildEditedOutDoc(indexes, spinnerLabel){
     for(const ed of p.edits){
       if(ed._nativeApplied) continue; // đã sửa thật trực tiếp trên content stream, không vẽ đè nữa
       const { font: edFont, fauxBold } = await resolveFontForEdit(ed);
-      await drawEditOnPdfPage(pageObj, ed, rotInfo, edFont, fallbackFont, outDoc, imageEmbedCache, fauxBold);
+      await drawEditOnPdfPage(pageObj, ed, rotInfo, edFont, fallbackFont, outDoc, imageEmbedCache, fauxBold, resolveFontForEdit);
     }
 
     // ---- Áp dụng góc xoay trang (tính năng "Rotate pages") ----
