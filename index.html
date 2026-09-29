@@ -518,6 +518,10 @@
         width:100%;padding:11px;border:none;border-radius:6px;background:#ec5b64;color:#fff;
         font-weight:600;font-size:13.5px;cursor:pointer;margin-top:6px;">Log in</button>
 
+      <div style="text-align:center;margin-top:6px;">
+        <a href="#" id="forgotPasswordLink" style="color:#dbe6fb;font-size:11.5px;text-decoration:underline;">Quên mật khẩu?</a>
+      </div>
+
       <div id="loginHint" style="font-size:11px;color:#dbe6fb;margin-top:14px;line-height:1.5;text-align:center;"></div>
     </form>
   </div>
@@ -564,6 +568,67 @@
   </form>
 </div>
 
+<!-- ===================== MODAL: QUÊN MẬT KHẨU (tự đặt lại qua mã gửi email) ===================== -->
+<div id="forgotPasswordModal" style="
+  position:fixed;inset:0;z-index:1150;display:none;
+  background:rgba(0,0,0,.55);
+  align-items:center;justify-content:center;
+  font-family:'Segoe UI',Roboto,Arial,sans-serif;color:#eceff1;">
+  <form id="forgotPasswordForm" style="
+    background:#25282e;border:1px solid #454a52;border-radius:10px;
+    padding:26px 26px;width:340px;max-width:92vw;box-shadow:0 10px 40px rgba(0,0,0,.5);">
+    <div style="font-weight:600;font-size:15px;margin-bottom:4px;">✉️ Quên mật khẩu</div>
+    <div style="font-size:12px;color:#9aa0a8;margin-bottom:16px;">
+      Nhập tên đăng nhập, hệ thống sẽ gửi mã xác nhận tới email liên kết của tài khoản (do admin đặt).
+      Nếu tài khoản chưa có email liên kết, hãy liên hệ admin.
+    </div>
+
+    <label style="display:block;font-size:12px;color:#9aa0a8;margin-bottom:4px;">Tên đăng nhập</label>
+    <input id="fpUsername" type="text" autocomplete="username" required style="
+      width:100%;box-sizing:border-box;padding:9px 10px;margin-bottom:10px;
+      background:#1c1e22;border:1px solid #454a52;border-radius:6px;color:#eceff1;font-size:13px;">
+
+    <button type="button" id="fpSendCodeBtn" style="
+      width:100%;padding:9px;border:1px solid #454a52;border-radius:6px;background:transparent;color:#eceff1;
+      font-weight:600;font-size:12.5px;cursor:pointer;margin-bottom:6px;">Gửi mã xác nhận</button>
+
+    <div id="fpRequestMsg" style="min-height:16px;font-size:11.5px;margin-bottom:8px;line-height:1.5;"></div>
+
+    <div id="fpStep2" style="display:none;border-top:1px solid #454a52;padding-top:12px;margin-top:4px;">
+      <label style="display:block;font-size:12px;color:#9aa0a8;margin-bottom:4px;">Mã xác nhận (gửi qua email)</label>
+      <input id="fpCode" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" style="
+        width:100%;box-sizing:border-box;padding:9px 10px;margin-bottom:10px;letter-spacing:3px;
+        background:#1c1e22;border:1px solid #454a52;border-radius:6px;color:#eceff1;font-size:14px;">
+
+      <label style="display:block;font-size:12px;color:#9aa0a8;margin-bottom:4px;">Mật khẩu mới (tối thiểu 8 ký tự)</label>
+      <input id="fpNewPassword" type="password" autocomplete="new-password" minlength="8" style="
+        width:100%;box-sizing:border-box;padding:9px 10px;margin-bottom:10px;
+        background:#1c1e22;border:1px solid #454a52;border-radius:6px;color:#eceff1;font-size:13px;">
+
+      <label style="display:block;font-size:12px;color:#9aa0a8;margin-bottom:4px;">Nhập lại mật khẩu mới</label>
+      <input id="fpNewPassword2" type="password" autocomplete="new-password" minlength="8" style="
+        width:100%;box-sizing:border-box;padding:9px 10px;margin-bottom:8px;
+        background:#1c1e22;border:1px solid #454a52;border-radius:6px;color:#eceff1;font-size:13px;">
+
+      <button type="button" id="fpResendBtn" style="
+        background:transparent;border:none;color:#8ab4f8;font-size:11.5px;cursor:pointer;text-decoration:underline;
+        padding:0;margin-bottom:8px;">Gửi lại mã</button>
+    </div>
+
+    <div id="fpError" style="min-height:18px;color:#ff8a80;font-size:12px;margin-bottom:4px;"></div>
+    <div id="fpSuccess" style="min-height:18px;color:#8bd17c;font-size:12px;margin-bottom:4px;"></div>
+
+    <div style="display:flex;gap:8px;margin-top:6px;">
+      <button type="button" id="fpCancelBtn" style="
+        flex:1;padding:10px;border:1px solid #454a52;border-radius:6px;background:transparent;color:#eceff1;
+        font-weight:600;font-size:13px;cursor:pointer;">Đóng</button>
+      <button id="fpSubmitBtn" type="submit" style="
+        flex:1;padding:10px;border:none;border-radius:6px;background:#e2402c;color:#fff;
+        font-weight:600;font-size:13px;cursor:pointer;display:none;">Đặt lại mật khẩu</button>
+    </div>
+  </form>
+</div>
+
 <!-- ===================== MODAL: QUẢN LÝ NGƯỜI DÙNG (chỉ admin) ===================== -->
 <div id="userManageModal" style="
   position:fixed;inset:0;z-index:1100;display:none;
@@ -602,6 +667,10 @@
       </div>
       <label style="display:block;font-size:11.5px;color:#9aa0a8;margin-bottom:4px;">Mật khẩu (tối thiểu 8 ký tự)</label>
       <input id="auPassword" type="password" autocomplete="new-password" required minlength="8" style="
+        width:100%;box-sizing:border-box;padding:8px 9px;margin-bottom:10px;
+        background:#2b2f36;border:1px solid #454a52;border-radius:6px;color:#eceff1;font-size:12.5px;">
+      <label style="display:block;font-size:11.5px;color:#9aa0a8;margin-bottom:4px;">Email liên kết (không bắt buộc — dùng để user tự đặt lại mật khẩu qua mã gửi email)</label>
+      <input id="auEmail" type="email" autocomplete="off" style="
         width:100%;box-sizing:border-box;padding:8px 9px;margin-bottom:10px;
         background:#2b2f36;border:1px solid #454a52;border-radius:6px;color:#eceff1;font-size:12.5px;">
       <div style="margin-bottom:10px;">
@@ -1355,7 +1424,7 @@
     <option value="48"></option>
   </datalist>
   <span style="display:inline-flex;align-items:center;gap:4px;font-size:11.5px;color:var(--text-dim);margin-left:2px;">
-    <input type="color" id="fontColorSwatch" value="#000000" title="Chọn màu chữ: bôi đen chữ cần đổi trong ô đang sửa rồi chọn màu — chữ được chọn đổi màu ngay (nếu không bôi đen, đổi màu cả đoạn)">Color text
+    <input type="color" id="fontColorSwatch" value="#000000" title="Đổi màu chữ: (1) bấm Edit Text, (2) chọn màu ở đây, (3) bấm vào đoạn chữ cần đổi màu (có thể bấm nhiều đoạn), (4) bấm nút Select để áp dụng. Khi đang sửa chữ trong ô nhập: bôi đen phần chữ rồi chọn màu để đổi ngay.">Color text
   </span>
   <button class="tbtn" id="btnBold" title="In đậm (áp dụng cho chữ đang chọn hoặc chữ sắp gõ tiếp theo)" style="font-weight:800;padding-left:10px;padding-right:10px;">B</button>
   <button class="tbtn" id="btnItalic" title="In nghiêng (áp dụng cho chữ đang chọn hoặc chữ sắp gõ tiếp theo)" style="font-style:italic;padding-left:10px;padding-right:10px;">I</button>
@@ -1635,6 +1704,116 @@ document.getElementById('btnLogout').addEventListener('click', async function(){
   location.reload();
 });
 
+/* ---------- Quên mật khẩu (tự đặt lại qua mã gửi email) ---------- */
+const forgotPasswordModal = document.getElementById('forgotPasswordModal');
+let fpResendCooldownTimer_ = null;
+
+function fpResetUi_(){
+  document.getElementById('forgotPasswordForm').reset();
+  document.getElementById('fpStep2').style.display = 'none';
+  document.getElementById('fpSubmitBtn').style.display = 'none';
+  document.getElementById('fpSendCodeBtn').style.display = 'block';
+  document.getElementById('fpRequestMsg').textContent = '';
+  document.getElementById('fpError').textContent = '';
+  document.getElementById('fpSuccess').textContent = '';
+  const resendBtn = document.getElementById('fpResendBtn');
+  resendBtn.disabled = false; resendBtn.textContent = 'Gửi lại mã';
+  if(fpResendCooldownTimer_){ clearInterval(fpResendCooldownTimer_); fpResendCooldownTimer_ = null; }
+}
+function openForgotPasswordModal(){
+  fpResetUi_();
+  // Gợi ý sẵn tên đăng nhập người dùng vừa gõ ở màn đăng nhập (nếu có), đỡ phải gõ lại.
+  const loginUser = document.getElementById('loginUsername').value.trim();
+  document.getElementById('fpUsername').value = loginUser;
+  forgotPasswordModal.style.display = 'flex';
+  document.getElementById('fpUsername').focus();
+}
+function closeForgotPasswordModal(){ forgotPasswordModal.style.display = 'none'; if(fpResendCooldownTimer_){ clearInterval(fpResendCooldownTimer_); fpResendCooldownTimer_ = null; } }
+document.getElementById('forgotPasswordLink').addEventListener('click', function(e){ e.preventDefault(); openForgotPasswordModal(); });
+document.getElementById('fpCancelBtn').addEventListener('click', closeForgotPasswordModal);
+forgotPasswordModal.addEventListener('click', function(e){ if(e.target === forgotPasswordModal) closeForgotPasswordModal(); });
+
+function fpStartResendCooldown_(seconds){
+  const btn = document.getElementById('fpResendBtn');
+  let remaining = seconds;
+  btn.disabled = true;
+  btn.textContent = 'Gửi lại mã (' + remaining + 's)';
+  if(fpResendCooldownTimer_) clearInterval(fpResendCooldownTimer_);
+  fpResendCooldownTimer_ = setInterval(function(){
+    remaining--;
+    if(remaining <= 0){
+      clearInterval(fpResendCooldownTimer_); fpResendCooldownTimer_ = null;
+      btn.disabled = false; btn.textContent = 'Gửi lại mã';
+    } else {
+      btn.textContent = 'Gửi lại mã (' + remaining + 's)';
+    }
+  }, 1000);
+}
+
+async function fpRequestCode_(){
+  const username = document.getElementById('fpUsername').value.trim();
+  const errEl = document.getElementById('fpError');
+  const msgEl = document.getElementById('fpRequestMsg');
+  errEl.textContent = '';
+  if(!username){ errEl.textContent = 'Vui lòng nhập tên đăng nhập.'; return; }
+  const sendBtn = document.getElementById('fpSendCodeBtn');
+  const originalText = sendBtn.textContent;
+  sendBtn.disabled = true; sendBtn.textContent = 'Đang gửi…';
+  try{
+    const result = await callAuthApi({ action: 'requestPasswordReset', username: username });
+    // [BẢO MẬT] Máy chủ luôn trả thông báo chung chung (không lộ tài khoản có tồn tại/có email hay
+    // không) — phía web chỉ việc hiển thị nguyên văn và mở bước nhập mã.
+    msgEl.style.color = '#8bd17c';
+    msgEl.textContent = (result && result.message) || 'Nếu tài khoản tồn tại và có email liên kết, mã xác nhận đã được gửi.';
+    document.getElementById('fpStep2').style.display = 'block';
+    document.getElementById('fpSubmitBtn').style.display = 'block';
+    document.getElementById('fpSendCodeBtn').style.display = 'none';
+    document.getElementById('fpCode').focus();
+    fpStartResendCooldown_(60);
+  }catch(err){
+    errEl.textContent = err.message;
+  }finally{
+    sendBtn.disabled = false; sendBtn.textContent = originalText;
+  }
+}
+document.getElementById('fpSendCodeBtn').addEventListener('click', fpRequestCode_);
+document.getElementById('fpResendBtn').addEventListener('click', function(){
+  if(document.getElementById('fpResendBtn').disabled) return;
+  fpRequestCode_();
+});
+
+document.getElementById('forgotPasswordForm').addEventListener('submit', async function(e){
+  e.preventDefault();
+  // Bước 1 chưa gửi mã -> nút submit ẩn, Enter trong ô username coi như bấm "Gửi mã xác nhận".
+  if(document.getElementById('fpStep2').style.display === 'none'){ fpRequestCode_(); return; }
+  const username = document.getElementById('fpUsername').value.trim();
+  const code = document.getElementById('fpCode').value.trim();
+  const newPassword = document.getElementById('fpNewPassword').value;
+  const newPassword2 = document.getElementById('fpNewPassword2').value;
+  const errEl = document.getElementById('fpError');
+  const okEl = document.getElementById('fpSuccess');
+  const btn = document.getElementById('fpSubmitBtn');
+  errEl.textContent = ''; okEl.textContent = '';
+  if(!code){ errEl.textContent = 'Vui lòng nhập mã xác nhận.'; return; }
+  if(newPassword.length < 8){ errEl.textContent = 'Mật khẩu mới phải có ít nhất 8 ký tự.'; return; }
+  if(newPassword !== newPassword2){ errEl.textContent = 'Hai lần nhập mật khẩu mới không khớp.'; return; }
+  btn.disabled = true; btn.textContent = 'Đang xử lý…';
+  try{
+    const result = await callAuthApi({ action: 'confirmPasswordReset', username: username, code: code, newPassword: newPassword });
+    if(result && result.success){
+      okEl.textContent = (result.message || 'Đặt lại mật khẩu thành công.') + ' Đang đóng…';
+      document.getElementById('loginUsername').value = username;
+      setTimeout(closeForgotPasswordModal, 1600);
+    } else {
+      errEl.textContent = (result && result.message) || 'Đặt lại mật khẩu thất bại.';
+    }
+  }catch(err){
+    errEl.textContent = err.message;
+  }finally{
+    btn.disabled = false; btn.textContent = 'Đặt lại mật khẩu';
+  }
+});
+
 /* ---------- Đổi mật khẩu ---------- */
 const changePasswordModal = document.getElementById('changePasswordModal');
 function openChangePasswordModal(){
@@ -1714,6 +1893,9 @@ async function refreshUserList(){
             (u.locked?' · <span style="color:#ff8a80;">đang khoá tạm</span>':'')+
             (isAdminLocked?' · <span style="color:#ff8a80;font-weight:600;">🔒 đã khoá bởi admin</span>':'')+
           '</div>'+
+          '<div style="font-size:11px;color:#9aa0a8;overflow-wrap:anywhere;">✉️ '+
+            (u.email ? escapeHtml(u.email) : '<span style="color:#6b7078;">chưa có email liên kết</span>')+
+          '</div>'+
         '</div>'+
         '<div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-start;">'+
         (u.role==='admin' ? '' : PERMISSION_LIST.map(function(pm){
@@ -1723,6 +1905,9 @@ async function refreshUserList(){
             'background:transparent;border:1px solid '+(on?'#3a6b3f':'#454a52')+';color:'+(on?'#8bd17c':'#9aa0a8')+';border-radius:5px;padding:5px 9px;font-size:11.5px;cursor:pointer;white-space:nowrap;">'+
             pm.icon+' '+pm.label+': '+(on?'Bật':'Tắt')+'</button>';
         }).join(''))+
+        '<button type="button" data-username="'+escapeHtml(u.username)+'" data-email="'+escapeHtml(u.email||'')+'" class="umEmailBtn" style="'+
+          'background:transparent;border:1px solid #454a52;color:#eceff1;border-radius:5px;padding:5px 9px;font-size:11.5px;cursor:pointer;white-space:nowrap;">'+
+          (u.email ? 'Sửa email' : '+ Email')+'</button>'+
         '<button type="button" data-username="'+escapeHtml(u.username)+'" class="umResetPwBtn" style="'+
           'background:transparent;border:1px solid #454a52;color:#eceff1;border-radius:5px;padding:5px 9px;font-size:11.5px;cursor:pointer;white-space:nowrap;">Reset MK</button>'+
         '<button type="button" data-username="'+escapeHtml(u.username)+'" data-locked="'+(isAdminLocked?'1':'0')+'" class="umLockBtn" style="'+
@@ -1778,6 +1963,33 @@ async function refreshUserList(){
           const result = await callAuthApi({ action: 'setUserPermission', token: token, targetUsername: username, permission: permKey, value: nextValue });
           if(result && result.success){ refreshUserList(); }
           else { listErr.style.color = '#ff8a80'; listErr.textContent = (result && result.message) || 'Phân quyền thất bại.'; btn.disabled = false; btn.textContent = originalText; }
+        }catch(err){ listErr.style.color = '#ff8a80'; listErr.textContent = err.message; btn.disabled = false; btn.textContent = originalText; }
+      });
+    });
+    container.querySelectorAll('.umEmailBtn').forEach(function(btn){
+      btn.addEventListener('click', async function(){
+        const username = btn.getAttribute('data-username');
+        const currentEmail = btn.getAttribute('data-email') || '';
+        const input = prompt('Email liên kết cho tài khoản "'+username+'" (dùng để gửi mã khi user bấm "Quên mật khẩu?").\nĐể trống và bấm OK để XOÁ email liên kết.', currentEmail);
+        if(input === null) return; // bấm Huỷ
+        const cleanEmail = input.trim();
+        if(cleanEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)){
+          listErr.style.color = '#ff8a80'; listErr.textContent = 'Địa chỉ email không hợp lệ.'; return;
+        }
+        const originalText = btn.textContent;
+        btn.disabled = true; btn.textContent = 'Đang lưu…';
+        try{
+          const token = sessionStorage.getItem(SESSION_STORAGE_KEY);
+          const result = await callAuthApi({ action: 'setUserEmail', token: token, targetUsername: username, email: cleanEmail });
+          if(result && result.success){
+            listErr.style.color = '#8bd17c';
+            listErr.textContent = cleanEmail ? 'Đã lưu email liên kết cho "'+username+'".' : 'Đã xoá email liên kết của "'+username+'".';
+            refreshUserList();
+          } else {
+            listErr.style.color = '#ff8a80';
+            listErr.textContent = (result && result.message) || 'Lưu email thất bại.';
+            btn.disabled = false; btn.textContent = originalText;
+          }
         }catch(err){ listErr.style.color = '#ff8a80'; listErr.textContent = err.message; btn.disabled = false; btn.textContent = originalText; }
       });
     });
@@ -1866,6 +2078,7 @@ document.getElementById('addUserForm').addEventListener('submit', async function
   const newUsername = document.getElementById('auUsername').value.trim();
   const newPassword = document.getElementById('auPassword').value;
   const role = document.getElementById('auRole').value;
+  const newEmail = document.getElementById('auEmail').value.trim();
   const errEl = document.getElementById('auError');
   const okEl = document.getElementById('auSuccess');
   const btn = document.getElementById('auSubmitBtn');
@@ -1874,7 +2087,7 @@ document.getElementById('addUserForm').addEventListener('submit', async function
   btn.disabled = true; btn.textContent = 'Đang tạo…';
   try{
     const token = sessionStorage.getItem(SESSION_STORAGE_KEY);
-    const result = await callAuthApi({ action: 'addUser', token: token, newUsername: newUsername, newPassword: newPassword, role: role, permissions: readAddUserPerms_() });
+    const result = await callAuthApi({ action: 'addUser', token: token, newUsername: newUsername, newPassword: newPassword, role: role, permissions: readAddUserPerms_(), email: newEmail });
     if(result && result.success){
       okEl.textContent = 'Đã tạo tài khoản "'+newUsername+'".';
       document.getElementById('addUserForm').reset();
@@ -3017,13 +3230,14 @@ let pendingSelectedTextColor = null;
 //     applyPendingTextColorClick_), để không để lại "edit vô hình" nào nếu người dùng không bấm Select.
 // null = không có gì đang chờ. Xem resolvePendingTextClickTarget_() và applyPendingTextColorClick_().
 let pendingTextColor = null;
-let pendingTextTarget = null;
+// Danh sách mục tiêu đã click (cho phép chọn NHIỀU đoạn chữ rồi đổi màu cùng lúc). Mỗi phần tử: {kind:'edit',index} hoặc {kind:'line',line,editType,lines}.
+let pendingTextTargets = [];
 // Cờ bật/tắt log gỡ lỗi riêng cho luồng đổi màu text bằng Select — mặc định TẮT ở bản chạy thật.
 const DEBUG_TEXT_COLOR = false;
 // DEBUG TẠM THỜI theo yêu cầu: log đúng 4 giai đoạn (chọn màu / click text / click Select / commit
 // màu) để xác định CHÍNH XÁC giai đoạn nào không chạy như mong đợi trên máy thật của người dùng.
 // BẬT true trong bản này để lấy log — PHẢI đặt lại false khi đã xác định xong nguyên nhân.
-const DEBUG_TEXT_COLOR_FLOW = true;
+const DEBUG_TEXT_COLOR_FLOW = false;
 // [SỬA LỖI FONT khi Edit Text] Font mặc định khi KHÔNG dò được font gốc của dòng chữ. Trước đây luôn là
 // 'Arial' (cứng ở nhiều nơi) nên bấm sửa chữ Times New Roman là chữ bị đổi sang Arial. Tài liệu hành chính
 // tiếng Việt gần như luôn là Times New Roman nên dùng làm mặc định (font gốc dò được từ PDF luôn được ưu tiên
@@ -3312,7 +3526,7 @@ async function closeCurrentPdf_(){
   activeColorSelectionSpan = null;
   ocrPrefetchState = {};
   pendingTextColor = null;
-  pendingTextTarget = null;
+  pendingTextTargets = [];
   pendingSelectedTextColor = null;
 
   document.getElementById('filename').textContent = '';
@@ -4824,7 +5038,7 @@ async function renderPage(idx, opts){
   // pendingTextTarget (kind:'line') giữ tham chiếu trực tiếp tới object "line" của TRANG cũ — sang
   // trang khác thì tham chiếu đó không còn hợp lệ, phải huỷ để tránh Select ở trang mới áp nhầm màu.
   pendingTextColor = null;
-  pendingTextTarget = null;
+  pendingTextTargets = [];
   document.getElementById('pageNumInput').value = idx+1;
   const p = cur();
   if(!p) return; // phòng trường hợp idx không còn hợp lệ (trang vừa bị xoá bởi thao tác khác)
@@ -5112,6 +5326,7 @@ function redrawOverlay(){
     if(lines && lines.length) drawAllTextLineBoxes(lines);
   }
   if((activeTool==='ocr' || activeTool==='edittext') && hoverLine) drawHoverLineBox(hoverLine);
+  drawPendingTextTargets_();
   // Đồng bộ thanh Opacity theo khối chữ/ảnh đang chọn (nếu có) — xem refreshOpacityControl.
   refreshOpacityControl();
 }
@@ -5616,25 +5831,17 @@ document.querySelectorAll('.tbtn[data-tool]').forEach(btn=>{
       // "selectedEditIndex = -1" ngay bên dưới — nếu không, sẽ không còn biết đang áp màu cho khối
       // chữ nào nữa. Không tạo handler cạnh tranh mới: tích hợp thẳng vào handler chung của mọi nút
       // công cụ (.tbtn[data-tool]) đã có sẵn, chỉ chạy thêm bước này khi đúng là nút Select.
-      if(DEBUG_TEXT_COLOR_FLOW && tool === 'select'){
-        console.log('[SELECT_CLICK]', {
-          modeBefore: activeTool,
-          selectedEditIndex: selectedEditIndex,
-          pendingTextIndex: pendingTextTarget,
-          pendingTextColor: pendingTextColor
-        });
-      }
       if(tool === 'select'){
         applyPendingSelectedTextColor_();
         // FIX: workflow Edit Text -> chọn màu -> click text -> Select. Phải gọi TRƯỚC dòng
         // "selectedEditIndex = -1" ngay bên dưới (không tạo handler cạnh tranh mới, tích hợp thẳng
         // vào handler chung của mọi nút công cụ đã có sẵn).
         applyPendingTextColorClick_();
-      } else if(tool !== 'edittext' && (pendingTextColor || pendingTextTarget)){
+      } else if(tool !== 'edittext' && (pendingTextColor || pendingTextTargets.length)){
         // Rời khỏi Edit Text sang một công cụ khác (không phải Select) mà CHƯA bấm Select -> huỷ
         // màu/mục tiêu đang chờ, tránh áp nhầm màu về sau.
         pendingTextColor = null;
-        pendingTextTarget = null;
+        pendingTextTargets = [];
       }
       activeTool = tool;
       document.querySelectorAll('.tbtn[data-tool]').forEach(b=>b.classList.remove('active'));
@@ -5648,6 +5855,7 @@ document.querySelectorAll('.tbtn[data-tool]').forEach(btn=>{
       selectedEditIndex = -1;
       hoverLine = null;
       overlayCanvas.className = 'tool-' + activeTool;
+      refreshPendingColorHint_();
       refreshPaintSizeUi_(); // Paint: hiện/ẩn cụm chỉnh kích thước nét theo công cụ đang chọn
       try{ redrawOverlay(); }catch(err){ console.warn('Không vẽ lại được lớp overlay:', err); }
       // Chuẩn bị sẵn dữ liệu vị trí từng dòng chữ ngay khi chọn công cụ, để việc "trỏ chuột vào đâu highlight
@@ -5682,6 +5890,14 @@ document.querySelectorAll('.tbtn[data-tool]').forEach(btn=>{
   };
 });
 document.getElementById('toolSelect').classList.add('active');
+document.addEventListener('keydown', (e)=>{
+  if(e.key !== 'Escape' || activeTool !== 'edittext') return;
+  if(!pendingTextColor && !pendingTextTargets.length) return;
+  if(document.getElementById('editInput')) return;
+  pendingTextColor = null; pendingTextTargets = [];
+  refreshPendingColorHint_();
+  try{ redrawOverlay(); }catch(err){}
+});
 document.getElementById('colorSwatch').oninput = (e)=>{ currentColor = e.target.value; refreshPaintSizeUi_(); };
 
 // ================== PAINT: chỉnh kích thước nét vẽ ==================
@@ -5903,14 +6119,10 @@ document.getElementById('fontColorSwatch').oninput = (e)=>{
   // nào ở đây, không pushUndo) — màu thật sự chỉ được CHỐT vào đúng text đã click khi bấm lại nút
   // Select. KHÔNG được yêu cầu #editInput/activeEditInputEl để làm điều kiện — xem tiếp bên dưới.
   if(activeTool === 'edittext'){
+    // Luồng "Edit Text -> chọn màu -> click chữ -> Select": chỉ GHI NHỚ màu đang chờ, chưa đổi gì cả.
     pendingTextColor = currentFontColor;
-    if(DEBUG_TEXT_COLOR_FLOW) console.log('[COLOR_SELECTED]', {
-      mode: activeTool,
-      selectedEditIndex: selectedEditIndex,
-      pendingTextColor: pendingTextColor,
-      currentFontColor: currentFontColor
-    });
-    if(DEBUG_TEXT_COLOR) console.log('[fontColorSwatch] pendingTextColor =', pendingTextColor, 'pendingTextTarget hiện tại =', pendingTextTarget);
+    refreshPendingColorHint_();
+    try{ redrawOverlay(); }catch(err){}
     refreshActiveEditInputFont();
     return;
   }
@@ -5939,6 +6151,26 @@ document.getElementById('fontColorSwatch').oninput = (e)=>{
 // theo, ví dụ khi người dùng bấm ra ngoài trang), và (2) nếu ô đang sửa (#editInput) vẫn còn đang mở
 // (chưa bị đóng vì lý do khác), chủ động trả lại focus + con trỏ cho nó — để người dùng gõ tiếp/bôi
 // đen chọn phần khác ngay lập tức mà không cần bấm lại vào chữ từ đầu.
+// ===== Đổi màu chữ theo luồng: Edit Text -> chọn màu -> click chữ -> bấm Select =====
+// Ghi nhận màu người dùng vừa chọn ở ô "Color text" khi đang ở công cụ Edit Text và KHÔNG có ô sửa
+// nào đang mở. Ngoài sự kiện 'input' (chỉ bắn khi màu THAY ĐỔI), còn nghe thêm 'change' và 'blur' để
+// vẫn ghi nhận được trường hợp người dùng chọn lại đúng màu đang hiển thị (VD: chọn đen khi ô đang đen)
+// — nếu không thì 'input' không bắn, pendingTextColor rỗng và cú click chữ kế tiếp sẽ mở ô sửa.
+let fontColorPickerOpened_ = false;
+function armPendingTextColor_(){
+  if(activeTool !== 'edittext' || activeEditInputEl) return;
+  const sw = document.getElementById('fontColorSwatch');
+  currentFontColor = sw.value;
+  pendingTextColor = sw.value;
+  refreshPendingColorHint_();
+  try{ redrawOverlay(); }catch(err){}
+}
+document.getElementById('fontColorSwatch').addEventListener('mousedown', ()=>{ fontColorPickerOpened_ = true; });
+document.getElementById('fontColorSwatch').addEventListener('change', ()=>{ armPendingTextColor_(); });
+document.getElementById('fontColorSwatch').addEventListener('blur', ()=>{
+  if(fontColorPickerOpened_ && !pendingTextColor) armPendingTextColor_();
+  fontColorPickerOpened_ = false;
+});
 document.getElementById('fontColorSwatch').addEventListener('blur', ()=>{
   pickingFontColor = false;
   if(activeEditInputEl && activeEditInputEl.isConnected){
@@ -6158,6 +6390,7 @@ function applyPendingSelectedTextColor_(){
   if(ed && isTextEdit(ed)){
     pushUndo(currentIndex);
     ed.color = pendingSelectedTextColor;
+    ed.colorTouched = true;
     delete ed.colorRuns; // chọn cả khối rồi đổi màu -> về lại 1 màu duy nhất cho toàn bộ đoạn
     currentFontColor = pendingSelectedTextColor;
     const colorSel = document.getElementById('fontColorSwatch');
@@ -6183,74 +6416,99 @@ function applyPendingSelectedTextColor_(){
 //    text) và áp thẳng pendingTextColor — đây là hành động ĐỘC LẬP với việc sửa nội dung chữ.
 // pushUndo() ĐÚNG 1 LẦN cho cả thao tác, không phụ thuộc số sự kiện "input" mà Color Picker bắn ra.
 function applyPendingTextColorClick_(){
-  if(!pendingTextColor || !pendingTextTarget){
-    if(DEBUG_TEXT_COLOR_FLOW) console.log('[SELECT_TARGET] KHÔNG có gì để commit ->', { pendingTextColor, pendingTextTarget });
-    pendingTextColor = null; pendingTextTarget = null; return;
-  }
-  if(!pages.length){ pendingTextColor = null; pendingTextTarget = null; return; }
+  // Chốt màu đang chờ vào TẤT CẢ các đoạn chữ đã click (1 lần pushUndo cho cả thao tác).
+  const color = pendingTextColor;
+  const targets = pendingTextTargets.slice();
+  pendingTextColor = null;
+  pendingTextTargets = [];
+  if(!color || !targets.length || !pages.length){ refreshPendingColorHint_(); return; }
   const p = cur();
   const colorSel = document.getElementById('fontColorSwatch');
-  if(DEBUG_TEXT_COLOR_FLOW){
-    const dbgEd = pendingTextTarget.kind==='edit' ? p.edits[pendingTextTarget.index] : null;
-    console.log('[SELECT_TARGET]', {
-      targetIndex: pendingTextTarget.kind==='edit' ? pendingTextTarget.index : '(chưa có, sẽ tạo mới)',
-      targetType: pendingTextTarget.kind,
-      targetText: pendingTextTarget.kind==='edit' ? (dbgEd && dbgEd.text) : (pendingTextTarget.line && pendingTextTarget.line.text),
-      oldColor: pendingTextTarget.kind==='edit' ? (dbgEd && dbgEd.color) : '(dòng gốc PDF, chưa có ed.color)'
-    });
-  }
-  if(pendingTextTarget.kind === 'edit'){
-    const ed = p.edits[pendingTextTarget.index];
-    if(ed && isTextEdit(ed)){
-      if(DEBUG_TEXT_COLOR_FLOW) console.log('[COLOR_COMMIT]', { index: pendingTextTarget.index, oldColor: ed.color, newColor: pendingTextColor, text: ed.text });
-      pushUndo(currentIndex);
-      ed.color = pendingTextColor;
-      delete ed.colorRuns; // Cơ chế A: đổi màu cả text object -> về lại 1 màu duy nhất cho toàn bộ đoạn
-      currentFontColor = pendingTextColor;
-      if(colorSel) colorSel.value = pendingTextColor;
-      selectedEditIndex = pendingTextTarget.index;
-      redrawOverlay();
-      if(DEBUG_TEXT_COLOR_FLOW) console.log('[COLOR_COMMITTED]', { index: pendingTextTarget.index, color: ed.color, colorRuns: ed.colorRuns });
-      if(DEBUG_TEXT_COLOR) console.log('[applyPendingTextColorClick_] áp màu', pendingTextColor, 'cho edit#', pendingTextTarget.index);
-    } else if(DEBUG_TEXT_COLOR_FLOW){
-      console.log('[COLOR_COMMIT] BỎ QUA vì không tìm thấy text object hợp lệ tại index', pendingTextTarget.index, '-> ed =', ed);
+  // Chụp trước THAM CHIẾU tới các edit đã có (không dùng chỉ số) vì tạo edit mới có thể làm lệch chỉ số.
+  const editRefs = [];
+  const lineTargets = [];
+  for(const t of targets){
+    if(t.kind === 'edit'){
+      const ed = p.edits[t.index];
+      if(ed && isTextEdit(ed) && editRefs.indexOf(ed) < 0) editRefs.push(ed);
+    } else if(t.kind === 'line'){
+      lineTargets.push(t);
     }
-  } else if(pendingTextTarget.kind === 'line'){
-    const line = pendingTextTarget.line;
+  }
+  if(!editRefs.length && !lineTargets.length){ refreshPendingColorHint_(); return; }
+  pushUndo(currentIndex);
+  for(const ed of editRefs){
+    ed.color = color;
+    ed.colorTouched = true; // báo cho bước Save PDF: KHÔNG dùng cách sửa-thật-trên-content-stream (sẽ mất màu)
+    delete ed.colorRuns;    // đổi màu cả đoạn -> về đúng 1 màu duy nhất
+  }
+  for(const t of lineTargets){
+    const line = t.line;
     const srcFont = inferLineFontForEdit_(p, line);
     const fontSize = srcFont.size || line.fontSize || 12;
     const padY = Math.max(3, fontSize*0.35), padX = Math.max(2, fontSize*0.1);
-    const cvL = clampCoverToNeighbors_(pendingTextTarget.lines, line, line.y0 - padY, line.y1 + padY);
+    const cvL = clampCoverToNeighbors_(t.lines, line, line.y0 - padY, line.y1 + padY);
     const cx0 = line.x0 - padX, cy0 = cvL.top, cw = (line.x1-line.x0) + padX*2, ch = cvL.bottom - cvL.top;
     const bgColor = sampleBackgroundColor(cx0, cy0, cw, ch);
     const tx0 = line.x0 - 2;
     const ty0 = line.y0 + (((line.y1 - line.y0) - fontSize*1.15) / 2);
     const auto = computeAutoBoxSize(line.text, srcFont.family, fontSize, tx0, srcFont.bold, srcFont.italic);
-    if(DEBUG_TEXT_COLOR_FLOW) console.log('[COLOR_COMMIT]', { index: '(mới)', oldColor: '(chữ gốc PDF, chưa có màu riêng)', newColor: pendingTextColor, text: line.text });
-    pushUndo(currentIndex);
     removeOverlappingTextEdits(p, Math.min(cx0,tx0), Math.min(cy0,ty0), Math.max(cx0+cw, tx0+auto.w), Math.max(cy0+ch, ty0+auto.h));
-    const newIdx = p.edits.length;
     p.edits.push({
-      type: pendingTextTarget.editType, x: tx0, y: ty0, w: auto.w, h: auto.h,
+      type: t.editType, x: tx0, y: ty0, w: auto.w, h: auto.h,
       coverX: cx0, coverY: cy0, coverW: cw, coverH: ch,
-      text: line.text, fontSize, fontFamily: srcFont.family, color: pendingTextColor,
+      text: line.text, fontSize, fontFamily: srcFont.family, color: color,
+      colorTouched: true,
       bold: srcFont.bold, italic: srcFont.italic, underline: false, align: 'left', bg:true, bgColor,
       ...newTextOpacityProps_(),
       srcX0: line.x0, srcY0: line.y0, srcX1: line.x1, srcY1: line.y1,
       origLineW: line.x1 - line.x0,
       nativeItemIdxs: line.itemIdxs || null
     });
-    currentFontColor = pendingTextColor;
-    if(colorSel) colorSel.value = pendingTextColor;
-    selectedEditIndex = newIdx;
-    redrawOverlay();
-    if(DEBUG_TEXT_COLOR_FLOW) console.log('[COLOR_COMMITTED]', { index: newIdx, color: p.edits[newIdx].color, colorRuns: p.edits[newIdx].colorRuns });
-    if(DEBUG_TEXT_COLOR) console.log('[applyPendingTextColorClick_] tạo edit mới #', newIdx, 'áp màu', pendingTextColor);
-  } else if(DEBUG_TEXT_COLOR_FLOW){
-    console.log('[COLOR_COMMIT] BỎ QUA vì pendingTextTarget.kind không hợp lệ:', pendingTextTarget);
   }
-  pendingTextColor = null;
-  pendingTextTarget = null;
+  currentFontColor = color;
+  if(colorSel) colorSel.value = color;
+  selectedEditIndex = -1;
+  redrawOverlay();
+  refreshPendingColorHint_();
+}
+// Gợi ý trạng thái (thanh dưới cùng) cho luồng đổi màu chữ bằng Edit Text.
+function refreshPendingColorHint_(){
+  const el = document.getElementById('toolLabel');
+  if(!el || activeTool !== 'edittext') return;
+  let msg;
+  if(!pendingTextColor){
+    msg = toolLabels.edittext;
+  } else if(!pendingTextTargets.length){
+    msg = 'Edit Text — đã chọn màu ' + pendingTextColor + '. Bấm vào đoạn chữ cần đổi màu (có thể bấm nhiều đoạn), rồi bấm nút Select để áp dụng. Esc: huỷ.';
+  } else {
+    msg = 'Edit Text — đã chọn ' + pendingTextTargets.length + ' đoạn chữ, màu ' + pendingTextColor + '. Bấm nút Select để đổi màu (bấm lại chữ để bỏ chọn, bấm vùng trống hoặc Esc để huỷ).';
+  }
+  el.textContent = 'Công cụ: ' + msg;
+  el.title = el.textContent;
+}
+// Viền đánh dấu các đoạn chữ đã click, chờ bấm Select (viền tô đúng màu đã chọn để dễ nhận biết).
+function drawPendingTextTargets_(){
+  if(activeTool !== 'edittext' || !pendingTextTargets.length || !pages.length) return;
+  const p = cur();
+  octx.save();
+  octx.setLineDash([]);
+  for(const t of pendingTextTargets){
+    let x, y, w, h;
+    if(t.kind === 'line'){
+      const l = t.line;
+      x = l.x0*scale-3; y = l.y0*scale-3; w = (l.x1-l.x0)*scale+6; h = (l.y1-l.y0)*scale+6;
+    } else {
+      const ed = p.edits[t.index];
+      if(!ed) continue;
+      x = ed.x*scale-3; y = ed.y*scale-3; w = ed.w*scale+6; h = ed.h*scale+6;
+    }
+    octx.fillStyle = 'rgba(255,193,7,0.18)';
+    octx.fillRect(x, y, w, h);
+    octx.strokeStyle = 'rgba(0,0,0,0.55)'; octx.lineWidth = 4; octx.strokeRect(x, y, w, h);
+    octx.strokeStyle = pendingTextColor || '#e2402c'; octx.lineWidth = 2; octx.strokeRect(x, y, w, h);
+  }
+  octx.restore();
 }
 function syncFontControlsToSelection(){
   if(!pages.length || selectedEditIndex<0) return;
@@ -6781,7 +7039,7 @@ document.getElementById('btnUndo').onclick = ()=>{
     cur().edits = JSON.parse(st.pop());
     selectedEditIndex = -1;
     pendingTextColor = null;
-    pendingTextTarget = null;
+    pendingTextTargets = [];
     redrawOverlay();
   }
 };
@@ -6792,7 +7050,7 @@ document.getElementById('btnClearPage').onclick = ()=>{
     cur().edits = [];
     selectedEditIndex = -1;
     pendingTextColor = null;
-    pendingTextTarget = null;
+    pendingTextTargets = [];
     redrawOverlay();
   }
 };
@@ -8329,6 +8587,8 @@ function syncCoverToSafeArea_(ed){
 // CHÍNH cơ chế xác định dòng chữ (hit-test theo "lines"/hitTestEdits) mà editLineAt() vẫn dùng,
 // không tạo hệ thống hit-test thứ hai.
 function resolvePendingTextClickTarget_(px, py, editType, customLines){
+  // Click 1 đoạn chữ khi đã có màu đang chờ: CHỈ ghi nhớ/bỏ ghi nhớ đoạn chữ đó (bấm lần nữa để bỏ
+  // chọn, cho phép chọn nhiều đoạn). TUYỆT ĐỐI không mở ô sửa. Màu chỉ được áp khi bấm nút Select.
   const p = cur();
   const lines = customLines || (editType==='ocrfix' ? p.ocrLines : p.nativeLines);
   let line = null;
@@ -8347,43 +8607,29 @@ function resolvePendingTextClickTarget_(px, py, editType, customLines){
       if(best && bestDist <= maxSnap) line = best;
     }
   }
+  let target = null;
   if(!line){
-    // Không trúng dòng chữ gốc/OCR nào ở gần điểm bấm -> kiểm tra có đúng đang bấm vào MỘT TEXT OBJECT
-    // đã có sẵn trong edits không (Add Text/Edit Text trước đó). Chỉ TEXT mới được ghi nhận làm mục
-    // tiêu — bấm trúng ảnh/whiteout/highlight/vẽ tay thì KHÔNG được coi là mục tiêu đổi màu chữ.
+    // Không trúng dòng chữ gốc/OCR nào -> thử text object đã thêm/sửa trước đó (chỉ chữ mới hợp lệ).
     const hitIdx = hitTestEdits(px, py);
-    if(hitIdx >= 0 && isTextEdit(p.edits[hitIdx])){
-      pendingTextTarget = { kind:'edit', index: hitIdx };
-      selectedEditIndex = hitIdx;
-      syncFontControlsToSelection();
-      if(DEBUG_TEXT_COLOR) console.log('[resolvePendingTextClickTarget_] chọn text object có sẵn #', hitIdx);
-    } else {
-      // Bấm ra vùng trống hoặc trúng object không phải text -> không có mục tiêu, huỷ mục tiêu cũ
-      // (nếu có) để tránh áp nhầm màu khi bấm Select sau đó.
-      pendingTextTarget = null;
-      selectedEditIndex = -1;
-      if(DEBUG_TEXT_COLOR) console.log('[resolvePendingTextClickTarget_] không trúng text nào, huỷ pendingTextTarget');
-    }
-    hoverLine = null;
-    redrawOverlay();
-    return;
-  }
-  // Trúng đúng một dòng chữ gốc PDF/OCR. Nếu dòng này đã có sẵn 1 edit trùng vị trí (đã từng sửa
-  // trước đó) thì ghi nhận mục tiêu là chính edit đó; nếu CHƯA, ghi nhận mục tiêu là dòng chữ gốc —
-  // edit tương ứng cho dòng gốc này CHỈ được TẠO RA khi thật sự COMMIT màu lúc bấm Select (xem
-  // applyPendingTextColorClick_), để không để lại edit "vô hình" nào nếu người dùng không bấm Select.
-  const existing = findOverlappingTextEdit(p.edits, line.x0, line.y0, line.x1, line.y1);
-  if(existing){
-    pendingTextTarget = { kind:'edit', index: existing.index };
-    selectedEditIndex = existing.index;
+    if(hitIdx >= 0 && isTextEdit(p.edits[hitIdx])) target = { kind:'edit', index: hitIdx };
   } else {
-    pendingTextTarget = { kind:'line', line, editType, lines };
-    selectedEditIndex = -1;
+    const existing = findOverlappingTextEdit(p.edits, line.x0, line.y0, line.x1, line.y1);
+    target = existing ? { kind:'edit', index: existing.index } : { kind:'line', line, editType, lines };
   }
-  syncFontControlsToSelection();
+  selectedEditIndex = -1;
   hoverLine = null;
+  if(!target){
+    // Bấm vùng trống / không phải chữ -> huỷ danh sách đã chọn (màu vẫn giữ để chọn lại).
+    pendingTextTargets = [];
+  } else {
+    const same = (a, b) => a.kind === b.kind && (a.kind === 'edit'
+      ? a.index === b.index
+      : (a.line.x0 === b.line.x0 && a.line.y0 === b.line.y0 && a.line.x1 === b.line.x1 && a.line.y1 === b.line.y1));
+    const i = pendingTextTargets.findIndex(t => same(t, target));
+    if(i >= 0) pendingTextTargets.splice(i, 1); else pendingTextTargets.push(target);
+  }
   redrawOverlay();
-  if(DEBUG_TEXT_COLOR) console.log('[resolvePendingTextClickTarget_] pendingTextTarget =', pendingTextTarget);
+  refreshPendingColorHint_();
 }
 function editLineAt(px, py, editType, customLines){
   // FIX (workflow ĐỘC LẬP): Edit Text -> chọn màu -> click text -> Select — xem giải thích đầy đủ ở
@@ -8391,25 +8637,8 @@ function editLineAt(px, py, editType, customLines){
   // applyPendingTextColorClick_() ở trên. Phải chặn NGAY TỪ ĐÂY (đầu editLineAt — nơi DUY NHẤT mà
   // mọi cú click vào text lúc đang ở công cụ Edit Text đều đi qua, dù bấm qua overlayCanvas hay qua
   // #textLayer/span), để KHÔNG bao giờ mở #editInput trong lúc đang có màu chờ áp dụng.
-  if(DEBUG_TEXT_COLOR_FLOW && activeTool === 'edittext' && (editType === 'textfix' || editType === 'ocrfix')){
-    // Log NGAY LÚC VÀO editLineAt() lúc đang ở Edit Text, TRƯỚC khi biết có chặn được hay không —
-    // nếu pendingTextColor rỗng ở đây dù bạn vừa chọn màu, nghĩa là màu đã bị mất/không được lưu
-    // giữa lúc chọn màu và lúc click text (lỗi nằm ở GIAI ĐOẠN 1, không phải ở click).
-    console.log('[TEXT_CLICKED]', {
-      clickedX: px, clickedY: py,
-      pendingTextColor: pendingTextColor,
-      selectedEditIndexBefore: selectedEditIndex
-    });
-  }
   if(activeTool === 'edittext' && pendingTextColor && (editType === 'textfix' || editType === 'ocrfix')){
     resolvePendingTextClickTarget_(px, py, editType, customLines);
-    if(DEBUG_TEXT_COLOR_FLOW) console.log('[TEXT_CLICKED] sau khi resolve ->', {
-      hitIndex: pendingTextTarget && pendingTextTarget.kind==='edit' ? pendingTextTarget.index : -1,
-      pendingTextTargetKind: pendingTextTarget ? pendingTextTarget.kind : null,
-      selectedEditIndex: selectedEditIndex,
-      pendingTextIndex: pendingTextTarget,
-      pendingTextColor: pendingTextColor
-    });
     return;
   }
   const p = cur();
@@ -9779,7 +10008,7 @@ async function buildEditedOutDoc(indexes, spinnerLabel){
         // NativeTextEngine chỉ thay glyph chữ trong content stream gốc, giữ nguyên đúng 1 màu chữ có
         // sẵn của PDF gốc, không thể tô riêng từng phần; những dòng này cần rơi về cách "che nền + vẽ
         // chữ mới đè lên" (drawEditOnPdfPage, đã hỗ trợ colorRuns ở trên) mới hiện đúng nhiều màu.
-        const nativeEdits = p.edits.filter(ed => ed.type==='textfix' && ed.nativeItemIdxs && ed.nativeItemIdxs.length && !ed.bold && !ed.italic && !ed.underline && !(ed.colorRuns && ed.colorRuns.length) && !(editOpacity_(ed) < 1));
+        const nativeEdits = p.edits.filter(ed => ed.type==='textfix' && ed.nativeItemIdxs && ed.nativeItemIdxs.length && !ed.bold && !ed.italic && !ed.underline && !(ed.colorRuns && ed.colorRuns.length) && !ed.colorTouched && !(ed.color && String(ed.color).toLowerCase() !== '#000000') && !(editOpacity_(ed) < 1));
         if(nativeEdits.length){
           nativeStats.eligible += nativeEdits.length;
           const pdfjsPage = await p.doc.getPage(p.srcPage);
