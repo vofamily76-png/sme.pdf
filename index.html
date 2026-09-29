@@ -211,18 +211,6 @@
   #canvasArea{
     flex:1;background:var(--bg-canvas-area);overflow:hidden;position:relative;
   }
-  /* ===== Kéo thả file PDF vào #canvasArea để mở (thay cho việc luôn phải bấm "Open PDF" rồi
-     duyệt tới đường dẫn file) ===== Khi có file đang được kéo ngang qua vùng xem PDF, thêm class
-     "drag-over" để viền + lớp phủ mờ báo hiệu "thả ra để mở", giống các phần mềm xem PDF khác. */
-  #canvasArea.drag-over{
-    outline:3px dashed var(--accent, #4a90e2); outline-offset:-3px;
-  }
-  #canvasArea.drag-over::after{
-    content:'📥  Thả file PDF vào đây để mở'; position:absolute; inset:0; z-index:50;
-    display:flex; align-items:center; justify-content:center;
-    background:rgba(33,150,243,0.12); color:var(--text-light); font-size:16px; font-weight:600;
-    pointer-events:none;
-  }
   /* ===== Thanh cuộn xem nhiều trang =====
      Trước đây #canvasArea chỉ hiển thị đúng MỘT #pageWrap (trang đang chỉnh sửa), muốn xem trang
      khác phải bấm vào thumbnail ở sidebar hoặc gõ số trang. Giờ toàn bộ các trang được xếp dọc bên
@@ -1327,11 +1315,6 @@
     <input type="number" id="paintSizeInput" min="0.5" max="100" step="0.5" value="2.5" style="width:54px;background:#1c1e22;color:var(--text-light);border:1px solid var(--border);border-radius:5px;padding:4px 5px;font-size:12px;">
     <span id="paintSizeDotBox" style="display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border:1px solid var(--border);border-radius:5px;background:#fff;"><span id="paintSizeDot" style="display:block;border-radius:50%;background:#e2402c;"></span></span>
   </span>
-  <span id="eraseSizeWrap" title="Kích thước vùng xóa (Eraser) — kéo thanh trượt hoặc gõ số (px). Phím [ giảm, ] tăng." style="display:none;align-items:center;gap:5px;font-size:11.5px;color:var(--text-dim);margin-left:2px;">
-    Tẩy
-    <input type="range" id="eraseSizeRange" min="4" max="60" step="1" value="12" style="width:90px;">
-    <input type="number" id="eraseSizeInput" min="4" max="120" step="1" value="12" style="width:54px;background:#1c1e22;color:var(--text-light);border:1px solid var(--border);border-radius:5px;padding:4px 5px;font-size:12px;">
-  </span>
   <span style="display:inline-flex;align-items:center;gap:4px;font-size:11.5px;color:var(--text-dim);margin-left:2px;">
     <input type="color" id="whiteoutColorSwatch" value="#ffffff" title="Chọn màu che (Whiteout) tùy ý">Color overlay
   </span>
@@ -1441,7 +1424,7 @@
     <div id="dropHint">
       <span class="big">📄</span>
       Chưa có file PDF nào được mở.<br>
-      Nhấn <b>"Open PDF"</b> ở thanh công cụ, hoặc <b>kéo thả file PDF</b> vào đây để mở.<br>
+      Nhấn <b>"Open PDF"</b> ở thanh công cụ để bắt đầu chỉnh sửa.<br>
       <span style="font-size:12px">Hỗ trợ: thêm văn bản, đánh dấu, vẽ, che nội dung và sửa văn bản trên PDF scan bằng OCR.</span>
     </div>
     <div id="pagesScroll">
@@ -3181,8 +3164,7 @@ let freehandPoints = [];
 // Độ dày nét Paint (đơn vị pt của trang PDF, giống ed.width). Người dùng chỉnh bằng thanh trượt/ô số cạnh nút Paint.
 let currentPaintWidth = 2.5;
 let erasingFreehand = false; // đang kéo chuột với công cụ Eraser để xóa nét Paint
-let currentEraseRadius = 12; // bán kính vùng xóa hiện tại (px màn hình) — người dùng chỉnh được qua thanh trượt/ô số "Tẩy" hoặc phím [ ]
-const ERASE_RADIUS_MIN_ = 4, ERASE_RADIUS_MAX_ = 60;
+const ERASE_RADIUS_SCREEN = 12; // bán kính vùng xóa tính theo pixel màn hình
 let draggingRect = false;
 let dragStart = null;
 let selectedEditIndex = -1;
@@ -3396,14 +3378,6 @@ setupToolbarMenu_('toolMenuWrap', 'btnToolMenu', 'toolMenuDropdown');
 document.getElementById('fileInput').onchange = async (e) => {
   const file = e.target.files[0];
   if(!file) return;
-  await openPdfFile_(file);
-  e.target.value = ''; // reset để có thể chọn lại đúng file này ở lần mở kế tiếp
-};
-
-// Hàm mở PDF dùng chung cho cả 2 đường: chọn qua hộp thoại "Open PDF" (fileInput.onchange ở trên)
-// và kéo-thả file PDF trực tiếp vào #canvasArea (xem khối sự kiện dragover/drop ngay bên dưới) —
-// gộp lại một chỗ để không lặp code, tránh 2 nơi xử lý PDF bị lệch nhau khi sửa về sau.
-async function openPdfFile_(file){
   originalFileName = file.name.replace(/\.pdf$/i,'') + '-edited.pdf';
   document.getElementById('filename').textContent = file.name;
   const buf = await file.arrayBuffer();
@@ -3425,61 +3399,7 @@ async function openPdfFile_(file){
   await rebuildPageSlots();
   await renderPage(0);
   buildThumbnails();
-}
-
-// ---------- Kéo-thả file PDF để mở (thay cho việc luôn phải bấm "Open PDF" rồi trỏ đường dẫn) ----------
-// Gắn sự kiện lên #canvasArea (vùng xem PDF, bao gồm cả lúc chưa mở file nào — khi đó #dropHint nằm
-// bên trong nó) để người dùng có thể kéo file PDF từ ngoài máy tính thả thẳng vào phần mềm.
-(function setupPdfDragAndDrop_(){
-  const dropZone = document.getElementById('canvasArea');
-  if(!dropZone) return;
-  let dragDepth = 0; // đếm số lần dragenter còn "lồng" nhau (con của dropZone cũng bắn dragenter/dragleave riêng)
-                      // để chỉ tắt hiệu ứng viền khi con trỏ thực sự rời khỏi toàn bộ #canvasArea, tránh
-                      // hiệu ứng nhấp nháy khi kéo ngang qua các phần tử con bên trong.
-  function hasFiles(e){
-    return e.dataTransfer && Array.from(e.dataTransfer.types||[]).includes('Files');
-  }
-  dropZone.addEventListener('dragenter', (e)=>{
-    if(!hasFiles(e)) return;
-    e.preventDefault();
-    dragDepth++;
-    dropZone.classList.add('drag-over');
-  });
-  dropZone.addEventListener('dragover', (e)=>{
-    if(!hasFiles(e)) return;
-    e.preventDefault(); // bắt buộc phải preventDefault ở dragover thì sự kiện 'drop' mới được trình duyệt cho phép bắn ra
-    e.dataTransfer.dropEffect = 'copy';
-  });
-  dropZone.addEventListener('dragleave', (e)=>{
-    if(!hasFiles(e)) return;
-    dragDepth = Math.max(0, dragDepth-1);
-    if(dragDepth === 0) dropZone.classList.remove('drag-over');
-  });
-  dropZone.addEventListener('drop', async (e)=>{
-    if(!hasFiles(e)) return;
-    e.preventDefault();
-    dragDepth = 0;
-    dropZone.classList.remove('drag-over');
-    const files = Array.from(e.dataTransfer.files || []);
-    // Chỉ nhận file PDF — lọc theo cả MIME type lẫn đuôi .pdf vì một số hệ điều hành/trình duyệt
-    // không gắn đúng MIME type "application/pdf" khi kéo thả từ ngoài vào.
-    const pdfFile = files.find(f => f.type === 'application/pdf' || /\.pdf$/i.test(f.name));
-    if(!pdfFile){
-      if(files.length) alert('Chỉ hỗ trợ kéo-thả file PDF (.pdf).');
-      return;
-    }
-    try{
-      await openPdfFile_(pdfFile);
-    }catch(err){
-      console.error('Lỗi khi mở PDF bằng kéo-thả:', err);
-      alert('Không mở được file PDF này. File có thể bị hỏng hoặc không đúng định dạng.');
-    }
-  });
-  // Chặn hành vi mặc định của trình duyệt (mở file PDF thành tab mới) nếu người dùng lỡ thả file
-  // ra ngoài #canvasArea nhưng vẫn còn bên trong cửa sổ ứng dụng.
-  window.addEventListener('dragover', (e)=>{ if(hasFiles(e)) e.preventDefault(); });
-  window.addEventListener('drop', (e)=>{ if(hasFiles(e) && !dropZone.contains(e.target)) e.preventDefault(); });
-})();
+};
 
 // ---------- Insert pages (chèn trước/sau trang đang chọn) ----------
 const insertPagesModal = document.getElementById('insertPagesModal');
@@ -5129,7 +5049,7 @@ function toScreenSpace(x, y){ return { x: x*scale, y: y*scale }; }
 function eraseDrawStrokesAt(px, py){
   const p = cur();
   if(!p || !p.edits || !p.edits.length) return;
-  const r = currentEraseRadius;
+  const r = ERASE_RADIUS_SCREEN;
   let changed = false;
   const newEdits = [];
   for(const ed of p.edits){
@@ -5729,7 +5649,6 @@ document.querySelectorAll('.tbtn[data-tool]').forEach(btn=>{
       hoverLine = null;
       overlayCanvas.className = 'tool-' + activeTool;
       refreshPaintSizeUi_(); // Paint: hiện/ẩn cụm chỉnh kích thước nét theo công cụ đang chọn
-      refreshEraseSizeUi_(); // Eraser: hiện/ẩn cụm chỉnh kích thước vùng xóa theo công cụ đang chọn
       try{ redrawOverlay(); }catch(err){ console.warn('Không vẽ lại được lớp overlay:', err); }
       // Chuẩn bị sẵn dữ liệu vị trí từng dòng chữ ngay khi chọn công cụ, để việc "trỏ chuột vào đâu highlight
       // sửa được ngay đó" hoạt động mượt mà mà không phải đợi tới lần bấm chuột đầu tiên.
@@ -5827,72 +5746,6 @@ window.addEventListener('keydown', (e)=>{
   const step = currentPaintWidth >= 20 ? 2 : (currentPaintWidth >= 5 ? 1 : 0.5);
   setPaintWidth_(currentPaintWidth + (e.key === ']' ? step : -step));
 });
-
-// ================== ERASER: chỉnh kích thước vùng xóa ==================
-// Trước đây bán kính vùng xóa bị ghi cứng 12px màn hình (ERASE_RADIUS_SCREEN). Nay lấy từ
-// currentEraseRadius, điều chỉnh qua thanh trượt #eraseSizeRange + ô số #eraseSizeInput (luôn
-// đồng bộ với nhau), có vòng tròn #eraseCursor đi theo con trỏ trên trang để xem trước kích thước
-// thật trước khi kéo xóa. Giá trị được nhớ lại giữa các lần mở (localStorage, có try/catch), y hệt
-// cách làm với cỡ nét Paint.
-function clampEraseRadius_(v){
-  const n = Number(v);
-  if(!isFinite(n)) return currentEraseRadius;
-  return Math.round(Math.max(ERASE_RADIUS_MIN_, Math.min(ERASE_RADIUS_MAX_, n)));
-}
-const eraseCursorEl_ = document.createElement('div');
-eraseCursorEl_.id = 'eraseCursor';
-eraseCursorEl_.style.position = 'absolute';
-eraseCursorEl_.style.borderRadius = '50%';
-eraseCursorEl_.style.border = '1.5px solid rgba(80,80,80,0.7)';
-eraseCursorEl_.style.background = 'rgba(255,255,255,0.35)';
-eraseCursorEl_.style.pointerEvents = 'none';
-eraseCursorEl_.style.transform = 'translate(-50%,-50%)';
-eraseCursorEl_.style.display = 'none';
-eraseCursorEl_.style.zIndex = '5';
-pageWrap.appendChild(eraseCursorEl_);
-function refreshEraseSizeUi_(){
-  const wrap = document.getElementById('eraseSizeWrap');
-  if(!wrap) return;
-  wrap.style.display = (activeTool === 'erase') ? 'inline-flex' : 'none';
-  const r = document.getElementById('eraseSizeRange'), n = document.getElementById('eraseSizeInput');
-  if(r && r.value !== String(currentEraseRadius)) r.value = String(currentEraseRadius);
-  if(n && document.activeElement !== n) n.value = String(currentEraseRadius);
-  const d = currentEraseRadius * 2;
-  eraseCursorEl_.style.width = d+'px'; eraseCursorEl_.style.height = d+'px';
-  if(activeTool !== 'erase') eraseCursorEl_.style.display = 'none';
-}
-function setEraseRadius_(v){
-  currentEraseRadius = clampEraseRadius_(v);
-  try{ localStorage.setItem('eraseRadiusScreen', String(currentEraseRadius)); }catch(err){}
-  refreshEraseSizeUi_();
-}
-try{ const savedR = parseFloat(localStorage.getItem('eraseRadiusScreen')); if(isFinite(savedR) && savedR > 0) currentEraseRadius = clampEraseRadius_(savedR); }catch(err){}
-document.getElementById('eraseSizeRange').oninput = (e)=> setEraseRadius_(e.target.value);
-document.getElementById('eraseSizeInput').oninput = (e)=>{
-  const raw = Number(e.target.value);
-  if(!isFinite(raw) || raw <= 0) return; // đang gõ dở -> đợi
-  setEraseRadius_(raw);
-};
-document.getElementById('eraseSizeInput').onchange = (e)=>{ e.target.value = String(currentEraseRadius); refreshEraseSizeUi_(); };
-// Vòng tròn xem trước đi theo chuột (chỉ khi đang ở công cụ Eraser), y hệt cách làm với Paint.
-overlayCanvas.addEventListener('mousemove', (e)=>{
-  if(activeTool !== 'erase' || !pages.length){ eraseCursorEl_.style.display = 'none'; return; }
-  const {x, y} = clientToCanvasXY_(overlayCanvas, e.clientX, e.clientY);
-  eraseCursorEl_.style.left = x+'px'; eraseCursorEl_.style.top = y+'px';
-  eraseCursorEl_.style.display = 'block';
-});
-overlayCanvas.addEventListener('mouseleave', ()=>{ eraseCursorEl_.style.display = 'none'; });
-// Phím tắt [ và ] giảm/tăng bán kính vùng xóa khi đang ở công cụ Eraser (không chặn khi đang gõ trong ô nhập).
-window.addEventListener('keydown', (e)=>{
-  if(activeTool !== 'erase' || (e.key !== '[' && e.key !== ']')) return;
-  if(e.ctrlKey || e.metaKey || e.altKey) return;
-  const ae = document.activeElement;
-  if(ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.isContentEditable)) return;
-  e.preventDefault();
-  const step = currentEraseRadius >= 20 ? 4 : 2;
-  setEraseRadius_(currentEraseRadius + (e.key === ']' ? step : -step));
-});
-
 document.getElementById('whiteoutColorSwatch').oninput = (e)=>{
   currentWhiteoutColor = e.target.value;
   // Nếu đang chọn (select) một khối "che" có sẵn trên trang, đổi màu ngay lập tức theo màu vừa chọn
@@ -8955,7 +8808,7 @@ overlayCanvas.addEventListener('mousemove', (e)=>{
     octx.fillStyle = 'rgba(255,255,255,0.35)';
     octx.lineWidth = 1.5;
     octx.beginPath();
-    octx.arc(px, py, currentEraseRadius, 0, Math.PI*2);
+    octx.arc(px, py, ERASE_RADIUS_SCREEN, 0, Math.PI*2);
     octx.fill(); octx.stroke();
     octx.restore();
   } else if(draggingRect && dragStart){
