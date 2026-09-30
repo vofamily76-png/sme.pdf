@@ -150,6 +150,15 @@
     display:inline-block;width:14px;height:14px;border-radius:50%;border:1.5px solid currentColor;
     background:linear-gradient(90deg,currentColor 50%,transparent 50%);flex-shrink:0;box-sizing:border-box;
   }
+  /* ===== THÊM TÍNH NĂNG: nút Rotate object (xoay chữ / hình ảnh đang chọn) — dùng lại khung menu của Opacity ===== */
+  .rot-ic{display:inline-block;width:14px;text-align:center;font-size:15px;line-height:14px;flex-shrink:0;}
+  #rotateBadge{font-size:11px;color:var(--text-dim);min-width:34px;text-align:right;font-variant-numeric:tabular-nums;}
+  #rotateRange{flex:1;min-width:0;accent-color:var(--accent);cursor:pointer;}
+  #rotateNumber{
+    width:62px;background:#1c1e22;color:var(--text-light);border:1px solid var(--border);
+    border-radius:5px;padding:4px 6px;font-size:12px;
+  }
+  #rotateRange:disabled,#rotateNumber:disabled,#rotatePresets button:disabled{opacity:.45;cursor:not-allowed;}
   #opacityBadge{font-size:11px;color:var(--text-dim);min-width:30px;text-align:right;font-variant-numeric:tabular-nums;}
   .menu-dropdown.opacity-panel{min-width:260px;padding:10px 12px;gap:9px;}
   .opacity-panel .op-head{display:flex;align-items:center;justify-content:space-between;gap:10px;}
@@ -940,6 +949,18 @@
       </div>
     </div>
 
+    <!-- [MỚI] DOCUMENT LAYOUT ANALYSIS: phân loại từng khối của trang để file Word đúng NGỮ NGHĨA (không chỉ đúng hình dạng). -->
+    <div style="margin-bottom:12px;padding:10px 12px;background:#1c1e22;border:1px solid #454a52;border-radius:6px;">
+      <label style="display:flex;align-items:center;gap:8px;font-size:12.5px;color:#eceff1;cursor:pointer;font-weight:600;">
+        <input type="checkbox" id="ewDlaCheck" checked> 🧩 Phân tích bố cục tài liệu (Document Layout Analysis)
+      </label>
+      <div style="font-size:11px;color:#9aa0a8;margin-top:5px;line-height:1.55;">
+        Tự nhận diện <b style="color:#c6cad0;">Title · Heading · Paragraph · Table · Image · Header · Footer · Signature · Checkbox · Stamp</b>
+        để xuất Word chuẩn hơn: Title/Heading dùng đúng kiểu (có Navigation Pane &amp; Mục lục), Header/Footer vào đầu/chân trang thật
+        (số trang tự động), hàng tiêu đề bảng tự lặp lại, ô tích bấm được, con dấu/chữ ký là ảnh có tên &amp; mô tả riêng.
+      </div>
+    </div>
+
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
       <label style="display:flex;align-items:center;gap:8px;font-size:12.5px;cursor:pointer;">
         <input type="checkbox" id="ewSelectAll"> Chọn tất cả (Xuất tất cả các trang)
@@ -1397,6 +1418,32 @@
         <button type="button" data-op="50">50%</button>
         <button type="button" data-op="25">25%</button>
         <button type="button" data-op="10">10%</button>
+      </div>
+    </div>
+  </div>
+  <div class="sep"></div>
+
+  <!-- ===== THÊM TÍNH NĂNG: nút Rotate object — XOAY đối tượng đã chọn (CHỮ và HÌNH ẢNH). Cách dùng: dùng công cụ
+       Select bấm chọn 1 khối chữ hoặc 1 ảnh, rồi (a) mở menu này để kéo thanh trượt / gõ số độ / bấm nút chọn nhanh,
+       hoặc (b) kéo tay cầm tròn phía trên khung chọn (giữ Shift để xoay theo bước 15°). Góc lưu ở ed.rotation
+       (độ, chiều kim đồng hồ). Xem editRotation_/drawEdit (hiển thị) và drawEditOnPdfPage (xuất PDF). -->
+  <div class="menu-wrap" id="rotateMenuWrap">
+    <button class="tbtn" id="btnRotateMenu" title="Rotate object — xoay chữ / hình ảnh đang chọn (công cụ Select). Hoặc kéo tay cầm tròn phía trên khung chọn (giữ Shift = bước 15°)"><span class="rot-ic">⟳</span>Rotate object <span id="rotateBadge">0°</span></button>
+    <div class="menu-dropdown opacity-panel" id="rotateMenuDropdown">
+      <div class="op-head">
+        <span class="op-title">Xoay đối tượng (Rotate object)</span>
+      </div>
+      <div class="op-target" id="rotateTargetLabel"></div>
+      <div class="op-row">
+        <input type="range" id="rotateRange" min="-180" max="180" step="1" value="0" title="Kéo để xoay (độ, chiều kim đồng hồ là dương)">
+        <input type="number" id="rotateNumber" min="-180" max="180" step="1" value="0" title="Gõ góc xoay (-180 đến 180)">
+        <span class="op-unit">°</span>
+      </div>
+      <div class="op-presets" id="rotatePresets">
+        <button type="button" data-rel="-90" title="Xoay ngược chiều kim đồng hồ 90°">⟲ 90°</button>
+        <button type="button" data-rel="90" title="Xoay thuận chiều kim đồng hồ 90°">⟳ 90°</button>
+        <button type="button" data-rel="180" title="Xoay 180°">180°</button>
+        <button type="button" data-abs="0" title="Đưa về thẳng (0°)">Reset</button>
       </div>
     </div>
   </div>
@@ -2655,7 +2702,13 @@ function computeWordSpacingExtraForPdf(font, ed){
 
   let targetW;
   try{
-    targetW = measureTextWidth(firstLine, `${fontSize}px ${pdfFontFamilyStack(ed.fontFamily)}`);
+    // SỬA LỖI (chữ IN ĐẬM bị dính liền từ sau khi xuất PDF): trước đây chuỗi font ở đây KHÔNG có
+    // 'bold'/'italic' nên bề rộng mục tiêu được đo bằng mặt chữ THƯỜNG, trong khi chữ trong PDF
+    // lại được đo bằng mặt chữ BOLD (rộng hơn ~5-10%, nhất là chữ IN HOA). Chênh lệch này bị hiểu
+    // nhầm là "PDF rộng hơn màn hình" nên bị bù bằng khoảng cách ÂM giữa các từ (tới -0.3*fontSize,
+    // lớn hơn cả độ rộng dấu cách ~0.25*fontSize) -> các từ dính sát/đè lên nhau. Giờ đo đúng
+    // cùng font (kể cả đậm/nghiêng) với bản xem trước trên canvas.
+    targetW = measureTextWidth(firstLine, `${ed.italic?'italic ':''}${ed.bold?'bold ':''}${fontSize}px ${pdfFontFamilyStack(ed.fontFamily)}`);
   }catch(e){ return 0; }
   if(!isFinite(targetW) || targetW<=0) return 0;
   // Giới hạn an toàn: chỉ bù chênh lệch NHỎ giữa font hệ thống (xem trước) và font nhúng PDF (thường
@@ -2665,6 +2718,13 @@ function computeWordSpacingExtraForPdf(font, ed){
   let extra = (targetW - pdfNaturalW) / gaps;
   const maxAbs = fontSize * 0.3;
   extra = Math.max(-maxAbs, Math.min(maxAbs, extra));
+  // CHỐT CHẶN: bản xem trước dùng khoảng cách TỰ NHIÊN của font (wordSpacing = 0) nên khi xuất PDF
+  // tuyệt đối không được thu hẹp dấu cách quá ~20% độ rộng vốn có của nó (trước đây có thể thu tới
+  // -0.3*fontSize => dấu cách biến mất, các từ dính liền nhau). Chênh lệch nhỏ giữa 2 font vẫn được bù.
+  let spaceW;
+  try{ spaceW = font.widthOfTextAtSize(' ', fontSize); }catch(e){ spaceW = fontSize*0.28; }
+  if(!isFinite(spaceW) || spaceW <= 0) spaceW = fontSize*0.28;
+  extra = Math.max(extra, -spaceW*0.2);
   return extra;
 }
 // Vẽ một dòng chữ theo TỪNG TỪ, tự cộng dồn toạ độ X giữa các từ (word width + khoảng trắng +
@@ -2695,8 +2755,11 @@ function drawLineWithWordSpacing(page, line, startX, y, fontSize, font, color, f
     let ww, sw;
     try{ ww = font.widthOfTextAtSize(w, fontSize); }catch(e){ ww = w.length*fontSize*0.55; }
     try{ sw = font.widthOfTextAtSize(' ', fontSize); }catch(e){ sw = fontSize*0.28; }
-    x += ww + sw + extra;
-    lastWordEndX = x - sw - extra;
+    // Khoảng trống giữa 2 từ = dấu cách + phần bù, nhưng không bao giờ nhỏ hơn 60% dấu cách tự nhiên
+    // (đảm bảo các từ không bao giờ dính liền nhau trong file PDF xuất ra).
+    const adv = Math.max(sw + extra, sw*0.6);
+    x += ww + adv;
+    lastWordEndX = x - adv;
   }
   return lastWordEndX - startX;
 }
@@ -2812,7 +2875,30 @@ function rawRectFromDisplay_(rotInfo, dx, dy, dw, dh){
   };
 }
 
+// Rotate object khi xuất PDF: chữ/ảnh có ed.rotation được vẽ bằng rotInfo đã xoay thêm quanh TÂM khung
+// (xem makeRotatedRotInfo_) — toàn bộ logic vẽ chữ/ảnh bên dưới dùng chung, chỉ đổi phép quy đổi toạ độ.
+// Nền che chữ gốc (ed.bg) vẫn vẽ THẲNG bằng rotInfo gốc để che kín đúng chỗ chữ gốc.
 async function drawEditOnPdfPage(page, ed, rotInfo, font, fallbackFont, outDoc, embedCache, fauxBold, resolveRunFont){
+  const rotObj = editRotation_(ed);
+  if(!rotObj){
+    return drawEditOnPdfPageBase_(page, ed, rotInfo, font, fallbackFont, outDoc, embedCache, fauxBold, resolveRunFont);
+  }
+  let drawnEd = ed;
+  if(isRotTextType_(ed)){
+    if(ed.text) ed.text = String(ed.text).normalize('NFC');
+    if(ed.bg){
+      const [br,bg2,bb] = hexToRgbFloats(ed.bgColor || '#ffffff');
+      const cb_ = getCoverRect(ed);
+      const rr = rawRectFromDisplay_(rotInfo, cb_.x, cb_.y, cb_.w, cb_.h);
+      page.drawRectangle({ x: rr.x, y: rr.y, width: rr.width, height: rr.height, color: rgb(br,bg2,bb) });
+      drawnEd = Object.assign({}, ed, { bg: false });
+    }
+  }
+  const rotatedInfo = makeRotatedRotInfo_(rotInfo, ed.x + ed.w/2, ed.y + ed.h/2, rotObj);
+  return drawEditOnPdfPageBase_(page, drawnEd, rotatedInfo, font, fallbackFont, outDoc, embedCache, fauxBold, resolveRunFont);
+}
+
+async function drawEditOnPdfPageBase_(page, ed, rotInfo, font, fallbackFont, outDoc, embedCache, fauxBold, resolveRunFont){
   const rotDeg = rotInfo.rot ? degrees(rotInfo.rot) : undefined;
   if(ed.type === 'image'){
     const embedded = await embedImageForEdit_(outDoc, ed, embedCache);
@@ -3168,6 +3254,17 @@ const ERASE_RADIUS_SCREEN = 12; // bán kính vùng xóa tính theo pixel màn h
 let draggingRect = false;
 let dragStart = null;
 let selectedEditIndex = -1;
+// ----- Rotate object (xoay chữ / ảnh đang chọn) -----
+const ROTATE_HANDLE_OFFSET = 26;   // khoảng cách (px màn hình) từ cạnh trên khung chọn tới tay cầm xoay
+const ROTATE_HANDLE_RADIUS = 6;
+let rotatingObject = false;        // đang kéo tay cầm xoay
+let rotateTargetEdit = null;
+let rotateStartAngle = 0;          // góc chuột (rad) so với tâm lúc bắt đầu kéo
+let rotateStartRot = 0;            // ed.rotation lúc bắt đầu kéo
+let rotateCenterScreen = null;     // tâm xoay (px màn hình)
+let resizeRotDeg = 0;              // góc xoay của đối tượng đang resize (0 = không xoay)
+let resizeRotCenter = null;        // tâm (pdf-space) của khung lúc BẮT ĐẦU resize
+let _rotEls = null;
 let draggingSelected = false;
 let dragOffset = null;
 // Trạng thái đang thay đổi kích thước (resize) một ảnh đã chèn — kéo tại 1 trong 4 góc,
@@ -5114,6 +5211,7 @@ function redrawOverlay(){
   if((activeTool==='ocr' || activeTool==='edittext') && hoverLine) drawHoverLineBox(hoverLine);
   // Đồng bộ thanh Opacity theo khối chữ/ảnh đang chọn (nếu có) — xem refreshOpacityControl.
   refreshOpacityControl();
+  refreshRotateControl();
 }
 
 // Khi bật công cụ "Edit Text": khoanh nhẹ TẤT CẢ các dòng chữ có thể sửa trên trang (viền xanh mờ),
@@ -5213,29 +5311,56 @@ function computeTightTextBox(e){
 function drawSelectionBox(e){
   const isTextType = (e.type==='text' || e.type==='ocrfix' || e.type==='textfix');
   // VỚI KHỐI CHỮ: vẽ ĐÚNG khung thật (ed.x/y/w/h) — chính là khung mà người dùng sắp kéo chỉnh bằng
-  // 8 tay cầm bên dưới, và cũng chính là khung dùng để ngắt dòng khi vẽ/xuất PDF. Trước đây chỗ này
-  // vẽ một khung "ước lượng" khác (computeTightTextBox) không trùng với khung thật, nên người dùng
-  // kéo chỉnh sẽ thấy lệch. Nay khung chữ đã tách khỏi khung nền che nên nó vốn đã vừa khít chữ.
-  const b = isTextType ? getEditBounds(e) : getEditBounds(e);
+  // 8 tay cầm bên dưới, và cũng chính là khung dùng để ngắt dòng khi vẽ/xuất PDF.
+  const b = getEditBounds(e);
   const inflate = isTextType ? 0 : 3;
+  // Rotate object: toàn bộ khung chọn + tay cầm được vẽ trong hệ toạ độ đã xoay quanh tâm khung.
+  const rot = editRotation_(e);
+  const cx = (b.x + b.w/2) * scale, cy = (b.y + b.h/2) * scale;
   octx.save();
+  if(rot){
+    octx.translate(cx, cy);
+    octx.rotate(rot * Math.PI / 180);
+    octx.translate(-cx, -cy);
+  }
   octx.strokeStyle = '#2196f3'; octx.lineWidth = 1.5; octx.setLineDash([5,4]);
   octx.strokeRect(b.x*scale-inflate, b.y*scale-inflate, b.w*scale+inflate*2, b.h*scale+inflate*2);
-  octx.restore();
   // Ảnh đã chèn: 4 tay cầm ở góc (giữ tỉ lệ gốc).
   // Khối chữ: 8 tay cầm (4 góc + 4 cạnh) để kéo chỉnh TỰ DO phần khung thừa quanh chữ; kích thước
   // sau khi kéo được GHI NHỚ LẠI (ed.manualBox = true) và không bao giờ tự phình to lại nữa.
   if(e.type === 'image' || isTextType){
-    const ib = getEditBounds(e);
-    octx.save();
     octx.setLineDash([]);
     octx.fillStyle = '#2196f3';
     octx.strokeStyle = '#ffffff';
     octx.lineWidth = 1.5;
-    for(const h of getEditHandlePositions(ib, isTextType)){
+    for(const h of getEditHandlePositions(b, isTextType)){
       octx.fillRect(h.px - IMAGE_HANDLE_SIZE/2, h.py - IMAGE_HANDLE_SIZE/2, IMAGE_HANDLE_SIZE, IMAGE_HANDLE_SIZE);
       octx.strokeRect(h.px - IMAGE_HANDLE_SIZE/2, h.py - IMAGE_HANDLE_SIZE/2, IMAGE_HANDLE_SIZE, IMAGE_HANDLE_SIZE);
     }
+    // Tay cầm XOAY (Rotate object): chấm tròn nằm phía trên giữa cạnh trên (hoặc phía dưới nếu sát mép trên trang), nối bằng 1 đường thẳng.
+    const rh_ = rotateHandleLocal_(b);
+    const hy = rh_.hy;
+    const edgeY = rh_.below ? (b.y + b.h)*scale + inflate : b.y*scale - inflate;
+    octx.strokeStyle = '#2196f3'; octx.lineWidth = 1.5; octx.setLineDash([]);
+    octx.beginPath(); octx.moveTo(cx, edgeY); octx.lineTo(cx, hy + (rh_.below ? -ROTATE_HANDLE_RADIUS : ROTATE_HANDLE_RADIUS)); octx.stroke();
+    octx.beginPath(); octx.arc(cx, hy, ROTATE_HANDLE_RADIUS, 0, Math.PI*2);
+    octx.fillStyle = '#ffffff'; octx.fill();
+    octx.strokeStyle = '#2196f3'; octx.lineWidth = 2; octx.stroke();
+    octx.beginPath(); octx.arc(cx, hy, ROTATE_HANDLE_RADIUS - 3.2, -Math.PI*0.15, Math.PI*1.35);
+    octx.lineWidth = 1.4; octx.stroke();
+  }
+  octx.restore();
+  // Đang xoay: hiện góc hiện tại cạnh tay cầm.
+  if(rotatingObject && rotateTargetEdit === e){
+    const hp = getRotateHandleScreenPos_(e);
+    const label = (Math.round(editRotation_(e) * 10) / 10) + '°';
+    octx.save();
+    octx.font = '12px Arial'; octx.textBaseline = 'middle';
+    const tw = octx.measureText(label).width;
+    octx.fillStyle = 'rgba(33,150,243,0.92)';
+    octx.fillRect(hp.x + 12, hp.y - 9, tw + 10, 18);
+    octx.fillStyle = '#ffffff';
+    octx.fillText(label, hp.x + 17, hp.y);
     octx.restore();
   }
 }
@@ -5272,6 +5397,12 @@ function getResizeHandleAt(ed, px, py){
   const isText = isTextEdit(ed);
   if(ed.type !== 'image' && !isText) return null;
   const b = getEditBounds(ed);
+  // Rotate object: đưa điểm chuột về khung CHƯA xoay của đối tượng trước khi so với vị trí tay cầm.
+  const rotH_ = editRotation_(ed);
+  if(rotH_){
+    const q_ = rotatePoint_(px, py, (b.x + b.w/2)*scale, (b.y + b.h/2)*scale, -rotH_);
+    px = q_.x; py = q_.y;
+  }
   const tol = IMAGE_HANDLE_SIZE/2 + 2;
   for(const h of getEditHandlePositions(b, isText)){
     if(Math.abs(px-h.px) <= tol && Math.abs(py-h.py) <= tol) return h.name;
@@ -5296,7 +5427,10 @@ function hitTestEdits(px, py){
   for(let i=edits.length-1;i>=0;i--){
     const b = getEditBounds(edits[i]);
     const sx=b.x*scale, sy=b.y*scale, sw=b.w*scale, sh=b.h*scale;
-    if(px>=sx && px<=sx+sw && py>=sy && py<=sy+sh) return i;
+    let qx = px, qy = py;
+    const rotHit_ = editRotation_(edits[i]);
+    if(rotHit_){ const q_ = rotatePoint_(px, py, sx + sw/2, sy + sh/2, -rotHit_); qx = q_.x; qy = q_.y; }
+    if(qx>=sx && qx<=sx+sw && qy>=sy && qy<=sy+sh) return i;
   }
   return -1;
 }
@@ -5307,7 +5441,138 @@ function editOpacity_(e){
   return Math.max(0, Math.min(1, o));
 }
 
+// ===================== ROTATE OBJECT: hàm dùng chung =====================
+// Góc xoay (độ, dương = thuận chiều kim đồng hồ trên màn hình) của 1 edit. KHÔNG có thuộc tính = 0
+// nên mọi file/edit cũ hiển thị và xuất y như trước. Chỉ áp dụng cho chữ và ảnh.
+function normalizeRotDeg_(d){
+  d = ((Number(d) % 360) + 360) % 360;
+  if(d > 180) d -= 360;
+  return d;
+}
+function isRotTextType_(e){ return !!e && (e.type === 'text' || e.type === 'ocrfix' || e.type === 'textfix'); }
+function rotationSupported_(e){ return !!e && (e.type === 'image' || isRotTextType_(e)); }
+function editRotation_(e){
+  if(!rotationSupported_(e)) return 0;
+  const r = e.rotation;
+  if(typeof r !== 'number' || !isFinite(r)) return 0;
+  const n = normalizeRotDeg_(r);
+  return Math.abs(n) < 0.05 ? 0 : n;
+}
+// Xoay điểm (x,y) quanh (cx,cy) một góc deg (dương = thuận chiều kim đồng hồ khi trục y hướng xuống).
+function rotatePoint_(x, y, cx, cy, deg){
+  const th = deg * Math.PI / 180, cs = Math.cos(th), sn = Math.sin(th);
+  const rx = x - cx, ry = y - cy;
+  return { x: cx + rx*cs - ry*sn, y: cy + rx*sn + ry*cs };
+}
+// Đổi điểm pdf-space sang KHUNG CỤC BỘ (chưa xoay) của đối tượng đang resize; đối tượng không xoay -> giữ nguyên.
+function resizeToLocal_(p){
+  if(!resizeRotDeg || !resizeRotCenter) return p;
+  return rotatePoint_(p.x, p.y, resizeRotCenter.x, resizeRotCenter.y, -resizeRotDeg);
+}
+// Vì đối tượng xoay quanh TÂM khung, khi resize làm tâm dịch đi thì phải bù lại để cạnh/góc đối diện
+// đứng yên đúng chỗ trên màn hình. Trả về khung {x,y,w,h} đã bù.
+function resizeFixBox_(nx, ny, nw, nh){
+  if(!resizeRotDeg || !resizeRotCenter) return { x:nx, y:ny, w:nw, h:nh };
+  const th = resizeRotDeg * Math.PI / 180, cs = Math.cos(th), sn = Math.sin(th);
+  const vx = (nx + nw/2) - resizeRotCenter.x, vy = (ny + nh/2) - resizeRotCenter.y;
+  return { x: nx + (cs*vx - sn*vy - vx), y: ny + (sn*vx + cs*vy - vy), w:nw, h:nh };
+}
+// Sau khi khung đổi kích thước do sửa chữ (tâm dịch), giữ góc trên-trái đã xoay đứng yên tại chỗ cũ.
+function keepRotatedAnchor_(ed, old){
+  const rot = editRotation_(ed);
+  if(!rot || !old) return;
+  const th = rot * Math.PI / 180, cs = Math.cos(th), sn = Math.sin(th);
+  const vx = (ed.x + ed.w/2) - (old.x + old.w/2), vy = (ed.y + ed.h/2) - (old.y + old.h/2);
+  ed.x += cs*vx - sn*vy - vx;
+  ed.y += sn*vx + cs*vy - vy;
+}
+// Vị trí tay cầm xoay trong khung CHƯA xoay (px màn hình). Bình thường nằm phía TRÊN cạnh trên khung;
+// nếu đối tượng sát mép trên trang (tay cầm sẽ bị lòi ra ngoài canvas, không bấm được) thì chuyển xuống DƯỚI cạnh dưới.
+function rotateHandleLocal_(b){
+  const topY = b.y * scale;
+  if(topY - ROTATE_HANDLE_OFFSET < ROTATE_HANDLE_RADIUS + 4){
+    return { below: true, hy: (b.y + b.h) * scale + ROTATE_HANDLE_OFFSET };
+  }
+  return { below: false, hy: topY - ROTATE_HANDLE_OFFSET };
+}
+// Vị trí (px màn hình) của tay cầm xoay của edit ed (đã tính cả góc xoay hiện tại).
+function getRotateHandleScreenPos_(ed){
+  const b = getEditBounds(ed);
+  const cx = (b.x + b.w/2) * scale, cy = (b.y + b.h/2) * scale;
+  const rot = editRotation_(ed);
+  return rotatePoint_(cx, rotateHandleLocal_(b).hy, cx, cy, rot);
+}
+function isOnRotateHandle_(ed, px, py){
+  if(!rotationSupported_(ed)) return false;
+  const h = getRotateHandleScreenPos_(ed);
+  return Math.hypot(px - h.x, py - h.y) <= ROTATE_HANDLE_RADIUS + 4;
+}
+function beginRotateDrag_(ed, px, py){
+  const b = getEditBounds(ed);
+  rotateCenterScreen = { x: (b.x + b.w/2) * scale, y: (b.y + b.h/2) * scale };
+  rotateStartAngle = Math.atan2(py - rotateCenterScreen.y, px - rotateCenterScreen.x);
+  rotateStartRot = editRotation_(ed);
+  rotateTargetEdit = ed;
+  rotatingObject = true;
+  overlayCanvas.style.cursor = 'grabbing';
+}
+function updateRotateDrag_(px, py, snap15){
+  const ed = rotateTargetEdit;
+  if(!ed || !rotateCenterScreen) return;
+  const ang = Math.atan2(py - rotateCenterScreen.y, px - rotateCenterScreen.x);
+  let deg = normalizeRotDeg_(rotateStartRot + (ang - rotateStartAngle) * 180 / Math.PI);
+  if(snap15){
+    deg = normalizeRotDeg_(Math.round(deg / 15) * 15);
+  } else {
+    // Hút nhẹ về các góc thẳng 0/90/180 khi rê gần (±3°) để dễ đưa về vị trí ngay ngắn.
+    for(const t of [0, 90, -90, 180]){
+      if(Math.abs(normalizeRotDeg_(deg - t)) <= 3){ deg = t; break; }
+    }
+  }
+  deg = Math.round(deg * 10) / 10;
+  if(Math.abs(deg) < 0.05) delete ed.rotation; else ed.rotation = deg;
+  redrawOverlay();
+}
+// Quy đổi rotInfo (xem getPageRotationTransform_) sang hệ đã xoay thêm góc deg quanh tâm (cx,cy) của đối
+// tượng: toRaw() xoay điểm quanh tâm rồi mới đổi sang toạ độ thật của trang; rot bù thêm -deg cho
+// pdf-lib (rotate của pdf-lib ngược chiều kim đồng hồ, trục y hướng lên).
+function makeRotatedRotInfo_(rotInfo, cx, cy, deg){
+  const th = deg * Math.PI / 180, cs = Math.cos(th), sn = Math.sin(th);
+  return Object.assign({}, rotInfo, {
+    rot: (rotInfo.rot || 0) - deg,
+    toRaw: function(dx, dy){
+      const rx = dx - cx, ry = dy - cy;
+      return rotInfo.toRaw(cx + rx*cs - ry*sn, cy + rx*sn + ry*cs);
+    }
+  });
+}
+
+// Bọc drawEdit: chữ/ảnh có ed.rotation được vẽ xoay quanh TÂM khung. Nền che chữ gốc PDF (ed.bg) vẫn vẽ
+// THẲNG, đúng chỗ chữ gốc, để chữ gốc không bao giờ lòi ra dù chữ mới đã xoay.
 function drawEdit(ctx, e, s){
+  const rot = editRotation_(e);
+  if(!rot){ drawEditBase_(ctx, e, s); return; }
+  let drawn = e;
+  if(isRotTextType_(e) && e.bg){
+    const cb = getCoverRect(e);
+    ctx.fillStyle = e.bgColor || '#ffffff';
+    ctx.fillRect(cb.x*s, cb.y*s, cb.w*s, cb.h*s);
+    drawn = Object.assign({}, e, { bg: false });
+  }
+  const b = getEditBounds(e);
+  const cx = (b.x + b.w/2) * s, cy = (b.y + b.h/2) * s;
+  ctx.save();
+  try{
+    ctx.translate(cx, cy);
+    ctx.rotate(rot * Math.PI / 180);
+    ctx.translate(-cx, -cy);
+    drawEditBase_(ctx, drawn, s);
+  } finally {
+    ctx.restore();
+  }
+}
+
+function drawEditBase_(ctx, e, s){
   if(e.type === 'highlight'){
     ctx.fillStyle = hexToRgba(e.color, 0.35);
     ctx.fillRect(e.x*s, e.y*s, e.w*s, e.h*s);
@@ -6136,6 +6401,101 @@ function newTextOpacityProps_(){
     });
   });
   refreshOpacityControl();
+})();
+// ===== THÊM TÍNH NĂNG: nút Rotate object (xoay chữ và hình ảnh đang chọn) =====
+// Dữ liệu: mỗi edit chữ ('text'/'ocrfix'/'textfix') hoặc ảnh ('image') có thể có thêm thuộc tính "rotation"
+// (độ, -180..180, dương = thuận chiều kim đồng hồ). KHÔNG có = 0°. Đưa về 0° thì thuộc tính bị xoá hẳn.
+// Vẽ: xem drawEdit (màn hình) và drawEditOnPdfPage (xuất PDF). Đối tượng xoay quanh TÂM khung của nó.
+function getRotateTargetEdit_(){
+  if(!pages.length || selectedEditIndex < 0) return null;
+  const ed = cur().edits[selectedEditIndex];
+  return rotationSupported_(ed) ? ed : null;
+}
+let rotateUndoPushed_ = false; // mỗi lần kéo thanh trượt chỉ ghi 1 bước Undo
+function refreshRotateControl(){
+  if(!_rotEls){
+    const rangeEl = document.getElementById('rotateRange');
+    if(!rangeEl) return;
+    _rotEls = {
+      range: rangeEl,
+      num: document.getElementById('rotateNumber'),
+      badge: document.getElementById('rotateBadge'),
+      label: document.getElementById('rotateTargetLabel'),
+      presets: Array.from(document.querySelectorAll('#rotatePresets button'))
+    };
+  }
+  const el = _rotEls;
+  const target = getRotateTargetEdit_();
+  const deg = target ? Math.round(editRotation_(target) * 10) / 10 : 0;
+  const str = String(deg);
+  el.range.disabled = !target; el.num.disabled = !target;
+  for(const b of el.presets) b.disabled = !target;
+  if(document.activeElement !== el.range && el.range.value !== str) el.range.value = str;
+  if(document.activeElement !== el.num && el.num.value !== str) el.num.value = str;
+  el.badge.textContent = deg + '°';
+  const lbl = target
+    ? (target.type === 'image' ? 'Đang xoay: hình ảnh đang chọn. Cũng có thể kéo chấm tròn phía trên khung (giữ Shift = bước 15°).'
+                               : 'Đang xoay: khối chữ đang chọn. Cũng có thể kéo chấm tròn phía trên khung (giữ Shift = bước 15°).')
+    : 'Hãy dùng công cụ Select để chọn 1 khối chữ hoặc 1 hình ảnh cần xoay.';
+  if(el.label.textContent !== lbl) el.label.textContent = lbl;
+}
+// Áp dụng góc xoay lên đối tượng đang chọn. relative=true: cộng thêm raw độ vào góc hiện tại.
+function applyRotationDeg_(raw, relative){
+  const target = getRotateTargetEdit_();
+  if(!target){
+    if(typeof setStatus === 'function') setStatus('Rotate object: hãy chọn 1 khối chữ hoặc hình ảnh bằng công cụ Select trước.');
+    refreshRotateControl();
+    return;
+  }
+  let d = Number(raw);
+  if(!isFinite(d)) return;
+  const cur0 = editRotation_(target);
+  d = normalizeRotDeg_(relative ? cur0 + d : d);
+  d = Math.round(d * 10) / 10;
+  if(Math.abs(d - cur0) < 0.05){ refreshRotateControl(); return; }
+  if(!rotateUndoPushed_){ pushUndo(currentIndex); rotateUndoPushed_ = true; }
+  if(Math.abs(d) < 0.05) delete target.rotation; else target.rotation = d;
+  redrawOverlay(); // đã gọi refreshRotateControl() ở cuối
+}
+(function setupRotateControls_(){
+  const rangeEl = document.getElementById('rotateRange');
+  const numEl = document.getElementById('rotateNumber');
+  const btn = document.getElementById('btnRotateMenu');
+  const dd = document.getElementById('rotateMenuDropdown');
+  if(!rangeEl || !numEl || !btn || !dd) return;
+  setupToolbarMenu_('rotateMenuWrap', 'btnRotateMenu', 'rotateMenuDropdown');
+  btn.addEventListener('click', ()=>{
+    refreshRotateControl();
+    requestAnimationFrame(()=>{
+      dd.style.left = ''; dd.style.right = '';
+      if(!dd.classList.contains('open')) return;
+      const r = dd.getBoundingClientRect();
+      if(r.right > window.innerWidth - 8){ dd.style.left = 'auto'; dd.style.right = '0'; }
+    });
+  });
+  rangeEl.addEventListener('input', ()=> applyRotationDeg_(rangeEl.value, false));
+  rangeEl.addEventListener('change', ()=>{ rotateUndoPushed_ = false; });
+  rangeEl.addEventListener('pointerup', ()=>{ rotateUndoPushed_ = false; setTimeout(()=> rangeEl.blur(), 0); });
+  numEl.addEventListener('input', ()=>{
+    const t = numEl.value.trim();
+    if(t === '' || t === '-' || !isFinite(Number(t))) return;
+    applyRotationDeg_(t, false);
+  });
+  numEl.addEventListener('change', ()=>{
+    rotateUndoPushed_ = false;
+    const t = getRotateTargetEdit_();
+    numEl.value = String(t ? Math.round(editRotation_(t) * 10) / 10 : 0);
+  });
+  numEl.addEventListener('keydown', (e)=>{ if(e.key === 'Enter'){ e.preventDefault(); numEl.blur(); } });
+  document.querySelectorAll('#rotatePresets button').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      rotateUndoPushed_ = false;
+      if(b.dataset.abs !== undefined) applyRotationDeg_(b.dataset.abs, false);
+      else applyRotationDeg_(b.dataset.rel, true);
+      rotateUndoPushed_ = false;
+    });
+  });
+  refreshRotateControl();
 })();
 // Khi chọn (select) một khối văn bản trên trang, đồng bộ 2 ô Font chữ / Cỡ chữ theo khối đó
 // để người dùng biết đang chỉnh sửa với thông số nào.
@@ -7755,6 +8115,7 @@ function openEditInput(screenX, screenY, screenW, screenH, initialText, onCommit
   // tiên (trước khi JS kịp đo lại), khung không bị "nháy" to hơn hẳn mức cần thiết đối với các
   // dòng chữ cỡ nhỏ.
   inp.style.height = Math.max(screenH, fontPx*1.08)+'px';
+  if(opts.rotation){ inp.style.transformOrigin = '50% 50%'; inp.style.transform = 'rotate(' + opts.rotation + 'deg)'; }
   pageWrap.appendChild(inp);
   activeEditInputEl = inp;
   sizeToContent();
@@ -7950,6 +8311,12 @@ overlayCanvas.addEventListener('mousedown', (e)=>{
     // Nếu đang có 1 ảnh được chọn sẵn, ưu tiên kiểm tra xem có bấm trúng tay cầm resize ở góc
     // không, trước khi xử lý như một cú bấm chọn/kéo-di-chuyển bình thường.
     const selectedEd = selectedEditIndex>=0 ? cur().edits[selectedEditIndex] : null;
+    // Rotate object: bấm trúng tay cầm tròn phía trên khung chọn -> bắt đầu xoay.
+    if(selectedEd && isOnRotateHandle_(selectedEd, px, py)){
+      pushUndo(currentIndex);
+      beginRotateDrag_(selectedEd, px, py);
+      return;
+    }
     const handle = getResizeHandleAt(selectedEd, px, py);
     if(handle){
       pushUndo(currentIndex);
@@ -7958,13 +8325,16 @@ overlayCanvas.addEventListener('mousedown', (e)=>{
       resizeHandleName = handle;
       resizeTargetEdit = selectedEd;
       resizeAspect = (b.h > 0) ? (b.w / b.h) : 1;
+      // Rotate object: ghi nhớ góc + tâm lúc bắt đầu kéo để quy đổi chuột về khung chưa xoay.
+      resizeRotDeg = editRotation_(selectedEd);
+      resizeRotCenter = { x: b.x + b.w/2, y: b.y + b.h/2 };
       // KHỐI CHỮ: ghi nhớ khung + vị trí chuột lúc BẮT ĐẦU kéo, để tính khung mới theo độ dời chuột
       // (kéo tự do từng chiều, không ép tỉ lệ như ảnh). Đồng thời chốt luôn khung NỀN CHE hiện tại
       // (ensureCoverRect) để dù kéo thu nhỏ khung chữ tới đâu, chữ gốc của PDF vẫn bị che kín.
       if(isTextEdit(selectedEd)){
         ensureCoverRect(selectedEd);
         resizeStartBox = { x:b.x, y:b.y, w:b.w, h:b.h };
-        resizeStartPdf = { x:pdfP.x, y:pdfP.y };
+        resizeStartPdf = resizeToLocal_({ x:pdfP.x, y:pdfP.y });
       } else {
         resizeStartBox = null; resizeStartPdf = null;
       }
@@ -8721,6 +9091,7 @@ overlayCanvas.addEventListener('dblclick', (e)=>{
   const ed = edits[idx];
   if(ed.type==='text' || ed.type==='ocrfix' || ed.type==='textfix'){
     selectedEditIndex = idx;
+    const oldBoxRot_ = { x:ed.x, y:ed.y, w:ed.w, h:ed.h };
     openEditInput(ed.x*scale, ed.y*scale, ed.w*scale, ed.h*scale, ed.text, (val, colorRuns)=>{
       val = normalizeEditText(val);
       pushUndo(currentIndex);
@@ -8734,13 +9105,14 @@ overlayCanvas.addEventListener('dblclick', (e)=>{
           const minCover = computeMinCoverSize(ed);
           ed.w = Math.max(minCover.w, auto.w);
           ed.h = Math.max(minCover.h, auto.h);
+          keepRotatedAnchor_(ed, oldBoxRot_); // chữ đã xoay: giữ góc trên-trái đứng yên khi khung đổi kích thước
         }
         // Dọn mọi chỉnh sửa khác chồng lấn lên vùng vừa cập nhật, để không có 2 lớp chữ đè nhau.
         removeOverlappingTextEdits(cur(), ed.x, ed.y, ed.x+ed.w, ed.y+ed.h, ed);
       }
       else { edits.splice(idx,1); selectedEditIndex = -1; }
       redrawOverlay();
-    }, { fixedBox: !!ed.manualBox, colorRuns: ed.colorRuns, defaultColor: ed.color, hasCover: !!ed.bg });
+    }, { fixedBox: !!ed.manualBox, colorRuns: ed.colorRuns, defaultColor: ed.color, hasCover: !!ed.bg, rotation: editRotation_(ed) });
   }
 });
 
@@ -8789,7 +9161,7 @@ overlayCanvas.addEventListener('mousemove', (e)=>{
   const {x:px, y:py} = clientToCanvasXY_(overlayCanvas, e.clientX, e.clientY);
   // Mặc định về con trỏ chuột bình thường; nhánh xử lý bên dưới (nếu đang rê trên tay cầm resize
   // ảnh) sẽ tự ghi đè lại thành mũi tên resize khi cần, nên phải reset TRƯỚC mỗi lần di chuột.
-  if(!resizingImage && !draggingSelected) overlayCanvas.style.cursor = '';
+  if(!resizingImage && !draggingSelected && !rotatingObject) overlayCanvas.style.cursor = '';
 
   if(drawingFreehand){
     const pdfP = toPdfSpace(px,py);
@@ -8811,6 +9183,8 @@ overlayCanvas.addEventListener('mousemove', (e)=>{
     octx.arc(px, py, ERASE_RADIUS_SCREEN, 0, Math.PI*2);
     octx.fill(); octx.stroke();
     octx.restore();
+  } else if(rotatingObject && rotateTargetEdit){
+    updateRotateDrag_(px, py, e.shiftKey);
   } else if(draggingRect && dragStart){
     redrawOverlay();
     const x = Math.min(dragStart.x, px), y = Math.min(dragStart.y, py);
@@ -8835,7 +9209,7 @@ overlayCanvas.addEventListener('mousemove', (e)=>{
     // cạnh chỉ đổi 1 chiều. Cạnh ĐỐI DIỆN với tay cầm đang kéo luôn đứng yên.
     // Sau thao tác này, kích thước khung được GHI NHỚ (ed.manualBox = true) -> từ đó về sau khung
     // KHÔNG còn tự động phình to/thu nhỏ theo nội dung nữa, đúng như người dùng đã canh.
-    const pdfP2 = toPdfSpace(px, py);
+    const pdfP2 = resizeToLocal_(toPdfSpace(px, py));
     const dx = pdfP2.x - resizeStartPdf.x, dy = pdfP2.y - resizeStartPdf.y;
     const MIN_BOX = 8; // pt
     let nx = resizeStartBox.x, ny = resizeStartBox.y, nw = resizeStartBox.w, nh = resizeStartBox.h;
@@ -8858,19 +9232,20 @@ overlayCanvas.addEventListener('mousemove', (e)=>{
       nh = Math.max(MIN_BOX, resizeStartBox.h + dy);
     }
     const edT = resizeTargetEdit;
-    edT.x = nx; edT.y = ny; edT.w = nw; edT.h = nh;
+    const fbT_ = resizeFixBox_(nx, ny, nw, nh); // bù tâm xoay (không xoay thì giữ nguyên)
+    edT.x = fbT_.x; edT.y = fbT_.y; edT.w = fbT_.w; edT.h = fbT_.h;
     edT.manualBox = true; // <- CHỐT kích thước khung tại thời điểm này
     // FIX: Prevent Whiteout from covering neighboring text lines — mỗi lần khung chữ đổi kích
     // thước, tính lại NGAY khung nền che (coverX/Y/W/H) theo khung chữ mới, giới hạn trong vùng an
     // toàn quanh dòng lân cận. Nhờ đó: kéo khung NHỎ lại -> whiteout cũng thu nhỏ theo; kéo khung
     // LỚN hơn -> whiteout không bao giờ tự phình vượt quá điểm giữa với dòng trên/dưới/trái/phải.
     // (Xem syncCoverToSafeArea_ ở trên; hàm này không hề đụng tới edT.x/y/w/h vừa được gán.)
-    if(edT.bg) syncCoverToSafeArea_(edT);
+    if(edT.bg && !resizeRotDeg) syncCoverToSafeArea_(edT); // chữ đã xoay: nền che giữ nguyên chỗ chữ gốc
     redrawOverlay();
   } else if(resizingImage && resizeTargetEdit){
     // Kéo tay cầm góc: tính lại w/h mới sao cho góc đối diện (resizeAnchor) đứng yên, và luôn
     // giữ nguyên tỉ lệ khung hình gốc của ảnh (resizeAspect) để ảnh không bị méo.
-    const pdfP = toPdfSpace(px,py);
+    const pdfP = resizeToLocal_(toPdfSpace(px,py));
     const MIN_SIZE = 12; // pt, kích thước tối thiểu để tránh ảnh co về 0 hoặc bị lật ngược
     let rawW = Math.abs(pdfP.x - resizeAnchor.x);
     let rawH = Math.abs(pdfP.y - resizeAnchor.y);
@@ -8883,6 +9258,7 @@ overlayCanvas.addEventListener('mousemove', (e)=>{
     ed.w = newW; ed.h = newH;
     ed.x = resizeHandleName.includes('e') ? resizeAnchor.x : resizeAnchor.x - newW;
     ed.y = resizeHandleName.includes('s') ? resizeAnchor.y : resizeAnchor.y - newH;
+    { const fbI_ = resizeFixBox_(ed.x, ed.y, ed.w, ed.h); ed.x = fbI_.x; ed.y = fbI_.y; }
     redrawOverlay();
   } else if(draggingSelected && dragOffset){
     const pdfP = toPdfSpace(px,py);
@@ -8899,7 +9275,7 @@ overlayCanvas.addEventListener('mousemove', (e)=>{
     // Không đang kéo gì cả nhưng có ảnh HOẶC khối chữ đang được chọn: đổi con trỏ chuột khi rê qua
     // tay cầm, để người dùng biết có thể kéo để chỉnh khung (phần thừa quanh chữ).
     const handle = getResizeHandleAt(cur().edits[selectedEditIndex], px, py);
-    overlayCanvas.style.cursor = cursorForHandle(handle);
+    overlayCanvas.style.cursor = isOnRotateHandle_(cur().edits[selectedEditIndex], px, py) ? 'grab' : cursorForHandle(handle);
   } else if((activeTool==='ocr' || activeTool==='edittext') && !document.getElementById('editInput')){
     // Trỏ chuột tới đâu thì khoanh vùng highlight đúng dòng chữ ở đó, báo hiệu "bấm vào đây để sửa"
     // — giống trải nghiệm sửa văn bản của các phần mềm PDF chuyên dụng.
@@ -8937,7 +9313,13 @@ overlayCanvas.addEventListener('mouseleave', ()=>{
 window.addEventListener('mouseup', (e)=>{
   if(resizingImage){
     resizingImage = false; resizeHandleName = null; resizeAnchor = null; resizeTargetEdit = null;
+    resizeRotDeg = 0; resizeRotCenter = null;
     resizeStartBox = null; resizeStartPdf = null;
+    overlayCanvas.style.cursor = '';
+    redrawOverlay();
+  }
+  if(rotatingObject){
+    rotatingObject = false; rotateTargetEdit = null; rotateCenterScreen = null;
     overlayCanvas.style.cursor = '';
     redrawOverlay();
   }
@@ -9779,7 +10161,7 @@ async function buildEditedOutDoc(indexes, spinnerLabel){
         // NativeTextEngine chỉ thay glyph chữ trong content stream gốc, giữ nguyên đúng 1 màu chữ có
         // sẵn của PDF gốc, không thể tô riêng từng phần; những dòng này cần rơi về cách "che nền + vẽ
         // chữ mới đè lên" (drawEditOnPdfPage, đã hỗ trợ colorRuns ở trên) mới hiện đúng nhiều màu.
-        const nativeEdits = p.edits.filter(ed => ed.type==='textfix' && ed.nativeItemIdxs && ed.nativeItemIdxs.length && !ed.bold && !ed.italic && !ed.underline && !(ed.colorRuns && ed.colorRuns.length) && !(editOpacity_(ed) < 1));
+        const nativeEdits = p.edits.filter(ed => ed.type==='textfix' && ed.nativeItemIdxs && ed.nativeItemIdxs.length && !ed.bold && !ed.italic && !ed.underline && !(ed.colorRuns && ed.colorRuns.length) && !(editOpacity_(ed) < 1) && !editRotation_(ed));
         if(nativeEdits.length){
           nativeStats.eligible += nativeEdits.length;
           const pdfjsPage = await p.doc.getPage(p.srcPage);
@@ -11544,6 +11926,9 @@ ewSelectAll.addEventListener('change', (e) => {
 // để quay lại "Tự động nhận diện" (hành vi cũ). Giá trị này được GIỮ NGUYÊN theo lựa chọn gần nhất
 // của người dùng ở modal "Export Word" (#ewFontFamilySelect) trong suốt phiên làm việc.
 let wxExportForcedFont = 'Times New Roman';
+// [MỚI - DOCUMENT LAYOUT ANALYSIS] Bật/tắt bước phân loại khối (Title/Heading/Paragraph/Table/Image/Header/Footer/Signature/Checkbox/Stamp)
+// khi xuất Word. Giá trị theo ô chọn #ewDlaCheck của modal "Export Word". Tắt = hành vi cũ (mọi khối là đoạn thường).
+let wxUseDLA = true;
 
 document.getElementById('ewConfirmBtn').addEventListener('click', async () => {
   const selected = Array.from(ewList.querySelectorAll('.dp-checkbox:checked'))
@@ -11552,6 +11937,8 @@ document.getElementById('ewConfirmBtn').addEventListener('click', async () => {
   ewError.textContent = '';
   const ewFontSel = document.getElementById('ewFontFamilySelect');
   wxExportForcedFont = ewFontSel ? ewFontSel.value : '';
+  const ewDlaEl = document.getElementById('ewDlaCheck');
+  wxUseDLA = ewDlaEl ? !!ewDlaEl.checked : true;
   closeExportWordModal();
   await exportWordSelected(selected);
 });
@@ -13470,6 +13857,572 @@ const WXI = (function(){
 })();
 if(typeof module!=='undefined') module.exports = WXI;
 
+/* ===== WXL — DOCUMENT LAYOUT ANALYSIS (DLA) cho xuất Word =====
+   Phân loại từng khối của trang thành 10 lớp:
+     Title · Heading · Paragraph · Table · Image · Header · Footer · Signature · Checkbox · Stamp
+   và dùng kết quả đó để xuất file Word "đúng ngữ nghĩa" (không chỉ đúng hình dạng):
+     - Title       -> kiểu "Title"/"Subtitle" + thuộc tính tiêu đề tài liệu (File > Info)
+     - Heading     -> kiểu "Heading 1-3" (có outline level: Navigation Pane / Mục lục dùng được ngay)
+     - Paragraph   -> đoạn thường (giữ nguyên định dạng đã suy luận)
+     - Table       -> hàng tiêu đề tự lặp lại khi bảng sang trang (tblHeader), có mô tả (alt text) cho bảng
+     - Image       -> ảnh có tên + alt text (Logo / Hình ảnh / Mã QR / Mã vạch)
+     - Header/Footer -> đưa vào ĐẦU TRANG / CHÂN TRANG thật của Word; số trang -> trường PAGE / NUMPAGES
+     - Signature   -> khối chữ ký dùng kiểu "Signature" + giữ liền khối (keepNext); ảnh chữ ký có alt text
+     - Checkbox    -> ô tích THẬT (content control) bấm được trong Word, không còn chữ rác "O", "[]"
+     - Stamp       -> con dấu: nhận dạng theo hình học (vành tròn/khung chữ nhật, màu đỏ/xanh) & đặt phía trên chữ
+   Hàm thuần (không phụ thuộc DOM) nên chạy được cả trong Node để kiểm thử; chỉ analyzeInk() cần <canvas>. */
+const WXL = (function(){
+  'use strict';
+
+  const PX2PT = 1/3;   // trùng WX_PX2PT (1pt = 3px ở 216 dpi)
+  const ROLES = ['title','heading','paragraph','table','image','header','footer','signature','checkbox','stamp'];
+
+  // ------------------------------------------------------------------ văn bản ----
+  const stripAcc = s => String(s == null ? '' : s).normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D');
+  const norm = s => stripAcc(s).toLowerCase().replace(/\s+/g, ' ').trim();          // bỏ dấu + hạ chữ để so khớp mẫu
+  const CB_CHAR = { unchecked: '\u2610', checked: '\u2612' };
+
+  function paraText(p){
+    let t = '';
+    for(const r of (p.runs || [])){
+      if(r.br || r.tab) t += ' ';
+      else if(r.cb) t += CB_CHAR[r.cb] || CB_CHAR.unchecked;
+      else if(r.t) t += r.t;
+    }
+    return t.replace(/\s+/g, ' ').trim();
+  }
+  const isUpperText = t => {
+    const L = String(t).match(/\p{L}/gu) || [];
+    if(L.length < 2) return false;
+    let up = 0; for(const ch of L) if(ch === ch.toUpperCase() && ch !== ch.toLowerCase()) up++;
+    return up / L.length >= 0.85;
+  };
+  const wmedian = (items) => {                      // trung vị có trọng số: items = [{v, w}]
+    const a = items.filter(o => o.v > 0 && o.w > 0).sort((x, y) => x.v - y.v);
+    if(!a.length) return 0;
+    const tot = a.reduce((s, o) => s + o.w, 0); let acc = 0;
+    for(const o of a){ acc += o.w; if(acc >= tot / 2) return o.v; }
+    return a[a.length - 1].v;
+  };
+
+  // ------------------------------------------------------------------ CHECKBOX ----
+  // Ký tự ô tích trong lớp chữ THẬT của PDF (Unicode + Wingdings ánh xạ vào vùng riêng U+F0xx)
+  const CB_UNCH = new Set(['\u2610', '\u25A1', '\u25A2', '\uF0A8', '\uF071', '\uF06F', '\uF0A1']);
+  const CB_CHK  = new Set(['\u2611', '\u2612', '\u2713', '\u2714', '\u2717', '\u2718', '\uF0FE', '\uF0FD', '\uF0FC', '\uF078']);
+  function glyphKind(text){
+    const t = String(text || '').trim();
+    if(t.length !== 1) return null;
+    if(CB_UNCH.has(t)) return 'unchecked';
+    if(CB_CHK.has(t)) return 'checked';
+    return null;
+  }
+
+  // Dò ô tích bằng hình học trên các thành phần liên thông (trước khi OCR):
+  //   - hộp gần vuông, cỡ ~0.5–1.5 chiều cao chữ, 4 cạnh liền nét (chữ O, D, B, 0... không có 4 cạnh thẳng đủ dài)
+  //   - lòng hộp trống => chưa tích; có nét chéo/dấu ✓ => đã tích
+  //   - loại các dãy >= 5 ô sát nhau (ô nhập từng chữ số: mã số thuế, CMND...) vì đó không phải checkbox
+  // A: { w, cc:{lab}, T (mặt nạ chữ), medH, comps }. Trả về { boxes, comps } (comps đã bỏ nét bên trong hộp)
+  function detectCheckboxes(A){
+    const { w, cc, T, medH } = A, lab = cc.lab, comps = A.comps || [];
+    const cand = [];
+    const lo = Math.max(10, medH * 0.5), hi = medH * 1.55;
+    for(const c of comps){
+      const bw = c.x1 - c.x0 + 1, bh = c.y1 - c.y0 + 1;
+      if(bw < lo || bh < lo || bw > hi || bh > hi) continue;
+      const asp = bw / bh; if(asp < 0.75 || asp > 1.34) continue;
+      const fill = c.area / (bw * bh); if(fill < 0.08 || fill > 0.78) continue;
+      const tb = Math.max(1, Math.round(Math.min(bw, bh) * 0.14));
+      let top = 0, bot = 0, lef = 0, rig = 0;
+      for(let x = c.x0; x <= c.x1; x++){
+        let a = false, b = false;
+        for(let k = 0; k < tb; k++){ if(lab[(c.y0 + k) * w + x] === c.id) a = true; if(lab[(c.y1 - k) * w + x] === c.id) b = true; }
+        if(a) top++; if(b) bot++;
+      }
+      for(let y = c.y0; y <= c.y1; y++){
+        let a = false, b = false;
+        for(let k = 0; k < tb; k++){ if(lab[y * w + c.x0 + k] === c.id) a = true; if(lab[y * w + c.x1 - k] === c.id) b = true; }
+        if(a) lef++; if(b) rig++;
+      }
+      const need = 0.9;
+      if(top < need * bw || bot < need * bw || lef < need * bh || rig < need * bh) continue;
+      const ix0 = c.x0 + tb + 1, ix1 = c.x1 - tb - 1, iy0 = c.y0 + tb + 1, iy1 = c.y1 - tb - 1;
+      if(ix1 - ix0 < 3 || iy1 - iy0 < 3) continue;
+      let ink = 0, tot = 0;
+      for(let y = iy0; y <= iy1; y++) for(let x = ix0; x <= ix1; x++){ tot++; if(T[y * w + x]) ink++; }
+      const inFrac = ink / Math.max(1, tot);
+      cand.push({ c, x0: c.x0, y0: c.y0, x1: c.x1, y1: c.y1, side: (bw + bh) / 2, checked: inFrac >= 0.08, inFrac });
+    }
+    // loại dãy ô sát nhau (comb field)
+    const bad = new Set();
+    const sorted = cand.slice().sort((p, q) => (p.y0 + p.y1) - (q.y0 + q.y1));
+    const rows = [];
+    for(const o of sorted){
+      const cy = (o.y0 + o.y1) / 2, last = rows[rows.length - 1];
+      if(last && Math.abs(cy - last.cy) <= 0.6 * o.side){ last.items.push(o); last.cy = (last.cy * (last.items.length - 1) + cy) / last.items.length; }
+      else rows.push({ cy, items: [o] });
+    }
+    for(const r of rows){
+      const it = r.items.sort((p, q) => p.x0 - q.x0);
+      let run = [it[0]];
+      const flush = () => { if(run.length >= 5) for(const o of run) bad.add(o); };
+      for(let i = 1; i < it.length; i++){
+        if(it[i].x0 - it[i - 1].x1 <= 0.8 * it[i].side) run.push(it[i]);
+        else { flush(); run = [it[i]]; }
+      }
+      flush();
+    }
+    const boxes = cand.filter(o => !bad.has(o));
+    if(!boxes.length) return { boxes: [], comps };
+    const drop = new Set();
+    for(const o of boxes){
+      o.c._cb = { checked: o.checked };
+      for(const d of comps){
+        if(d === o.c) continue;
+        const cx = (d.x0 + d.x1) / 2, cy = (d.y0 + d.y1) / 2;
+        if(cx > o.x0 + 1 && cx < o.x1 - 1 && cy > o.y0 + 1 && cy < o.y1 - 1) drop.add(d);   // dấu ✓/✗ rời nằm trong ô
+      }
+    }
+    return { boxes: boxes.map(o => ({ x0: o.x0, y0: o.y0, x1: o.x1, y1: o.y1, checked: o.checked })), comps: comps.filter(d => !drop.has(d)) };
+  }
+
+  // Chèn "từ" ô tích vào danh sách từ của từng dòng (đúng thứ tự x). Đồng thời đổi các ký tự ô tích trong chữ thật thành ô tích.
+  function injectCheckboxWords(lines){
+    let n = 0;
+    for(const L of lines){
+      const cbs = (L.comps || []).filter(c => c._cb);
+      let ws = (L.ocrWords || []).map(wd => {
+        const k = glyphKind(wd.text);
+        return k ? Object.assign({}, wd, { cb: k, text: CB_CHAR[k] }) : wd;
+      });
+      for(const c of cbs){
+        ws = ws.filter(wd => {
+          const cx = (wd.x0 + wd.x1) / 2;
+          if(!(cx >= c.x0 - 3 && cx <= c.x1 + 3)) return true;
+          return !(wd.cb || String(wd.text).length <= 3);                // bỏ chữ rác/ký tự thật nằm đúng chỗ ô tích
+        });
+        const kind = c._cb.checked ? 'checked' : 'unchecked';
+        ws.push({ text: CB_CHAR[kind], conf: 100, x0: c.x0, x1: c.x1, y0: c.y0, y1: c.y1, cb: kind });
+      }
+      if(cbs.length || ws.some(w => w.cb)){
+        ws.sort((a, b) => a.x0 - b.x0);
+        L.ocrWords = ws; L.ocrText = ws.map(w => w.text).join(' ');
+        n += ws.filter(w => w.cb).length;
+      }
+    }
+    return n;
+  }
+
+  // ------------------------------------------------------------------ ẢNH: con dấu / chữ ký / logo / mã ----
+  // Đặc trưng hình học của phần "mực" trong một ảnh RGBA (đã thu nhỏ). d: Uint8ClampedArray RGBA.
+  function inkMetrics(d, tw, th){
+    const cx = (tw - 1) / 2, cy = (th - 1) / 2, rx = Math.max(1, tw / 2), ry = Math.max(1, th / 2);
+    const NA = 24, NB = 16, G = 8;
+    const ang = new Uint8Array(NA), eT = new Uint8Array(NB), eB = new Uint8Array(NB), eL = new Uint8Array(NB), eR = new Uint8Array(NB), cells = new Uint8Array(G * G);
+    let n = 0, sr = 0, sg = 0, sb = 0, inner = 0;
+    const dw = Math.max(1, tw - 1), dh = Math.max(1, th - 1);
+    for(let y = 0; y < th; y++){
+      for(let x = 0; x < tw; x++){
+        const i = (y * tw + x) * 4, a = d[i + 3];
+        if(a < 70) continue;
+        const r = d[i], g = d[i + 1], b = d[i + 2];
+        if(a >= 250 && (0.299 * r + 0.587 * g + 0.114 * b) > 205) continue;       // giấy trắng (ảnh đục)
+        n++; sr += r; sg += g; sb += b;
+        const dx = (x - cx) / rx, dy = (y - cy) / ry, de = Math.hypot(dx, dy);
+        if(de < 0.6) inner++;
+        if(de >= 0.78 && de <= 1.15){ let t = Math.atan2(dy, dx); if(t < 0) t += 2 * Math.PI; ang[Math.min(NA - 1, Math.floor(t / (2 * Math.PI) * NA))] = 1; }
+        const px = x / dw, py = y / dh;
+        const bx = Math.min(NB - 1, Math.floor(px * NB)), by = Math.min(NB - 1, Math.floor(py * NB));
+        if(py <= 0.08) eT[bx] = 1; if(py >= 0.92) eB[bx] = 1; if(px <= 0.08) eL[by] = 1; if(px >= 0.92) eR[by] = 1;
+        cells[Math.min(G - 1, Math.floor(py * G)) * G + Math.min(G - 1, Math.floor(px * G))] = 1;
+      }
+    }
+    const sum = a => { let s = 0; for(const v of a) s += v; return s; };
+    if(!n) return { n: 0, fill: 0, angCov: 0, rectCov: 0, innerFrac: 0, occ: 0, chroma: 0, hue: 0, r: 0, g: 0, b: 0 };
+    const r = sr / n, g = sg / n, b = sb / n;
+    const mx = Math.max(r, g, b), mn = Math.min(r, g, b), ch = mx - mn;
+    let hue = 0;
+    if(ch > 0){ if(mx === r) hue = ((g - b) / ch + 6) % 6; else if(mx === g) hue = (b - r) / ch + 2; else hue = (r - g) / ch + 4; hue *= 60; }
+    return {
+      n, fill: n / (tw * th), angCov: sum(ang) / NA, rectCov: (sum(eT) + sum(eB) + sum(eL) + sum(eR)) / (4 * NB),
+      innerFrac: inner / n, occ: sum(cells) / (G * G), chroma: ch, hue, r, g, b
+    };
+  }
+  function analyzeInk(cv){                                   // cần DOM: thu nhỏ canvas về <= 96px rồi đo
+    const S = Math.max(1, Math.max(cv.width, cv.height) / 96);
+    const tw = Math.max(4, Math.round(cv.width / S)), th = Math.max(4, Math.round(cv.height / S));
+    const c2 = document.createElement('canvas'); c2.width = tw; c2.height = th;
+    const g = c2.getContext('2d', { willReadFrequently: true });
+    g.drawImage(cv, 0, 0, tw, th);
+    return inkMetrics(g.getImageData(0, 0, tw, th).data, tw, th);
+  }
+
+  // f: ảnh nổi { x,y,w,h (pt), native?, code? }, m: kết quả inkMetrics (hoặc null),
+  // ctx: { pageW, pageH, sigBox:{top,bottom}|null }. Trả về { role, kind }
+  function classifyFloat(f, m, ctx){
+    if(f.code) return { role: 'image', kind: f.code === 'qr' ? 'qr' : 'barcode' };
+    const H = ctx.pageH, cyF = (f.y + f.h / 2) / H, asp = f.w / Math.max(1, f.h);
+    const mn = Math.min(f.w, f.h), mx = Math.max(f.w, f.h), midY = f.y + f.h / 2;
+    const nearSig = !!(ctx.sigBox && midY >= ctx.sigBox.top - 40 && midY <= ctx.sigBox.bottom + 50);
+    if(m && m.n > 0){
+      const red = m.chroma >= 40 && (m.hue <= 28 || m.hue >= 332);
+      const ring = (m.angCov >= 0.80 && asp >= 0.55 && asp <= 1.8) || m.rectCov >= 0.82;
+      // CON DẤU: vành tròn/bầu dục hoặc khung chữ nhật khép kín, rỗng ở giữa, cỡ 0.3–4 inch, có màu (đỏ/xanh) hoặc mực thưa
+      if(ring && m.fill <= 0.55 && mn >= 24 && mx <= 300 && (cyF >= 0.3 || nearSig || red) && (m.chroma >= 25 || m.fill <= 0.4))
+        return { role: 'stamp', kind: 'stamp' };
+      // CHỮ KÝ: nét mảnh, mực thưa, nằm ở nửa dưới trang hoặc sát khối chữ ký, không khép kín như con dấu
+      if((nearSig || cyF >= 0.4) && !ring && m.fill <= 0.4 && mx <= 330 && mn >= 8 && asp >= 0.45 && asp <= 8 && m.occ >= 0.15)
+        return { role: 'signature', kind: 'signature' };
+    }
+    return { role: 'image', kind: (cyF <= 0.2 && (f.native || mx >= 30)) ? 'logo' : 'image' };
+  }
+  function classifyFloats(floats, ctx){
+    for(const f of floats){
+      let m = null;
+      if(f.cv && !f.code){ try{ m = analyzeInk(f.cv); }catch(e){ m = null; } }
+      const r = classifyFloat(f, m, ctx);
+      f.role = r.role; f.kind = r.kind;
+      delete f.cv;
+    }
+  }
+  const FLOAT_META = {
+    stamp:     { name: 'Stamp',     descr: 'Con dấu (Stamp)' },
+    signature: { name: 'Signature', descr: 'Chữ ký (Signature)' },
+    qr:        { name: 'QR Code',   descr: 'Mã QR' },
+    barcode:   { name: 'Barcode',   descr: 'Mã vạch' },
+    logo:      { name: 'Logo',      descr: 'Logo' },
+    image:     { name: 'Image',     descr: 'Hình ảnh (Image)' }
+  };
+  function floatMeta(f){ return f && f.kind ? (FLOAT_META[f.kind] || FLOAT_META.image) : null; }
+
+  // ------------------------------------------------------------------ MẪU NGÔN NGỮ (văn bản hành chính VN) ----
+  const RE_LETTERHEAD = /(cong hoa xa hoi chu nghia viet nam|doc lap\s*[-–]?\s*tu do\s*[-–]?\s*hanh phuc|^(cong ty|ngan hang|uy ban nhan dan|ubnd|tong cong ty|tap doan|trung tam|chi nhanh|van phong)\b)/;
+  const RE_SIG_HINT = /\(\s*(ky|ki)\b[^)]*\)|\b(ky ten|ky nhan|ky va ghi ro ho ten|ky,? ghi ro ho ten|ky va dong dau)\b/;
+  const RE_SIG_ROLE = /^(nguoi lap( bieu| phieu)?|nguoi (nhan|giao|de nghi|duyet|dai dien|lam don|viet don|cam ket|khai|lao dong|mua|ban|nop|thu)|dai dien|giam doc|tong giam doc|pho giam doc|ke toan( truong| vien)?|thu quy|thu truong|truong (phong|khoa|bo phan|don vi)|chu tich|hieu truong|ben [ab]\b|nguoi su dung lao dong|xac nhan|phe duyet|tm\.|kt\.|tl\.|tuq\.|q\.\s)/;
+  const RE_DATE_LINE = /^[^,]{2,40},\s*ngay\s+\S+\s+thang\s+\S+\s+nam\s+\S+/;
+  const RE_TITLE_SUB = /^(ve viec|v\/v)\b/;
+  const RE_PAGENUM = /^\s*(trang|page|tr\.?)?\s*[-–—(\[]?\s*\d{1,4}\s*((\/|of|tren)\s*\d{1,4})?\s*[-–—)\]]?\s*$/i;
+  const RE_H1 = /^(phan|chuong|muc|phu luc|bai)\s+([ivxlcdm]+|\d+|[a-z])\b/;
+  const RE_H2 = /^dieu\s+\d+/;
+  const RE_NOT_HEAD = /^(kinh gui|noi nhan|can cu|so\s*:|ho va ten|ngay\s+\d|ma so|dia chi|dien thoai|tel\b|fax\b|email|website)/;
+  const RE_ROMAN = /^[IVX]{1,5}\s*[\.\)\-:]\s*\S/;
+  const RE_DEC1 = /^\d{1,2}\s*[\.\)]\s+\S/;
+  const RE_DEC2 = /^\d{1,2}\.\d{1,2}\s*[\.\)]?\s+\S/;
+
+  // ------------------------------------------------------------------ PHÂN LOẠI KHỐI VĂN BẢN ----
+  function allParas(flow){
+    const out = [];
+    for(const el of flow){
+      if(el.kind === 'p') out.push(el);
+      else if(el.kind === 'tbl') for(const c of (el.cells || [])) for(const p of (c.paras || [])) out.push(p);
+    }
+    return out;
+  }
+  function segTexts(p){
+    const out = [];
+    for(const r of (p.rows || [])) for(const s of (r.segs || [])) out.push(norm((s.words || []).map(w => w.text).join(' ')));
+    return out;
+  }
+  function feature(p, body, W, H){
+    const text = paraText(p).replace(/[\u2610\u2612]/g, '').trim();
+    let bc = 0, tc = 0;
+    for(const r of (p.runs || [])) if(r.t && !r.cb){ const k = r.t.replace(/\s/g, '').length; tc += k; if(r.b) bc += k; }
+    const rows = p.rows || [];
+    const bl = rows.length ? Math.min(...rows.map(r => r.x0)) * PX2PT : 0;
+    const br = rows.length ? Math.max(...rows.map(r => r.x1)) * PX2PT : 0;
+    const segs = segTexts(p);
+    return {
+      text, n: norm(text), len: text.length, alnum: (text.match(/[\p{L}\p{N}]/gu) || []).length,
+      bold: tc > 0 && bc / tc >= 0.85, boldFrac: tc ? bc / tc : 0, upper: isUpperText(text),
+      rows: rows.length, centered: p.jc === 'center', multi: rows.some(r => r.multi), bullet: !!(rows[0] && rows[0].bullet),
+      cx: (bl + br) / 2 / W, ratio: (p.size || body) / body, y0: p.top / H, y1: p.bottom / H, lh: p.LH || 12, segs
+    };
+  }
+  // Cỡ chữ thân bài: trung vị (theo độ dài chữ) của các đoạn NẰM GIỮA trang — bỏ vùng sát mép trên/dưới (đầu/chân trang chữ nhỏ) để không kéo lệch
+  function bodySizeOf(paras, H){
+    const mid = H ? paras.filter(p => p.top >= 0.08 * H && p.bottom <= 0.92 * H) : paras;
+    const src = mid.length ? mid : paras;
+    return wmedian(src.map(p => ({ v: p.size || 0, w: Math.max(1, paraText(p).length) }))) || 12;
+  }
+
+  // Phân loại các phần tử của "flow" (đoạn 'p' và bảng 'tbl') của MỘT trang. Gán p.role / p.level / p.sub / p.zone / p.sigLast, tbl.role.
+  // ctx: { pageW, pageH, first } — first: trang đầu tiên của tài liệu xuất (mới có Title). Trả về { body, sigBox }.
+  function classifyFlow(flow, ctx){
+    const W = ctx.pageW, H = ctx.pageH;
+    const body = bodySizeOf(allParas(flow), H);
+    const tops = flow.filter(e => e.kind === 'p').sort((a, b) => a.top - b.top);
+    const F = new Map();
+    for(const p of tops){ F.set(p, feature(p, body, W, H)); p.role = 'paragraph'; p.level = 0; p.sub = false; p.zone = null; p.sigLast = false; }
+
+    // (1) KHỐI CHỮ KÝ ------------------------------------------------------------------
+    const inSig = new Set();
+    const isTrig = (p) => {
+      const f = F.get(p);
+      if(f.alnum < 2 || f.y0 < 0.30 || f.len > 110) return false;
+      if(f.segs.some(s => RE_SIG_HINT.test(s))) return true;
+      if(f.y0 >= 0.40 && f.len <= 80 && !f.bullet && (f.centered || f.multi || f.cx >= 0.55 || f.upper || f.bold) && f.segs.some(s => RE_SIG_ROLE.test(s))) return true;
+      return false;
+    };
+    for(let i = 0; i < tops.length; i++){
+      const p = tops[i];
+      if(inSig.has(p) || !isTrig(p)) continue;
+      let start = i;
+      if(i > 0){ const pv = tops[i - 1], fv = F.get(pv); if(!inSig.has(pv) && RE_DATE_LINE.test(fv.n) && p.top - pv.bottom <= 40 && fv.y0 >= 0.35) start = i - 1; }
+      const block = []; let lastBottom = tops[start].bottom;
+      for(let k = start; k < tops.length; k++){
+        const q = tops[k], f = F.get(q);
+        if(k > start){
+          if(q.top - lastBottom > 150) break;
+          if(f.bullet || (f.len > 90 && !f.multi)) break;
+          if(q.top >= 0.93 * H || (q.top >= 0.90 * H && (RE_PAGENUM.test(f.text) || f.ratio <= 0.85))) break;   // số trang / chân trang không thuộc khối ký
+          if(!(f.cx >= 0.38 || f.multi || f.centered)) break;        // "Nơi nhận:" bên trái không thuộc khối ký
+        }
+        block.push(q); lastBottom = q.bottom;
+      }
+      for(const q of block){ q.role = 'signature'; inSig.add(q); }
+      block[block.length - 1].sigLast = true;
+      i = tops.indexOf(block[block.length - 1]);
+    }
+
+    // (2) ĐẦU TRANG / CHÂN TRANG (luật cục bộ; luật lặp lại giữa các trang xử lý ở finalizeDocument) ----------
+    tops.forEach((p, i) => {
+      if(p.role !== 'paragraph') return;
+      const f = F.get(p), prev = tops[i - 1];
+      const gapBefore = prev ? p.top - prev.bottom : p.top;
+      if(p.bottom <= 0.13 * H) p.zone = 'top'; else if(p.top >= 0.87 * H) p.zone = 'bottom';
+      if(p.zone === 'bottom' && p.top >= 0.90 * H && f.len <= 160 && f.alnum >= 1 &&
+         (RE_PAGENUM.test(f.text) || f.ratio <= 0.95 || gapBefore >= 2.5 * f.lh)) p.role = 'footer';
+      else if(p.zone === 'top' && p.bottom <= 0.075 * H && f.ratio <= 0.95 && f.len <= 160 && f.alnum >= 2 &&
+              !RE_LETTERHEAD.test(f.n) && !RE_DATE_LINE.test(f.n) && !(f.bold && f.centered)) p.role = 'header';
+    });
+
+    // (3) TITLE (chỉ trang đầu) ------------------------------------------------------------
+    if(ctx.first){
+      let best = -1, bestScore = 0;
+      tops.forEach((p, i) => {
+        if(p.role !== 'paragraph') return;
+        const f = F.get(p);
+        if(f.y0 > 0.5 || f.multi || f.bullet || f.rows > 3 || f.len < 3 || f.len > 170 || f.alnum < 3) return;
+        if(RE_LETTERHEAD.test(f.n) || RE_DATE_LINE.test(f.n) || RE_NOT_HEAD.test(f.n) || /[,;]$/.test(f.text)) return;
+        const big = f.ratio >= 1.2, capsBold = f.bold && f.upper && f.centered;
+        if(!(big || capsBold) || !(f.centered || f.ratio >= 1.3)) return;
+        const score = f.ratio * 10 + (f.bold ? 2 : 0) + (f.centered ? 2 : 0) - f.y0 * 3;
+        if(score > bestScore){ bestScore = score; best = i; }
+      });
+      if(best >= 0){
+        const tp = tops[best], tf = F.get(tp), idx = new Set([best]);
+        let prevSub = false;
+        for(let i = best + 1; i < tops.length; i++){                         // lan xuống: dòng tiêu đề tiếp theo / "Về việc ..."
+          const p = tops[i], f = F.get(p), gap = p.top - tops[i - 1].bottom;
+          if(p.role !== 'paragraph' || gap > 1.8 * f.lh || f.multi || f.bullet || !f.centered || f.len > 170) break;
+          if(RE_TITLE_SUB.test(f.n)){ p.sub = true; prevSub = true; idx.add(i); continue; }
+          if(prevSub && gap <= 1.2 * f.lh){ p.sub = true; idx.add(i); continue; }
+          if(Math.abs(p.size - tp.size) <= 0.75 && f.bold === tf.bold){ idx.add(i); continue; }
+          break;
+        }
+        for(let i = best - 1; i >= 0; i--){                                   // lan lên: tiêu đề bị chia nhiều đoạn cùng cỡ chữ
+          const p = tops[i], f = F.get(p), gap = tops[i + 1].top - p.bottom;
+          if(p.role !== 'paragraph' || gap > 1.8 * f.lh || f.multi || f.bullet || !f.centered) break;
+          if(RE_LETTERHEAD.test(f.n) || Math.abs(p.size - tp.size) > 0.75 || f.bold !== tf.bold) break;
+          idx.add(i);
+        }
+        for(const i of idx) tops[i].role = 'title';
+      }
+    }
+
+    // (4) HEADING ---------------------------------------------------------------------------
+    const cands = [];
+    tops.forEach((p, i) => {
+      if(p.role !== 'paragraph') return;
+      const f = F.get(p);
+      if(f.rows > 2 || f.multi || f.bullet || f.len < 2 || f.len > 140 || f.alnum < 2) return;
+      if(/[,;]$/.test(f.text) || RE_NOT_HEAD.test(f.n) || /^\d+$/.test(f.text)) return;
+      if(RE_LETTERHEAD.test(f.n) && f.y0 < 0.30) return;
+      let pat = 0;
+      if(RE_H1.test(f.n)) pat = 1;
+      else if(RE_H2.test(f.n)) pat = 2;
+      else if(RE_ROMAN.test(f.text) && (f.bold || f.upper)) pat = 1;
+      else if(RE_DEC2.test(f.text) && (f.bold || f.upper)) pat = 3;
+      else if(RE_DEC1.test(f.text) && (f.bold || f.upper)) pat = 2;
+      const strong = pat > 0 || (f.bold && (f.upper || f.centered || f.ratio >= 1.05)) || f.ratio >= 1.15;
+      if(!strong) return;
+      if(f.len > 90 && !pat) return;
+      cands.push({ p, f, pat });
+    });
+    const nBody = tops.filter(p => p.role === 'paragraph').length;
+    const use = cands.length > Math.max(3, 0.4 * nBody) ? cands.filter(c => c.pat > 0 || c.f.ratio >= 1.15) : cands;   // trang dạng biểu mẫu: chỉ giữ tiêu đề chắc chắn
+    for(const c of use){
+      let lvl = c.pat;
+      if(!lvl) lvl = c.f.ratio >= 1.3 ? 1 : (c.f.ratio >= 1.12 ? 2 : ((c.f.bold && c.f.upper) ? 2 : 3));
+      c.p.role = 'heading'; c.p.level = Math.max(1, Math.min(3, lvl));
+    }
+
+    // (5) BẢNG --------------------------------------------------------------------------------
+    for(const el of flow){
+      if(el.kind !== 'tbl') continue;
+      el.role = 'table';
+      tableMeta(el);
+      for(const c of (el.cells || [])) for(const p of (c.paras || [])){ p.role = 'paragraph'; p.inTable = true; }
+    }
+
+    const sig = tops.filter(p => p.role === 'signature');
+    const sigBox = sig.length ? { top: Math.min(...sig.map(p => p.top)), bottom: Math.max(...sig.map(p => p.bottom)) } : null;
+    return { body, sigBox };
+  }
+
+  // Bảng: hàng tiêu đề (in đậm hoặc có màu nền, hoặc "STT") -> tblHeader; mô tả bảng cho alt text
+  function tableMeta(tbl){
+    const nR = (tbl.rowH || []).length, nC = (tbl.colW || []).length;
+    tbl.headerRows = 0;
+    tbl.descr = 'Bảng ' + nC + ' cột × ' + nR + ' hàng';
+    if(nR < 2) return;
+    const boldOf = c => (c.paras || []).length > 0 && c.paras.every(p => { let b = 0, t = 0; for(const r of (p.runs || [])) if(r.t && !r.cb){ const k = r.t.replace(/\s/g, '').length; t += k; if(r.b) b += k; } return t > 0 && b / t >= 0.8; });
+    const row = r => (tbl.cells || []).filter(c => c.r0 === r);
+    const cells0 = row(0), text0 = cells0.filter(c => (c.paras || []).length);
+    if(!text0.length) return;
+    const cells1 = row(1), text1 = cells1.filter(c => (c.paras || []).length);
+    const b0 = text0.filter(boldOf).length / text0.length;
+    const b1 = text1.length ? text1.filter(boldOf).length / text1.length : 0;
+    const s0 = cells0.filter(c => c.bg).length / Math.max(1, cells0.length);
+    const s1 = cells1.length ? cells1.filter(c => c.bg).length / cells1.length : 0;
+    const stt = text0.some(c => /^(stt|tt|no\.?|so tt)$/.test(norm(paraText(c.paras[0]))));
+    const isHead = (b0 >= 0.6 && b1 < 0.6) || (s0 >= 0.5 && s1 < 0.5) || (stt && b1 < 0.6);
+    if(!isHead) return;
+    let hr = 1;
+    for(const c of cells0) if(c.r1 > c.r0) hr = Math.max(hr, c.r1 + 1);          // ô gộp dọc trong hàng tiêu đề -> tiêu đề nhiều hàng
+    tbl.headerRows = Math.min(3, hr, nR - 1);
+  }
+
+  // Thuộc tính đoạn suy ra từ vai trò (dùng khi xuất XML). null = đoạn thường.
+  function paraProps(p){
+    switch(p.role){
+      case 'title':     return { style: p.sub ? 'Subtitle' : 'Title', keepNext: true, keepLines: true };
+      case 'heading':   return { style: 'Heading' + Math.max(1, Math.min(3, p.level || 1)), keepNext: true, keepLines: true };
+      case 'signature': return { style: 'Signature', keepNext: !p.sigLast, keepLines: true };
+      case 'header':    return { style: 'Header' };
+      case 'footer':    return { style: 'Footer' };
+      default:          return null;
+    }
+  }
+
+  // ------------------------------------------------------------------ SỐ TRANG -> TRƯỜNG PAGE / NUMPAGES ----
+  function applyPageFields(p, pageNo, total){
+    if(!p.runs || p.runs.some(r => r.br || r.tab || r.cb || r.field)) return false;
+    const txt = p.runs.map(r => r.t || '').join('');
+    const st = p.runs.find(r => r.t) || {};
+    const base = { b: !!st.b, i: !!st.i, u: !!st.u, color: st.color || '000000', sz: st.sz, fam: st.fam };
+    let m = /^(\s*(?:trang|page|tr\.?)?\s*[-–—(\[]?\s*)(\d{1,4})(\s*(?:\/|of|trên|tren)\s*)(\d{1,4})(\s*[-–—)\]]?\s*)$/i.exec(txt);
+    if(m){
+      p.runs = [ Object.assign({ t: m[1] }, base), Object.assign({ field: 'PAGE', t: String(pageNo) }, base),
+                 Object.assign({ t: m[3] }, base), Object.assign({ field: 'NUMPAGES', t: String(total) }, base), Object.assign({ t: m[5] }, base) ].filter(r => r.field || r.t);
+      return true;
+    }
+    m = /^(\s*(?:trang|page|tr\.?)?\s*[-–—(\[]?\s*)(\d{1,4})(\s*[-–—)\]]?\s*)$/i.exec(txt);
+    if(m){
+      p.runs = [ Object.assign({ t: m[1] }, base), Object.assign({ field: 'PAGE', t: String(pageNo) }, base), Object.assign({ t: m[3] }, base) ].filter(r => r.field || r.t);
+      return true;
+    }
+    return false;
+  }
+
+  // ------------------------------------------------------------------ TOÀN TÀI LIỆU ----
+  const normKey = s => norm(s).replace(/\d+/g, '#');
+
+  // api.layout(flowSắpXếp) -> { out, marginTop, lastBottom }  (= wxLayoutFlow)
+  function finalizeDocument(models, api){
+    const total = models.length, multi = total >= 2;
+    const cnt = new Map();
+    for(const m of models){
+      const seen = new Set();
+      for(const p of (m.rawFlow || [])){
+        if(p.kind !== 'p' || !p.zone || p.role === 'signature' || p.role === 'title') continue;
+        const k = p.zone + '|' + normKey(paraText(p));
+        if(!seen.has(k)){ seen.add(k); cnt.set(k, (cnt.get(k) || 0) + 1); }
+      }
+    }
+    if(multi){
+      for(const m of models) for(const p of (m.rawFlow || [])){
+        if(p.kind !== 'p' || !p.zone || (p.role !== 'paragraph' && p.role !== 'heading')) continue;
+        const t = paraText(p);
+        if(t && (cnt.get(p.zone + '|' + normKey(t)) || 0) >= 2){ p.role = p.zone === 'top' ? 'header' : 'footer'; p.level = 0; }
+      }
+    }
+    models.forEach((m, mi) => {
+      const raw = m.rawFlow; if(!raw) return;
+      const H = m.hPt;
+      const byTop = (a, b) => a.top - b.top;
+      const hdr = raw.filter(p => p.kind === 'p' && p.role === 'header').sort(byTop);
+      const ftr = raw.filter(p => p.kind === 'p' && p.role === 'footer').sort(byTop);
+      if(!hdr.length && !ftr.length) return;
+      const bodyEls = raw.filter(e => !(e.kind === 'p' && (e.role === 'header' || e.role === 'footer')));
+      const firstTop = bodyEls.length ? Math.min(...bodyEls.map(e => e.top)) : Infinity;
+      const lastBottom = bodyEls.length ? Math.max(...bodyEls.map(e => e.bottom)) : -Infinity;
+      const okH = hdr.length > 0 && hdr.every(p => p.bottom <= firstTop - 3) && hdr[hdr.length - 1].bottom <= 0.2 * H;
+      const okF = ftr.length > 0 && ftr.every(p => p.top >= lastBottom + 3) && ftr[0].top >= 0.75 * H && ftr[ftr.length - 1].bottom <= H;
+      if(!okH) for(const p of hdr) p.role = 'paragraph';
+      if(!okF) for(const p of ftr) p.role = 'paragraph';
+      if(!okH && !okF) return;
+      const keep0 = raw.filter(e => !(e.kind === 'p' && (e.role === 'header' || e.role === 'footer')));
+      if(okH){
+        hdr.forEach((p, i) => { p.spBefore = i ? Math.max(0, p.top - hdr[i - 1].bottom) : 0; applyPageFields(p, mi + 1, total); });
+        m.hdr = { paras: hdr, dist: Math.max(0, hdr[0].top), bottom: hdr[hdr.length - 1].bottom };
+      }
+      if(okF){
+        ftr.forEach((p, i) => { p.spBefore = i ? Math.max(0, p.top - ftr[i - 1].bottom) : 0; applyPageFields(p, mi + 1, total); });
+        m.ftr = { paras: ftr, dist: Math.max(0, H - ftr[ftr.length - 1].bottom), top: ftr[0].top };
+      }
+      const lay = api.layout(keep0);
+      m.flow = lay.out;
+      m.mT = lay.marginTop;
+      m.mB = m.ftr ? Math.max(4, H - m.ftr.top + 1) : Math.max(4, Math.min(36, H - lay.lastBottom - 4));
+    });
+  }
+
+  function documentTitle(models){
+    for(const m of models){
+      const ts = (m.rawFlow || []).filter(p => p.kind === 'p' && p.role === 'title' && !p.sub).sort((a, b) => a.top - b.top);
+      if(ts.length) return ts.map(paraText).join(' ').replace(/\s+/g, ' ').trim().slice(0, 160);
+    }
+    return '';
+  }
+
+  // Thống kê số khối theo 10 lớp
+  function summarize(models){
+    const c = { title: 0, heading: 0, paragraph: 0, table: 0, image: 0, header: 0, footer: 0, signature: 0, checkbox: 0, stamp: 0 };
+    const countCb = p => { for(const r of (p.runs || [])) if(r.cb) c.checkbox++; };
+    for(const m of models){
+      if(m.hdr){ c.header++; m.hdr.paras.forEach(countCb); }
+      if(m.ftr){ c.footer++; m.ftr.paras.forEach(countCb); }
+      let inSig = false;
+      const seq = (m.rawFlow || []).slice().sort((a, b) => a.top - b.top);
+      for(const e of seq){
+        if(e.kind === 'tbl'){
+          c.table++; inSig = false;
+          for(const cell of (e.cells || [])){ if(cell.image) c.image++; for(const p of (cell.paras || [])){ c.paragraph++; countCb(p); } }
+          continue;
+        }
+        if(e.role === 'header' || e.role === 'footer') continue;
+        countCb(e);
+        if(e.role === 'signature'){ if(!inSig) c.signature++; inSig = true; continue; }
+        inSig = false;
+        if(e.role === 'title'){ if(!e.sub) c.title++; }
+        else if(e.role === 'heading') c.heading++;
+        else c.paragraph++;
+      }
+      for(const f of (m.floats || [])){
+        if(f.role === 'stamp') c.stamp++;
+        else if(f.role === 'signature') c.signature++;
+        else c.image++;
+      }
+    }
+    return c;
+  }
+
+  return { ROLES, PX2PT, norm, paraText, glyphKind, detectCheckboxes, injectCheckboxWords, inkMetrics, analyzeInk, classifyFloat, classifyFloats, floatMeta,
+           classifyFlow, tableMeta, paraProps, applyPageFields, finalizeDocument, documentTitle, summarize };
+})();
+if(typeof module !== 'undefined') module.exports = WXL;
+
+
 /* ===== WX-A: phân tích trang + OCR từng dòng + suy luận định dạng (chạy trong trình duyệt) ===== */
 const WX_SC = 3;                 // hệ số render: 1pt = 3px  (216 dpi)
 const WX_PX2PT = 1 / WX_SC;
@@ -13611,7 +14564,10 @@ async function wxAnalyzePage(idx){
   });
   const bigIds = new Set(big.map(b=>b.id));
   comps = comps.filter(b => !bigIds.has(b.id));
-  return { idx, w, h, rgba, sep, rm, tables, T, cc, medH, comps, big, codes, imgRects, skew, skewApplied, rotated: !!canvas.__rotated };
+  // [MỚI - DLA] Dò Ô TÍCH (checkbox) bằng hình học TRƯỚC khi OCR: hộp gần vuông, 4 cạnh liền nét, trống/có dấu tích.
+  let checkboxes = [];
+  if(wxUseDLA){ try{ const cbr = WXL.detectCheckboxes({ w, cc, T, medH, comps }); checkboxes = cbr.boxes; comps = cbr.comps; }catch(err){ console.warn('WORD/DLA: lỗi dò checkbox', err); } }
+  return { idx, w, h, rgba, sep, rm, tables, T, cc, medH, comps, big, codes, checkboxes, imgRects, skew, skewApplied, rotated: !!canvas.__rotated };
 }
 
 
@@ -14070,7 +15026,7 @@ function wxSplitBullet(L, A){
   const cs = L.comps.slice().sort((p,q)=>p.x0-q.x0);
   const c0 = cs[0], c1 = c0 ? cs.find(c=>c.x0 > c0.x1) : null;
   let bullet = null;
-  if(c0){
+  if(c0 && !c0._cb){
     const h0=c0.y1-c0.y0+1, w0=c0.x1-c0.x0+1;
     const dashLike = h0 <= A.medH*0.25 && w0 >= A.medH*0.3 && w0 <= A.medH*1.2;
     const dotLike  = h0 <= A.medH*0.5 && w0 <= A.medH*0.5 && h0 >= A.medH*0.18 && Math.abs(h0-w0) <= 0.45*Math.max(h0,w0);
@@ -14098,6 +15054,7 @@ function wxSplitBullet(L, A){
 function wxDropGarbage(lines, A){
   return lines.filter(L => {
     if(!(L.words && L.words.length)) return false;
+    if(L.words.some(w => w.cb)) return true;          // dòng có ô tích (Checkbox) luôn được giữ
     const txt = L.words.map(w=>w.text).join('');
     const alnum = (txt.match(/[A-Za-zÀ-ỹ0-9]/g) || []).length;
     if(!alnum) return false;
@@ -14203,6 +15160,11 @@ function wxRunsForSeg(L){
       sz: L.style.sizeSnap,
       fam: L.style.family
     };
+    if(ws[k].cb){   // ô tích (Checkbox): run riêng, không gộp với chữ
+      if(k>0){ if(cur) cur.t += ' '; }
+      runs.push({ cb: ws[k].cb, t:'', b:false, i:false, u:false, color: st.color, sz: st.sz, fam: st.fam });
+      cur = null; continue;
+    }
     const text = (k>0 ? ' ' : '') + ws[k].text;
     if(cur && cur.b===st.b && cur.i===st.i && cur.u===st.u && cur.color===st.color && cur.sz===st.sz && cur.fam===st.fam){ cur.t += text; }
     else { cur = Object.assign({ t: text }, st); runs.push(cur); }
@@ -14454,7 +15416,30 @@ function wxFixAbbreviations(lines){
 /* ===== WX-D: dựng mô hình trang → tài liệu Word (.docx thật, OOXML) ===== */
 
 // ---------- Mô hình trang ----------
-async function wxBuildPageModel(idx, onStatus){
+// ---------- Sắp xếp dọc: lề trên + khoảng cách trước từng phần tử (dùng cho cả lúc dựng trang và lúc tách Header/Footer) ----------
+function wxLayoutFlow(flow){
+  const ANCHOR = 1;                              // đoạn neo 1pt ở đầu trang (chứa ảnh nổi)
+  const firstTop = flow.length ? flow[0].top : 36;
+  const marginTop = Math.max(0, firstTop - ANCHOR);
+  let prevBottom = marginTop + ANCHOR, prevIsTbl = false;
+  const out = [];
+  for(const el of flow){
+    if(el.kind === 'p'){
+      el.spBefore = Math.max(0, el.top - prevBottom);
+      prevBottom = el.bottom; prevIsTbl = false; out.push(el);
+    } else {
+      if(prevIsTbl){ const gap = Math.max(0, el.top - prevBottom); out.push({ kind:'spacer', spBefore: Math.max(0, gap-1) }); prevBottom = el.top; }
+      el.spBefore = 0;
+      if(!prevIsTbl && el.top - prevBottom > 0.5) out.push({ kind:'spacer', spBefore: Math.max(0, el.top - prevBottom - 1) });
+      prevBottom = el.bottom; prevIsTbl = true; out.push(el);
+    }
+  }
+  const lastBottom = flow.length ? Math.max(...flow.map(e=>e.bottom)) : 72;
+  return { out, marginTop, lastBottom };
+}
+
+async function wxBuildPageModel(idx, onStatus, opts){
+  opts = opts || {};
   const say = (m)=>{ if(onStatus) onStatus(m); };
   say('Đang phân tích ảnh trang '+(idx+1)+'…');
   const A = await wxAnalyzePage(idx);
@@ -14493,6 +15478,7 @@ async function wxBuildPageModel(idx, onStatus){
   // 2) Chữ: OCR từng dòng (hoặc chữ thật của PDF nếu có)
   say('Đang nhận dạng chữ trang '+(idx+1)+' ('+textLines.length+' dòng)…');
   await wxFillTextForLines(A, textLines, (d,t)=>say('Đang nhận dạng chữ trang '+(idx+1)+': '+d+'/'+t));
+  if(wxUseDLA){ const ncb = WXL.injectCheckboxWords(textLines); if(ncb) console.log('WORD/DLA: trang '+(idx+1)+': '+ncb+' ô tích'); }
   for(const L of textLines) wxSplitBullet(L, A);
   const lines = wxDropGarbage(textLines, A);
   wxFixDigitCells(A, lines);
@@ -14506,7 +15492,7 @@ async function wxBuildPageModel(idx, onStatus){
   say('Đang tách ảnh (logo, con dấu, chữ ký)…');
   for(const reg of imageRegions){
     const cr = wxCropCanvas(A, reg, null);
-    floats.push({ x:cr.x0*WX_PX2PT, y:cr.y0*WX_PX2PT, w:cr.w*WX_PX2PT, h:cr.h*WX_PX2PT, png: await wxCanvasToPng(cr.canvas) });
+    floats.push({ x:cr.x0*WX_PX2PT, y:cr.y0*WX_PX2PT, w:cr.w*WX_PX2PT, h:cr.h*WX_PX2PT, png: await wxCanvasToPng(cr.canvas), cv: cr.canvas });
   }
   // [MỚI] Mã QR / mã vạch -> ẢNH ĐỘC LẬP (ảnh nổi neo theo toạ độ trang, có thể kéo/thay/xoá trong Word). Chừa lề trắng quanh mã
   // (vùng yên tĩnh giúp máy quét đọc được) rồi cắt từ ảnh trang gốc — giữ nguyên từng module, KHÔNG qua OCR/dựng bảng.
@@ -14521,13 +15507,13 @@ async function wxBuildPageModel(idx, onStatus){
       const cW = await wxRenderImagesOnly(idx, WX_SC, '#ffffff'), cK = await wxRenderImagesOnly(idx, WX_SC, '#000000');
       for(const r of A.imgRects){
         const cr = wxAlphaCrop(cW, cK, r, !!r.hasText); if(!cr) continue;
-        floats.push({ x:cr.x0*WX_PX2PT, y:cr.y0*WX_PX2PT, w:cr.w*WX_PX2PT, h:cr.h*WX_PX2PT, png: await wxCanvasToPng(cr.canvas), alpha:true, native:true });
+        floats.push({ x:cr.x0*WX_PX2PT, y:cr.y0*WX_PX2PT, w:cr.w*WX_PX2PT, h:cr.h*WX_PX2PT, png: await wxCanvasToPng(cr.canvas), alpha:true, native:true, cv: cr.canvas });
       }
     }catch(err){ console.warn('WORD: không tách được ảnh nhúng, dùng cách cũ:', err); }
   }
   for(const o of wxColorObjects(A)){
     const cr = wxCropCanvas(A, o, A.sep.colorDil);
-    floats.push({ x:cr.x0*WX_PX2PT, y:cr.y0*WX_PX2PT, w:cr.w*WX_PX2PT, h:cr.h*WX_PX2PT, png: await wxCanvasToPng(cr.canvas), alpha:true });
+    floats.push({ x:cr.x0*WX_PX2PT, y:cr.y0*WX_PX2PT, w:cr.w*WX_PX2PT, h:cr.h*WX_PX2PT, png: await wxCanvasToPng(cr.canvas), alpha:true, cv: cr.canvas });
   }
   { const kept = wxDedupeFloats(floats); floats.length = 0; kept.forEach(f => floats.push(f)); }   // bỏ ảnh trùng/chồng nhau
 
@@ -14599,30 +15585,22 @@ async function wxBuildPageModel(idx, onStatus){
   }
   flow.sort((a,b)=>a.top-b.top);
 
-  // 5) Lề trang & khoảng cách trước từng phần tử
-  const ANCHOR = 1;                              // đoạn neo 1pt ở đầu trang (chứa ảnh nổi)
-  const firstTop = flow.length ? flow[0].top : 36;
-  const marginTop = Math.max(0, firstTop - ANCHOR);
-  let prevBottom = marginTop + ANCHOR, prevIsTbl = false;
-  const out = [];
-  for(const el of flow){
-    if(el.kind === 'p'){
-      el.spBefore = Math.max(0, el.top - prevBottom);
-      prevBottom = el.bottom; prevIsTbl = false; out.push(el);
-    } else {
-      if(prevIsTbl){ const gap = Math.max(0, el.top - prevBottom); out.push({ kind:'spacer', spBefore: Math.max(0, gap-1) }); prevBottom = el.top; }
-      el.spBefore = 0;
-      if(!prevIsTbl && el.top - prevBottom > 0.5) out.push({ kind:'spacer', spBefore: Math.max(0, el.top - prevBottom - 1) });
-      prevBottom = el.bottom; prevIsTbl = true; out.push(el);
-    }
-  }
-  const lastBottom = flow.length ? Math.max(...flow.map(e=>e.bottom)) : 72;
+  // 5) [MỚI - DLA] Phân loại khối (Title/Heading/Paragraph/Table/Header/Footer/Signature/Checkbox) + ảnh nổi (Stamp/Signature/Logo/Image/QR)
+  if(wxUseDLA){
+    try{
+      const cls = WXL.classifyFlow(flow, { pageW: pageWpt, pageH: pageHpt, first: !!opts.first });
+      WXL.classifyFloats(floats, { pageW: pageWpt, pageH: pageHpt, sigBox: cls.sigBox });
+    }catch(err){ console.warn('WORD/DLA: lỗi phân loại bố cục — dùng cách xuất thường:', err); floats.forEach(f => { delete f.cv; }); }
+  } else floats.forEach(f => { delete f.cv; });
+  // 6) Lề trang & khoảng cách trước từng phần tử
+  const lay = wxLayoutFlow(flow);
+  const out = lay.out, marginTop = lay.marginTop, lastBottom = lay.lastBottom;
   if(typeof window!=='undefined' && window.__WX_DEBUG) window.__wxA = A;
   const model = {
     wPt: pageWpt, hPt: pageHpt,
     mL: Math.max(0, minX*WX_PX2PT), mR: Math.max(0, pageWpt - maxX*WX_PX2PT),
     mT: marginTop, mB: Math.max(4, Math.min(36, pageHpt - lastBottom - 4)),
-    flow: out, floats, family: A.family, empty: !flow.length,
+    flow: out, rawFlow: flow, floats, family: A.family, empty: !flow.length,
     fallbackPng: null
   };
   if(model.empty && !floats.length){
@@ -14835,8 +15813,19 @@ async function exportWordSelected(indices){
       const i = indices[k];
       const tag = indices.length > 1 ? ` (${k+1}/${indices.length})` : '';
       spinnerLabel.textContent = ` Đang chuyển trang ${i+1} sang Word${tag}…`;
-      models.push(await wxBuildPageModel(i, msg => { spinnerLabel.textContent = ' ' + msg + tag; }));
+      models.push(await wxBuildPageModel(i, msg => { spinnerLabel.textContent = ' ' + msg + tag; }, { first: k === 0 }));
       await new Promise(r => setTimeout(r, 0));     // nhường luồng giao diện
+    }
+    if(wxUseDLA){
+      spinnerLabel.textContent = ' Đang tổng hợp bố cục tài liệu (Header/Footer/Heading…)…';
+      try{
+        WXL.finalizeDocument(models, { layout: wxLayoutFlow });     // Header/Footer lặp lại giữa các trang, trường số trang...
+        const sum = WXL.summarize(models);
+        console.log('WORD/DLA: kết quả phân loại', sum);
+        const lbl = { title:'Title', heading:'Heading', paragraph:'Paragraph', table:'Table', image:'Image', header:'Header', footer:'Footer', signature:'Signature', checkbox:'Checkbox', stamp:'Stamp' };
+        const msg = 'Đã phân tích bố cục: ' + WXL.ROLES.filter(r => sum[r]).map(r => sum[r] + ' ' + lbl[r]).join(' · ');
+        if(typeof showToast_ === 'function') showToast_(msg);
+      }catch(err){ console.warn('WORD/DLA: lỗi tổng hợp bố cục — xuất không có Header/Footer:', err); }
     }
     spinnerLabel.textContent = ' Đang đóng gói tệp Word…';
     const blob = wxBuildDocxBlob(models);
@@ -14861,23 +15850,40 @@ const wxEsc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(
 const tw = pt => Math.round(pt*20);
 const emu = pt => Math.round(pt*12700);
 
-function wxRunXml(r){
-  if(r.br) return '<w:r><w:br/></w:r>';
-  if(r.tab) return '<w:r><w:tab/></w:r>';
-  const f = wxEsc(r.fam || 'Times New Roman');
+function wxRPr(r, fontOverride){
+  const f = wxEsc(fontOverride || r.fam || 'Times New Roman');
   const sz = Math.round((r.sz||12)*2);
-  let x = '<w:r><w:rPr><w:rFonts w:ascii="'+f+'" w:hAnsi="'+f+'" w:eastAsia="'+f+'" w:cs="'+f+'"/>';
+  let x = '<w:rPr><w:rFonts w:ascii="'+f+'" w:hAnsi="'+f+'" w:eastAsia="'+f+'" w:cs="'+f+'"/>';
   if(r.b) x += '<w:b/><w:bCs/>';
   if(r.i) x += '<w:i/><w:iCs/>';
   if(r.color && r.color.toLowerCase() !== '000000') x += '<w:color w:val="'+wxEsc(r.color)+'"/>';
   x += '<w:sz w:val="'+sz+'"/><w:szCs w:val="'+sz+'"/>';
   if(r.u) x += '<w:u w:val="single"/>';
-  x += '</w:rPr><w:t xml:space="preserve">'+wxEsc(r.t)+'</w:t></w:r>';
-  return x;
+  return x + '</w:rPr>';
+}
+function wxRunXml(r){
+  if(r.br) return '<w:r><w:br/></w:r>';
+  if(r.tab) return '<w:r><w:tab/></w:r>';
+  // [MỚI - DLA] Checkbox: ô tích THẬT (content control w14:checkbox) — bấm để tích/bỏ tích trong Word
+  if(r.cb){
+    const on = r.cb === 'checked';
+    return '<w:sdt><w:sdtPr><w:alias w:val="Checkbox"/><w:tag w:val="checkbox"/><w14:checkbox><w14:checked w14:val="'+(on?1:0)+'"/>'+
+      '<w14:checkedState w14:val="2612" w14:font="MS Gothic"/><w14:uncheckedState w14:val="2610" w14:font="MS Gothic"/></w14:checkbox></w:sdtPr>'+
+      '<w:sdtContent><w:r>'+wxRPr(r, 'MS Gothic')+'<w:t>'+(on?'\u2612':'\u2610')+'</w:t></w:r></w:sdtContent></w:sdt>';
+  }
+  // [MỚI - DLA] Trường số trang (PAGE / NUMPAGES) trong Header/Footer
+  if(r.field){
+    const rp = wxRPr(r);
+    return '<w:r>'+rp+'<w:fldChar w:fldCharType="begin"/></w:r><w:r>'+rp+'<w:instrText xml:space="preserve"> '+r.field+' </w:instrText></w:r>'+
+      '<w:r>'+rp+'<w:fldChar w:fldCharType="separate"/></w:r><w:r>'+rp+'<w:t>'+wxEsc(r.t||'1')+'</w:t></w:r><w:r>'+rp+'<w:fldChar w:fldCharType="end"/></w:r>';
+  }
+  return '<w:r>'+wxRPr(r)+'<w:t xml:space="preserve">'+wxEsc(r.t)+'</w:t></w:r>';
 }
 function wxParaXml(p, opts){
   opts = opts || {};
   let ppr = '';
+  { const pp = (typeof WXL !== 'undefined' && p.role) ? WXL.paraProps(p) : null;   // [MỚI - DLA] kiểu đoạn theo vai trò (Title/Heading/Signature/Header/Footer)
+    if(pp){ ppr += '<w:pStyle w:val="'+pp.style+'"/>'; if(pp.keepNext) ppr += '<w:keepNext/>'; if(pp.keepLines) ppr += '<w:keepLines/>'; } }
   if(p.tabs && p.tabs.length){
     ppr += '<w:tabs>' + p.tabs.slice().sort((a,b)=>a.pos-b.pos).map(t=>'<w:tab w:val="'+t.type+'" w:pos="'+tw(t.pos)+'"/>').join('') + '</w:tabs>';
   }
@@ -14897,10 +15903,11 @@ function wxTinyParaXml(spBeforePt, extraPPr, inner){
   // Thứ tự phần tử trong pPr theo lược đồ: spacing ... rPr, sectPr (sectPr phải nằm SAU rPr)
   return '<w:p><w:pPr><w:spacing w:before="'+tw(spBeforePt||0)+'" w:after="0" w:line="20" w:lineRule="exact"/><w:rPr><w:sz w:val="2"/><w:szCs w:val="2"/></w:rPr>'+(extraPPr||'')+'</w:pPr>'+(inner||'')+'</w:p>';
 }
-function wxPicXml(rid, n, wPt, hPt, anchorPos){
+function wxPicXml(rid, n, wPt, hPt, anchorPos, meta){
   const cx = emu(wPt), cy = emu(hPt);
+  const nm = wxEsc((meta && meta.name) ? meta.name+' '+n : 'Picture '+n), ds = (meta && meta.descr) ? ' descr="'+wxEsc(meta.descr)+'"' : '';
   const gfx = '<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">'+
-    '<pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:nvPicPr><pic:cNvPr id="'+n+'" name="image'+n+'.png"/><pic:cNvPicPr/></pic:nvPicPr>'+
+    '<pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:nvPicPr><pic:cNvPr id="'+n+'" name="image'+n+'.png"'+ds+'/><pic:cNvPicPr/></pic:nvPicPr>'+
     '<pic:blipFill><a:blip r:embed="'+rid+'"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>'+
     '<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="'+cx+'" cy="'+cy+'"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic>';
   if(anchorPos){
@@ -14908,11 +15915,11 @@ function wxPicXml(rid, n, wPt, hPt, anchorPos){
       '<wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="page"><wp:posOffset>'+emu(anchorPos.x)+'</wp:posOffset></wp:positionH>'+
       '<wp:positionV relativeFrom="page"><wp:posOffset>'+emu(anchorPos.y)+'</wp:posOffset></wp:positionV>'+
       '<wp:extent cx="'+cx+'" cy="'+cy+'"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:wrapNone/>'+
-      '<wp:docPr id="'+n+'" name="Picture '+n+'"/><wp:cNvGraphicFramePr><a:graphicFrameLocks xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" noChangeAspect="1"/></wp:cNvGraphicFramePr>'+
+      '<wp:docPr id="'+n+'" name="'+nm+'"'+ds+'/><wp:cNvGraphicFramePr><a:graphicFrameLocks xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" noChangeAspect="1"/></wp:cNvGraphicFramePr>'+
       gfx+'</wp:anchor></w:drawing></w:r>';
   }
   return '<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="'+cx+'" cy="'+cy+'"/><wp:effectExtent l="0" t="0" r="0" b="0"/>'+
-    '<wp:docPr id="'+n+'" name="Picture '+n+'"/><wp:cNvGraphicFramePr><a:graphicFrameLocks xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" noChangeAspect="1"/></wp:cNvGraphicFramePr>'+
+    '<wp:docPr id="'+n+'" name="'+nm+'"'+ds+'/><wp:cNvGraphicFramePr><a:graphicFrameLocks xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" noChangeAspect="1"/></wp:cNvGraphicFramePr>'+
     gfx+'</wp:inline></w:drawing></w:r>';
 }
 
@@ -14923,14 +15930,15 @@ function wxTableXml(tbl, ctx){
   let x = '<w:tbl><w:tblPr><w:tblW w:w="'+tw(sumW)+'" w:type="dxa"/>'+
     (tbl.indent ? '<w:tblInd w:w="'+tw(tbl.indent)+'" w:type="dxa"/>' : '')+
     '<w:tblBorders>'+bd('top')+bd('left')+bd('bottom')+bd('right')+bd('insideH')+bd('insideV')+'</w:tblBorders>'+
-    '<w:tblLayout w:type="fixed"/><w:tblCellMar><w:top w:w="0" w:type="dxa"/><w:left w:w="0" w:type="dxa"/><w:bottom w:w="0" w:type="dxa"/><w:right w:w="0" w:type="dxa"/></w:tblCellMar></w:tblPr>';
+    '<w:tblLayout w:type="fixed"/><w:tblCellMar><w:top w:w="0" w:type="dxa"/><w:left w:w="0" w:type="dxa"/><w:bottom w:w="0" w:type="dxa"/><w:right w:w="0" w:type="dxa"/></w:tblCellMar>'+
+    (tbl.descr ? '<w:tblCaption w:val="Table"/><w:tblDescription w:val="'+wxEsc(tbl.descr)+'"/>' : '')+'</w:tblPr>';
   x += '<w:tblGrid>'+tbl.colW.map(w=>'<w:gridCol w:w="'+tw(w)+'"/>').join('')+'</w:tblGrid>';
   const nR = tbl.rowH.length, nC = tbl.colW.length;
   // bản đồ ô theo (hàng, cột)
   const occ = []; for(let r=0;r<nR;r++) occ.push(new Array(nC).fill(null));
   for(const c of tbl.cells) for(let r=c.r0;r<=c.r1;r++) for(let k=c.c0;k<=c.c1;k++) occ[r][k]=c;
   for(let r=0;r<nR;r++){
-    x += '<w:tr><w:trPr><w:cantSplit/><w:trHeight w:val="'+tw(tbl.rowH[r])+'" w:hRule="atLeast"/></w:trPr>';
+    x += '<w:tr><w:trPr><w:cantSplit/><w:trHeight w:val="'+tw(tbl.rowH[r])+'" w:hRule="atLeast"/>'+(r < (tbl.headerRows||0) ? '<w:tblHeader/>' : '')+'</w:trPr>';
     let k = 0;
     while(k < nC){
       const c = occ[r][k];
@@ -14947,7 +15955,7 @@ function wxTableXml(tbl, ctx){
         if(c.image){
           const n = ++ctx.imgN; const rid = 'rId'+(ctx.relBase + ctx.media.length);
           ctx.media.push({ name:'image'+n+'.png', data:c.image.png, rid });
-          x += '<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="240" w:lineRule="auto"/><w:jc w:val="center"/><w:rPr><w:sz w:val="2"/><w:szCs w:val="2"/></w:rPr></w:pPr>'+wxPicXml(rid, n, c.image.w, c.image.h, null)+'</w:p>';
+          x += '<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="240" w:lineRule="auto"/><w:jc w:val="center"/><w:rPr><w:sz w:val="2"/><w:szCs w:val="2"/></w:rPr></w:pPr>'+wxPicXml(rid, n, c.image.w, c.image.h, null, { name:'Image', descr:'Hình ảnh trong bảng (Image)' })+'</w:p>';
         } else if(c.paras.length){
           x += c.paras.map(p=>wxParaXml(p)).join('');
         } else x += '<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="20" w:lineRule="exact"/><w:rPr><w:sz w:val="2"/><w:szCs w:val="2"/></w:rPr></w:pPr></w:p>';
@@ -14962,23 +15970,40 @@ function wxTableXml(tbl, ctx){
   return x + '</w:tbl>';
 }
 
-function wxSectPr(m, last){
-  return '<w:sectPr>'+(last ? '' : '<w:type w:val="nextPage"/>')+
+function wxSectPr(m, last, refs){
+  return '<w:sectPr>'+(refs||'')+(last ? '' : '<w:type w:val="nextPage"/>')+
     '<w:pgSz w:w="'+tw(m.wPt)+'" w:h="'+tw(m.hPt)+'"'+(m.wPt > m.hPt ? ' w:orient="landscape"' : '')+'/>'+
-    '<w:pgMar w:top="'+tw(m.mT)+'" w:right="'+tw(m.mR)+'" w:bottom="'+tw(m.mB)+'" w:left="'+tw(m.mL)+'" w:header="0" w:footer="0" w:gutter="0"/></w:sectPr>';
+    '<w:pgMar w:top="'+tw(m.mT)+'" w:right="'+tw(m.mR)+'" w:bottom="'+tw(m.mB)+'" w:left="'+tw(m.mL)+'" w:header="'+tw(m.hdr ? m.hdr.dist : 0)+'" w:footer="'+tw(m.ftr ? m.ftr.dist : 0)+'" w:gutter="0"/></w:sectPr>';
 }
+const WX_NS = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml" mc:Ignorable="w14"';
+const WX_EMPTY_P = '<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="20" w:lineRule="exact"/><w:rPr><w:sz w:val="2"/><w:szCs w:val="2"/></w:rPr></w:pPr></w:p>';
 
 function wxDocumentXml(models){
   const ctx = { imgN: 0, media: [], relBase: 3 };
+  const hf = [];                                   // [MỚI - DLA] các phần Header/Footer: { kind:'header'|'footer', name, rid, xml }
+  const anyH = models.some(m => m.hdr), anyF = models.some(m => m.ftr);
+  const mkPart = (kind, paras) => {
+    const n = hf.filter(x => x.kind === kind).length + 1, tag = kind === 'header' ? 'hdr' : 'ftr';
+    const xml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:'+tag+' '+WX_NS+'>'+(paras && paras.length ? paras.map(p => wxParaXml(p)).join('') : WX_EMPTY_P)+'</w:'+tag+'>';
+    const o = { kind, name: kind+n+'.xml', rid: (kind === 'header' ? 'rIdHdr' : 'rIdFtr')+n, xml };
+    hf.push(o); return o;
+  };
+  let emptyH = null, emptyF = null;
   let body = '';
   models.forEach((m, pi)=>{
     const last = pi === models.length-1;
+    // Section không có Header/Footer nhưng tài liệu có nơi khác -> phải trỏ tới phần RỖNG (nếu không Word sẽ kế thừa của section trước)
+    let refs = '';
+    if(anyH){ const part = m.hdr ? mkPart('header', m.hdr.paras) : (emptyH = emptyH || mkPart('header', null)); refs += '<w:headerReference w:type="default" r:id="'+part.rid+'"/>'; }
+    if(anyF){ const part = m.ftr ? mkPart('footer', m.ftr.paras) : (emptyF = emptyF || mkPart('footer', null)); refs += '<w:footerReference w:type="default" r:id="'+part.rid+'"/>'; }
+    m.__refs = refs;
     // đoạn neo (chứa ảnh nổi)
     let anchorInner = '';
     for(const f of m.floats){
       const n = ++ctx.imgN; const rid = 'rId'+(ctx.relBase + ctx.media.length);
       ctx.media.push({ name:'image'+n+'.png', data:f.png, rid });
-      anchorInner += wxPicXml(rid, n, f.w, f.h, { x:f.x, y:f.y, behind: !!f.native });
+      const behind = !!f.native && f.role !== 'stamp' && f.role !== 'signature';     // con dấu/chữ ký luôn nằm TRÊN chữ
+      anchorInner += wxPicXml(rid, n, f.w, f.h, { x:f.x, y:f.y, behind }, (typeof WXL !== 'undefined') ? WXL.floatMeta(f) : null);
     }
     if(m.fallbackPng){
       const n = ++ctx.imgN; const rid = 'rId'+(ctx.relBase + ctx.media.length);
@@ -14992,16 +16017,25 @@ function wxDocumentXml(models){
       else if(el.kind === 'tbl') body += wxTableXml(el, ctx);
     }
     // đoạn kết trang (bắt buộc sau bảng) — mang sectPr của trang nếu không phải trang cuối
-    if(!last) body += wxTinyParaXml(0, wxSectPr(m, false), '');
+    if(!last) body += wxTinyParaXml(0, wxSectPr(m, false, refs), '');
     else body += wxTinyParaXml(0, '', '');
   });
   const lastM = models[models.length-1];
   const doc = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'+
-    '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">'+
-    '<w:body>'+body+wxSectPr(lastM, true)+'</w:body></w:document>';
-  return { doc, media: ctx.media };
+    '<w:document '+WX_NS+'>'+
+    '<w:body>'+body+wxSectPr(lastM, true, lastM.__refs)+'</w:body></w:document>';
+  return { doc, media: ctx.media, hf };
 }
 
+// [MỚI - DLA] Kiểu dựng sẵn của Word cho Title/Subtitle/Heading 1-3/Signature/Header/Footer. KHÔNG đặt cỡ chữ/màu/font ở kiểu
+// (mọi định dạng nằm sẵn trong từng run) nên vẻ ngoài vẫn KHÔNG ĐỔI — kiểu chỉ mang NGỮ NGHĨA (outline level, giữ liền dòng...).
+function wxDlaStylesXml(){
+  const st = (id, name, ppr, ui) => '<w:style w:type="paragraph" w:styleId="'+id+'"><w:name w:val="'+name+'"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:uiPriority w:val="'+ui+'"/><w:qFormat/><w:pPr>'+ppr+'</w:pPr></w:style>';
+  return st('Title','Title','<w:keepNext/><w:keepLines/>',10) + st('Subtitle','Subtitle','<w:keepNext/><w:keepLines/>',11) +
+    st('Heading1','heading 1','<w:keepNext/><w:keepLines/><w:outlineLvl w:val="0"/>',9) + st('Heading2','heading 2','<w:keepNext/><w:keepLines/><w:outlineLvl w:val="1"/>',9) +
+    st('Heading3','heading 3','<w:keepNext/><w:keepLines/><w:outlineLvl w:val="2"/>',9) + st('Signature','Signature','<w:keepLines/>',99) +
+    st('Header','header','',99) + st('Footer','footer','',99);
+}
 function wxStylesXml(family){
   const f = wxEsc(family || 'Times New Roman');
   return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'+
@@ -15009,6 +16043,7 @@ function wxStylesXml(family){
   '<w:rFonts w:ascii="'+f+'" w:hAnsi="'+f+'" w:eastAsia="'+f+'" w:cs="'+f+'"/><w:sz w:val="22"/><w:szCs w:val="22"/><w:lang w:val="vi-VN" w:eastAsia="en-US" w:bidi="ar-SA"/></w:rPr></w:rPrDefault>'+
   '<w:pPrDefault><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults>'+
   '<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:qFormat/></w:style>'+
+  wxDlaStylesXml()+
   '<w:style w:type="character" w:default="1" w:styleId="DefaultParagraphFont"><w:name w:val="Default Paragraph Font"/><w:uiPriority w:val="1"/><w:semiHidden/><w:unhideWhenUsed/></w:style>'+
   '<w:style w:type="table" w:default="1" w:styleId="TableNormal"><w:name w:val="Normal Table"/><w:uiPriority w:val="99"/><w:semiHidden/><w:unhideWhenUsed/><w:tblPr><w:tblInd w:w="0" w:type="dxa"/><w:tblCellMar><w:top w:w="0" w:type="dxa"/><w:left w:w="108" w:type="dxa"/><w:bottom w:w="0" w:type="dxa"/><w:right w:w="108" w:type="dxa"/></w:tblCellMar></w:tblPr></w:style>'+
   '</w:styles>';
@@ -15043,12 +16078,14 @@ function wxZip(files){
 }
 
 function wxBuildDocxBlob(models){
-  const { doc, media } = wxDocumentXml(models);
+  const { doc, media, hf } = wxDocumentXml(models);
+  const docTitle = (typeof WXL !== 'undefined') ? WXL.documentTitle(models) : '';
   const CT = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'+
     '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="png" ContentType="image/png"/>'+
     '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>'+
     '<Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>'+
     '<Override PartName="/word/settings.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"/>'+
+    hf.map(x=>'<Override PartName="/word/'+x.name+'" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.'+x.kind+'+xml"/>').join('')+
     '<Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>'+
     '<Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/></Types>';
   const RELS = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'+
@@ -15058,10 +16095,11 @@ function wxBuildDocxBlob(models){
   const DOCRELS = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'+
     '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>'+
     '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings" Target="settings.xml"/>'+
+    hf.map(x=>'<Relationship Id="'+x.rid+'" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/'+x.kind+'" Target="'+x.name+'"/>').join('')+
     media.map(m=>'<Relationship Id="'+m.rid+'" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/'+m.name+'"/>').join('')+'</Relationships>';
   const SETTINGS = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:defaultTabStop w:val="720"/><w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat></w:settings>';
   const now = new Date().toISOString().replace(/\.\d+Z$/,'Z');
-  const CORE = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><dc:creator>PDF Editor</dc:creator><dcterms:created xsi:type="dcterms:W3CDTF">'+now+'</dcterms:created><dcterms:modified xsi:type="dcterms:W3CDTF">'+now+'</dcterms:modified></cp:coreProperties>';
+  const CORE = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">'+(docTitle ? '<dc:title>'+wxEsc(docTitle)+'</dc:title>' : '')+'<dc:creator>PDF Editor</dc:creator><dcterms:created xsi:type="dcterms:W3CDTF">'+now+'</dcterms:created><dcterms:modified xsi:type="dcterms:W3CDTF">'+now+'</dcterms:modified></cp:coreProperties>';
   const APP = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"><Application>PDF Editor</Application></Properties>';
   const files = [
     { name:'[Content_Types].xml', data:CT }, { name:'_rels/.rels', data:RELS },
@@ -15069,6 +16107,7 @@ function wxBuildDocxBlob(models){
     { name:'word/settings.xml', data:SETTINGS }, { name:'word/_rels/document.xml.rels', data:DOCRELS },
     { name:'docProps/core.xml', data:CORE }, { name:'docProps/app.xml', data:APP }
   ];
+  for(const x of hf) files.push({ name:'word/'+x.name, data:x.xml });
   for(const m of media) files.push({ name:'word/media/'+m.name, data:m.data });
   return wxZip(files);
 }
