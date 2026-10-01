@@ -3598,6 +3598,7 @@ async function closeCurrentPdf_(){
   originalFileRawBuf = null;
   originalFileRawSize = 0;
   undoStack = {};
+  cropOps_ = {};
   regionSelections = {};
   selectedEditIndex = -1;
   draggingSelected = false;
@@ -7391,16 +7392,60 @@ function pushUndo(idx){
   undoStack[id].push(JSON.stringify(pages[idx].edits));
   if(undoStack[id].length>50) undoStack[id].shift();
 }
-document.getElementById('btnUndo').onclick = ()=>{
+// ---- Undo cho CROP ----
+// Mỗi lần Apply/Remove crop là 1 "thao tác" (opId) lưu lại crop TRƯỚC ĐÓ của mọi trang bị ảnh hưởng.
+// Một dấu mốc {"__cropOp":opId} được đẩy vào ngăn xếp Undo của từng trang liên quan (và trang đang mở),
+// nên Undo hoàn tác theo đúng thứ tự thao tác cùng với các chỉnh sửa chữ/hình khác.
+let cropOps_ = {}, cropOpSeq_ = 0;
+function cropRecordUndo_(changes){      // changes: [{id, prev}] — prev = crop cũ (hoặc null)
+  if(!changes.length) return;
+  const opId = ++cropOpSeq_;
+  cropOps_[opId] = { changes, undone: false };
+  const ids = new Set(changes.map(c => c.id));
+  if(cur()) ids.add(cur().id);
+  const marker = JSON.stringify({ __cropOp: opId });
+  ids.forEach(id => {
+    if(!undoStack[id]) undoStack[id] = [];
+    undoStack[id].push(marker);
+    if(undoStack[id].length > 50) undoStack[id].shift();
+  });
+}
+async function undoCropOp_(opId){
+  const op = cropOps_[opId];
+  if(!op || op.undone) return false;     // thao tác đã được hoàn tác từ ngăn xếp của trang khác
+  op.undone = true;
+  for(const ch of op.changes){
+    const p = pages.find(pp => pp.id === ch.id);
+    if(!p) continue;                      // trang đã bị xoá
+    if(ch.prev) p.crop = Object.assign({}, ch.prev); else delete p.crop;
+  }
+  cropDraft_ = null; cropDraftPageId_ = null; cropDrag_ = null;
+  await cropRefreshAll_();
+  try{ redrawOverlay(); }catch(e){}
+  showToast_('Đã hoàn tác crop.');
+  return true;
+}
+
+document.getElementById('btnUndo').onclick = async ()=>{
   flushPendingEdit();
+  if(!pages.length || !cur()) return;
   const id = cur().id;
   const st = undoStack[id];
-  if(st && st.length){
-    cur().edits = JSON.parse(st.pop());
-    selectedEditIndex = -1;
-    pendingTextColor = null;
-    pendingTextTarget = null;
-    redrawOverlay();
+  while(st && st.length){
+    let data = null;
+    try{ data = JSON.parse(st.pop()); }catch(err){ continue; }
+    if(Array.isArray(data)){
+      cur().edits = data;
+      selectedEditIndex = -1;
+      pendingTextColor = null;
+      pendingTextTarget = null;
+      redrawOverlay();
+      return;
+    }
+    if(data && data.__cropOp){
+      if(await undoCropOp_(data.__cropOp)) return;
+      // thao tác này đã được hoàn tác rồi -> bỏ qua, thử bước trước đó
+    }
   }
 };
 document.getElementById('btnClearPage').onclick = ()=>{
@@ -13904,6 +13949,7 @@ document.getElementById('cropApply').onclick = async ()=>{
   let targets;
   try{ targets = cropTargetIndexes_(); }catch(err){ alert(err.message); return; }
   if(!targets.length){ alert('Chưa có trang nào trong phạm vi đã chọn.'); return; }
+  cropRecordUndo_(targets.map(i => ({ id: pages[i].id, prev: pages[i].crop ? Object.assign({}, pages[i].crop) : null })));
   const base = await getPageSizePt_(currentIndex);
   for(const i of targets){
     if(i === currentIndex){ pages[i].crop = { x:d.x, y:d.y, w:d.w, h:d.h }; continue; }
@@ -13914,7 +13960,7 @@ document.getElementById('cropApply').onclick = async ()=>{
   }
   document.getElementById('toolSelect').click(); // thoát Crop -> hiện trang đã cắt
   await cropRefreshAll_();
-  showToast_('Đã crop ' + targets.length + ' trang. Bấm Save PDF để lưu (phần ngoài khung chỉ bị ẩn).');
+  showToast_('Đã crop ' + targets.length + ' trang. Bấm Undo để hoàn tác, hoặc Save PDF để lưu (phần ngoài khung chỉ bị ẩn).');
 };
 
 document.getElementById('cropRemove').onclick = async ()=>{
@@ -13922,6 +13968,7 @@ document.getElementById('cropRemove').onclick = async ()=>{
   let targets;
   try{ targets = cropTargetIndexes_(); }catch(err){ alert(err.message); return; }
   let n = 0;
+  cropRecordUndo_(targets.filter(i => pages[i].crop).map(i => ({ id: pages[i].id, prev: Object.assign({}, pages[i].crop) })));
   for(const i of targets){ if(pages[i].crop){ delete pages[i].crop; n++; } }
   cropDraft_ = null; cropDraftPageId_ = cur().id;
   if(!n){ redrawOverlay(); return; }
