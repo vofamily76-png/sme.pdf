@@ -247,6 +247,28 @@
   #overlayCanvas.tool-select{cursor:pointer;}
   #overlayCanvas.tool-draw,#overlayCanvas.tool-highlight,#overlayCanvas.tool-whiteout,#overlayCanvas.tool-region{cursor:crosshair;}
   #overlayCanvas.tool-erase{cursor:cell;}
+  #overlayCanvas.tool-crop{cursor:crosshair;}
+  /* ===== Crop: trang đã crop chỉ hiện vùng giữ lại (ô .pageSlot cắt bỏ phần thừa) ===== */
+  .pageSlot.cropped{overflow:hidden;}
+  .pageSlot.cropped .pageLabel{top:4px;left:4px;background:rgba(0,0,0,.55);color:#fff;padding:1px 6px;border-radius:4px;z-index:5;pointer-events:none;}
+  #cropBar{display:none;position:absolute;top:0;left:0;right:0;height:34px;z-index:45;box-sizing:border-box;
+    background:var(--bg-toolbar-2);border-bottom:1px solid var(--border);
+    padding:0 10px;color:var(--text-light);font-size:11.5px;align-items:center;gap:6px;flex-wrap:nowrap;
+    overflow-x:auto;overflow-y:hidden;white-space:nowrap;}
+  #cropBar.show{display:flex;}
+  #cropBar b{font-size:12px;}
+  #cropBar .tbtn{padding:3px 9px;font-size:11.5px;height:24px;flex-shrink:0;}
+  #cropBar select,#cropBar input[type=text]{background:#1c1e22;color:var(--text-light);border:1px solid var(--border);border-radius:5px;padding:2px 5px;font-size:11.5px;height:24px;flex-shrink:0;}
+  #cropBar input[type=text]{width:78px;}
+  #cropBar .cropInfo{color:var(--text-dim);flex-shrink:0;margin-right:4px;}
+  #canvasArea.cropping #pagesScroll{top:34px;}
+  /* ===== Page Size modal ===== */
+  .psRow{display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:12.5px;}
+  .psLbl{width:82px;color:#9aa0a8;flex-shrink:0;}
+  .psIn{background:#1c1e22;color:#eceff1;border:1px solid #454a52;border-radius:5px;padding:5px 7px;font-size:12.5px;}
+  .psAnchor{display:grid;grid-template-columns:repeat(3,22px);gap:3px;}
+  .psAnchor button{width:22px;height:22px;border:1px solid #454a52;border-radius:4px;background:#1c1e22;cursor:pointer;padding:0;}
+  .psAnchor button.on{background:#2196f3;border-color:#64b5f6;}
   #overlayCanvas.tool-addtext,#overlayCanvas.tool-ocr,#overlayCanvas.tool-edittext{cursor:text;}
   #dropHint{
     position:absolute;inset:0;color:var(--text-dim);text-align:center;font-size:14px;line-height:1.8;
@@ -829,6 +851,98 @@
   </div>
 </div>
 
+<!-- ===================== MODAL: PAGE SIZE (đổi khổ giấy / thêm lề trắng) ===================== -->
+<div id="pageSizeModal" style="
+  position:fixed;inset:0;z-index:1100;display:none;
+  background:rgba(0,0,0,.55);
+  align-items:center;justify-content:center;
+  font-family:'Segoe UI',Roboto,Arial,sans-serif;color:#eceff1;">
+  <div style="
+    background:#25282e;border:1px solid #454a52;border-radius:10px;
+    padding:18px 22px;width:700px;max-width:95vw;max-height:94vh;overflow:auto;
+    box-shadow:0 10px 40px rgba(0,0,0,.5);">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+      <div style="font-weight:600;font-size:15px;">📏 Page Size — đổi khổ giấy / thêm lề trắng</div>
+      <button type="button" id="psCloseBtn" style="background:transparent;border:none;color:#9aa0a8;font-size:18px;cursor:pointer;line-height:1;">✕</button>
+    </div>
+    <div id="psInfo" style="font-size:11.5px;color:#9aa0a8;margin-bottom:10px;min-height:16px;"></div>
+
+    <div class="psRow" style="gap:18px;">
+      <label style="cursor:pointer;"><input type="radio" name="psMode" value="size" checked> Đổi khổ giấy (A4, A3, Letter…)</label>
+      <label style="cursor:pointer;"><input type="radio" name="psMode" value="margins"> Thêm lề trắng quanh nội dung</label>
+    </div>
+
+    <div style="display:flex;gap:18px;flex-wrap:wrap;">
+      <div style="flex:1;min-width:320px;">
+        <div class="psRow"><span class="psLbl">Đơn vị</span>
+          <select id="psUnit" class="psIn"><option value="mm">mm</option><option value="in">inch</option><option value="pt">pt</option></select>
+        </div>
+
+        <div id="psSizeBox">
+          <div class="psRow"><span class="psLbl">Khổ giấy</span><select id="psPreset" class="psIn" style="flex:1;"></select></div>
+          <div class="psRow"><span class="psLbl">Kích thước</span>
+            <input id="psW" type="number" class="psIn" style="width:84px;" min="1" step="any"> ×
+            <input id="psH" type="number" class="psIn" style="width:84px;" min="1" step="any">
+            <span class="psUnitTxt" style="color:#9aa0a8;">mm</span></div>
+          <div class="psRow"><span class="psLbl">Hướng giấy</span>
+            <select id="psOrient" class="psIn" style="flex:1;">
+              <option value="auto" selected>Tự theo từng trang (trang ngang → giấy ngang)</option>
+              <option value="portrait">Dọc (portrait)</option>
+              <option value="landscape">Ngang (landscape)</option>
+            </select></div>
+          <div class="psRow"><span class="psLbl">Nội dung</span>
+            <select id="psFit" class="psIn" style="flex:1;">
+              <option value="fit" selected>Vừa khít — giữ tỉ lệ, không bị cắt</option>
+              <option value="fill">Lấp đầy — giữ tỉ lệ, phần thừa bị cắt</option>
+              <option value="stretch">Kéo giãn — vừa đúng khổ, có thể méo</option>
+              <option value="none">Giữ nguyên kích thước (không co giãn)</option>
+            </select></div>
+          <div class="psRow"><span class="psLbl">Lề trong</span>
+            <input id="psInner" type="number" class="psIn" style="width:84px;" min="0" step="any" value="0">
+            <span class="psUnitTxt" style="color:#9aa0a8;">mm</span>
+            <span style="color:#9aa0a8;font-size:11px;">(chừa sát mép giấy, dùng cho in/đóng gáy)</span></div>
+          <div class="psRow"><span class="psLbl">Vị trí</span><div id="psAnchor" class="psAnchor"></div></div>
+        </div>
+
+        <div id="psMarginBox" style="display:none;">
+          <div class="psRow"><span class="psLbl">Cả 4 cạnh</span>
+            <input id="psMAll" type="number" class="psIn" style="width:84px;" min="0" step="any">
+            <span class="psUnitTxt" style="color:#9aa0a8;">mm</span></div>
+          <div class="psRow"><span class="psLbl">Trên</span><input id="psMT" type="number" class="psIn" style="width:84px;" min="0" step="any" value="">
+            <span class="psLbl" style="width:auto;margin-left:10px;">Phải</span><input id="psMR" type="number" class="psIn" style="width:84px;" min="0" step="any" value=""></div>
+          <div class="psRow"><span class="psLbl">Dưới</span><input id="psMB" type="number" class="psIn" style="width:84px;" min="0" step="any" value="">
+            <span class="psLbl" style="width:auto;margin-left:10px;">Trái</span><input id="psML" type="number" class="psIn" style="width:84px;" min="0" step="any" value=""></div>
+          <div style="font-size:11px;color:#9aa0a8;margin:-2px 0 8px;">Trang được nới rộng thêm đúng các khoảng này, nội dung giữ nguyên kích thước (vd: chừa lề trái để đóng gáy, hoặc chỗ ghi chú).</div>
+        </div>
+
+        <div class="psRow"><span class="psLbl">Màu nền</span><input id="psBg" type="color" value="#ffffff" style="width:40px;height:26px;padding:0;border:1px solid #454a52;background:none;">
+          <span style="color:#9aa0a8;font-size:11px;">cho phần giấy trống thêm ra</span></div>
+        <div class="psRow"><span class="psLbl">Áp dụng cho</span>
+          <select id="psScope" class="psIn">
+            <option value="all" selected>Tất cả trang</option><option value="current">Trang đang mở</option>
+            <option value="odd">Trang lẻ</option><option value="even">Trang chẵn</option><option value="range">Khoảng trang…</option></select>
+          <input id="psRange" type="text" class="psIn" placeholder="vd 1,3,5-8" style="width:100px;display:none;"></div>
+      </div>
+
+      <div style="width:204px;">
+        <canvas id="psPreview" width="204" height="204" style="background:#1c1e22;border:1px solid #454a52;border-radius:6px;display:block;"></canvas>
+        <div id="psPreviewCap" style="font-size:11px;color:#9aa0a8;margin-top:6px;line-height:1.4;"></div>
+        <div style="font-size:10.5px;color:#7d848c;margin-top:4px;">Khung xanh = nội dung trang đang mở.</div>
+      </div>
+    </div>
+
+    <div id="psWarn" style="font-size:11.5px;color:#ffcc80;min-height:16px;margin:2px 0;"></div>
+    <div id="psError" style="min-height:16px;color:#ff8a80;font-size:12px;margin-bottom:4px;"></div>
+
+    <div style="display:flex;gap:8px;margin-top:4px;flex-wrap:wrap;align-items:center;">
+      <button type="button" id="psUndoBtn" title="Trả các trang về như trước lần đổi khổ gần nhất" style="padding:9px 12px;border:1px solid #454a52;border-radius:6px;background:transparent;color:#eceff1;font-size:12.5px;cursor:pointer;">↶ Hoàn tác lần đổi khổ gần nhất</button>
+      <span style="flex:1;"></span>
+      <button type="button" id="psCancelBtn" style="padding:9px 16px;border:1px solid #454a52;border-radius:6px;background:transparent;color:#eceff1;font-size:13px;cursor:pointer;">Đóng</button>
+      <button type="button" id="psApplyBtn" style="padding:9px 20px;border:none;border-radius:6px;background:#e2402c;color:#fff;font-weight:600;font-size:13px;cursor:pointer;">✔ Áp dụng</button>
+    </div>
+  </div>
+</div>
+
 <!-- ===================== MODAL: ROTATE PAGES (chọn trang để xoay 90°/180°) ===================== -->
 <div id="rotatePagesModal" style="
   position:fixed;inset:0;z-index:1100;display:none;
@@ -1265,6 +1379,8 @@
       <button class="tbtn" id="btnDeletePage" title="Chọn một hoặc nhiều trang để xóa khỏi tài liệu"><span class="ic">🗑️</span>Delete page</button>
       <button class="tbtn" id="btnExtractPages" title="Chọn một hoặc nhiều trang để tách ra thành 1 file PDF mới (không ảnh hưởng tài liệu đang mở)"><span class="ic">✂️</span>Extract Pages</button>
       <button class="tbtn" id="btnRotatePages" title="Chọn một hoặc nhiều trang để xoay 90°/180° (áp dụng khi Save PDF hoặc Extract Pages)"><span class="ic">🔄</span>Rotate pages</button>
+      <button class="tbtn" id="btnPageSize" title="Đổi khổ giấy (A4, A3, Letter, Legal…) hoặc kích thước tùy chỉnh cho các trang; hoặc thêm lề trắng quanh nội dung (chừa chỗ ghi chú/đóng gáy)"><span class="ic">📏</span>Page Size</button>
+      <button class="tbtn" id="btnOrganizePages" title="Quản lý và sắp xếp trang: kéo thả hình thu nhỏ để đổi chỗ trang; mở thêm File B và kéo trang qua lại giữa hai file (di chuyển / sao chép)"><span class="ic">🗂️</span>Organize Pages</button>
       <div class="sep"></div>
       <button class="tbtn" id="btnCompress" title="Giảm dung lượng file PDF (chọn mức nén tiêu chuẩn hoặc siêu nén) — file nén ra sẽ dựng lại các trang thành ảnh, chữ trong file nén sẽ không còn bôi đen/copy được như file gốc"><span class="ic">🗜️</span>Compress PDF</button>
     </div>
@@ -1315,8 +1431,10 @@
       <div class="sep"></div>
       <button class="tbtn" data-tool="region" id="toolRegion" title="Kéo chọn một vùng trên trang, sau đó bấm 'Edit Text' hoặc 'Sửa văn bản (OCR)' để sửa nhanh cả vùng"><span class="ic">🔲</span>Selection area</button>
       <button class="tbtn" id="btnSnapshot" title="Dùng công cụ 'Selection area' để kéo chọn một vùng trên trang, sau đó bấm nút này để chụp đúng vùng đó (kèm mọi chỉnh sửa đã thêm) và lưu thành file ảnh PNG"><span class="ic">📸</span>Snapshot</button>
+      <button class="tbtn" data-tool="crop" id="toolCrop" title="Crop — kéo một khung chữ nhật quanh vùng muốn GIỮ LẠI, phần ngoài khung bị ẩn (CropBox). Dùng để bỏ lề trắng, vệt đen khi scan, header/footer, số trang; nội dung phóng to hơn khi đọc trên điện thoại/Kindle."><span class="ic">📐</span>Crop</button>
       <div class="sep"></div>
       <button class="tbtn" id="btnCombineFiles" title="Gộp nhiều file PDF lại thành một file duy nhất, có thể sắp xếp lại thứ tự các file trước khi gộp"><span class="ic">🧩</span>Combine Files</button>
+      <button class="tbtn" id="btnDocCompare" title="So sánh hai file PDF (bản gốc và bản đã chỉnh sửa): tự động dò và đánh dấu điểm khác biệt về văn bản, định dạng, hình ảnh, bố cục; xuất PDF báo cáo"><span class="ic">🆚</span>Document Compare</button>
     </div>
   </div>
   <div class="sep"></div>
@@ -2844,19 +2962,24 @@ async function embedImageForEdit_(outDoc, ed, embedCache){
 // rotate=rot để bù lại đúng góc xoay đó, giữ chữ/ảnh đọc đúng chiều sau khi trình xem PDF áp dụng
 // /Rotate của trang khi hiển thị (xem giải thích chi tiết ngay trong hàm bên dưới).
 function getPageRotationTransform_(pageObj){
-  const rawW = pageObj.getWidth(), rawH = pageObj.getHeight();
+  // pdf.js dựng trang theo CropBox (nếu có) — nên toạ độ gốc/kích thước cũng lấy theo CropBox (không có
+  // CropBox thì trùng MediaBox như cũ). Cần thiết để mở lại file ĐÃ CROP rồi sửa tiếp vẫn không bị lệch.
+  let cb = null;
+  try{ cb = pageObj.getCropBox ? pageObj.getCropBox() : null; }catch(e){ cb = null; }
+  const ox = cb ? cb.x : 0, oy = cb ? cb.y : 0;
+  const rawW = cb ? cb.width : pageObj.getWidth(), rawH = cb ? cb.height : pageObj.getHeight();
   const rot = normalizeRotation_((pageObj.getRotation && pageObj.getRotation().angle) || 0);
   const dispW = (rot===90 || rot===270) ? rawH : rawW;
   const dispH = (rot===90 || rot===270) ? rawW : rawH;
   let toRaw;
   if(rot === 90){
-    toRaw = (dx,dy) => ({ x: dy, y: dx });
+    toRaw = (dx,dy) => ({ x: ox + dy, y: oy + dx });
   } else if(rot === 180){
-    toRaw = (dx,dy) => ({ x: dispW - dx, y: dy });
+    toRaw = (dx,dy) => ({ x: ox + dispW - dx, y: oy + dy });
   } else if(rot === 270){
-    toRaw = (dx,dy) => ({ x: dispH - dy, y: dispW - dx });
+    toRaw = (dx,dy) => ({ x: ox + dispH - dy, y: oy + dispW - dx });
   } else {
-    toRaw = (dx,dy) => ({ x: dx, y: rawH - dy });
+    toRaw = (dx,dy) => ({ x: ox + dx, y: oy + rawH - dy });
   }
   return { rot, rawW, rawH, dispW, dispH, toRaw };
 }
@@ -4681,19 +4804,26 @@ function applyLiveRotationDisplay_(idx, w, h){
   const slot = pageSlots[idx];
   const rot = getPageRotation_(pages[idx]);
   const swapped = (rot === 90 || rot === 270);
-  // Đổi kích thước ô (.pageSlot) trong danh sách cuộn cho khớp với kích thước ĐÃ XOAY (đổi chỗ
-  // rộng<->cao khi xoay 90°/270°), giống hệt cách renderStaticPreview() đang làm cho các trang khác,
-  // để bố cục cuộn trang không bị chồng lấn/lệch với các trang lân cận.
+  // Crop: nếu trang có vùng crop (và không đang ở chế độ vẽ crop) thì ô chỉ rộng/cao bằng vùng giữ lại,
+  // #pageWrap vẫn giữ NGUYÊN kích thước/toạ độ gốc rồi được dời sao cho tâm vùng crop trùng tâm ô.
+  const cr = cropDisplayRect_(pages[idx], w, h);
+  const cw = cr ? cr.w : w, ch = cr ? cr.h : h;
   if(slot){
-    slot.el.style.width = (swapped ? h : w)+'px';
-    slot.el.style.height = (swapped ? w : h)+'px';
+    slot.el.style.width = (swapped ? ch : cw)+'px';
+    slot.el.style.height = (swapped ? cw : ch)+'px';
+    slot.el.classList.toggle('cropped', !!cr);
   }
-  // #pageWrap luôn giữ NGUYÊN kích thước GỐC (chưa xoay) — vì bên trong nó là pdfCanvas/overlayCanvas
-  // với canvas.width/height cũng chưa xoay. Chỉ xoay CÁCH HIỂN THỊ bằng transform, canh giữa khung
-  // trong chính ô của nó (left/top:50% + translate(-50%,-50%)) rồi rotate quanh tâm.
   pageWrap.style.width = w+'px';
   pageWrap.style.height = h+'px';
-  if(rot){
+  if(cr){
+    const dx = cr.x + cr.w/2 - w/2, dy = cr.y + cr.h/2 - h/2;
+    const rad = rot*Math.PI/180, co = Math.cos(rad), si = Math.sin(rad);
+    const rx = dx*co - dy*si, ry = dx*si + dy*co;
+    const slotW = swapped ? ch : cw, slotH = swapped ? cw : ch;
+    pageWrap.style.left = (slotW/2 - rx)+'px';
+    pageWrap.style.top = (slotH/2 - ry)+'px';
+    pageWrap.style.transform = 'translate(-50%,-50%) rotate('+rot+'deg)';
+  } else if(rot){
     pageWrap.style.left = '50%';
     pageWrap.style.top = '50%';
     pageWrap.style.transform = 'translate(-50%,-50%) rotate('+rot+'deg)';
@@ -5069,6 +5199,9 @@ async function renderStaticPreview(idx){
   for(const e of p.edits) drawEdit(ctx, e, scale);
   // Xoay ảnh xem trước tĩnh này theo đúng góc xoay đã đặt cho trang (nếu có) — chỉ ảnh hưởng hiển
   // thị, KHÔNG đụng gì tới toạ độ edits vừa vẽ ở trên (đã vẽ xong trước khi xoay raster).
+  // Crop: chỉ giữ vùng crop của trang (cắt TRƯỚC khi xoay, vì crop tính theo hệ toạ độ chưa xoay).
+  const hasCrop = cropCanvasToRect_(c, p.crop, scale);
+  slot.el.classList.toggle('cropped', hasCrop);
   const rot = getPageRotation_(p);
   if(rot) applyCanvasRotation_(c, rot);
   slot.el.style.width = c.width+'px';
@@ -5209,6 +5342,7 @@ function redrawOverlay(){
     if(lines && lines.length) drawAllTextLineBoxes(lines);
   }
   if((activeTool==='ocr' || activeTool==='edittext') && hoverLine) drawHoverLineBox(hoverLine);
+  drawCropOverlay_(); // khung crop đang vẽ (chỉ khi công cụ Crop bật)
   // Đồng bộ thanh Opacity theo khối chữ/ảnh đang chọn (nếu có) — xem refreshOpacityControl.
   refreshOpacityControl();
   refreshRotateControl();
@@ -5803,6 +5937,7 @@ async function buildThumbnails(){
       const tctx = c.getContext('2d'); tctx.fillStyle='#fff'; tctx.fillRect(0,0,c.width,c.height);
       tctx.strokeStyle='#ccc'; tctx.strokeRect(0,0,c.width,c.height);
     }
+    cropCanvasToRect_(c, p.crop, 0.2);
     const rot = getPageRotation_(p);
     if(rot){
       applyCanvasRotation_(c, rot);
@@ -5840,6 +5975,7 @@ async function updateZoom(){
 const toolLabels = {
   select:'Select — nhấn để chọn, kéo để di chuyển, kéo 8 ô vuông xanh ở viền để chỉnh khung chữ (khung sẽ được LƯU LẠI đúng kích thước vừa canh, không tự to ra nữa; phím F để trả về khung tự động), đúp chuột để sửa chữ, phím Delete để xóa',
   textselect:'Select text to copy — bôi đen (kéo chuột) qua chữ trong PDF rồi Ctrl+C để copy ra ngoài; bấm nút "🖍️ Marker" nổi lên cạnh vùng vừa bôi đen để tô sáng đúng đoạn chữ đó.',
+  crop:'Crop — kéo khung quanh vùng muốn GIỮ LẠI (kéo cạnh/góc để chỉnh, kéo trong khung để dời), rồi bấm Áp dụng hoặc Enter. Phần ngoài khung sẽ bị ẩn khi lưu PDF.',
   addtext:'Add text',
   edittext:'Edit Text — trỏ chuột vào bất kỳ đoạn chữ nào (chữ PDF thật hoặc chữ trong ảnh/scan) rồi bấm để sửa ngay, không cần chọn vùng.',
   region:'Selection area — kéo để chọn một vùng trên trang, sau đó bấm "Edit Text" hoặc "Edit Document (OCR-PDF scan)" để sửa nhanh toàn bộ chữ trong vùng cùng lúc',
@@ -10194,6 +10330,9 @@ async function buildEditedOutDoc(indexes, spinnerLabel){
       await drawEditOnPdfPage(pageObj, ed, rotInfo, edFont, fallbackFont, outDoc, imageEmbedCache, fauxBold, resolveFontForEdit);
     }
 
+    // ---- Crop: ghi CropBox = vùng giữ lại (phần ngoài chỉ bị ẨN, dữ liệu gốc không bị xoá) ----
+    if(p.crop) applyCropBoxToPdfPage_(pageObj, p.crop, rotInfo);
+
     // ---- Áp dụng góc xoay trang (tính năng "Rotate pages") ----
     // Chỉ đổi cờ /Rotate của trang PDF (pdf-lib setRotation) — KHÔNG đụng gì tới toạ độ nội dung/
     // chữ vừa vẽ ở trên (drawEditOnPdfPage đã vẽ theo đúng hệ toạ độ GỐC của trang, độc lập với cờ
@@ -13063,6 +13202,684 @@ document.getElementById('ppConfirmBtn').addEventListener('click', async () => {
   closeExportPptxModal();
   await exportPptxSelected(selected);
 });
+
+
+// =====================================================================
+//  CROP — cắt xén vùng hiển thị của trang
+//  Vẽ một khung chữ nhật quanh vùng muốn GIỮ LẠI; phần ngoài khung bị ẩn (ghi thành /CropBox khi lưu PDF,
+//  dữ liệu gốc không bị xoá nên dung lượng file gần như không đổi và có thể khôi phục bằng "Xoá crop").
+//  p.crop = {x,y,w,h} tính bằng "point" trong CÙNG hệ toạ độ với edits (toPdfSpace, chưa xoay bởi Rotate pages).
+// =====================================================================
+var cropModeOn_ = false, cropDraft_ = null, cropDraftPageId_ = null, cropDrag_ = null;
+var CROP_HANDLE_PX = 9, CROP_MIN_PT = 10;
+
+// Vùng crop (px canvas, hệ chưa xoay) dùng để HIỂN THỊ trang p — null nếu không crop hoặc đang ở chế độ vẽ crop.
+function cropDisplayRect_(p, w, h){
+  if(!p || !p.crop || (typeof activeTool !== 'undefined' && activeTool === 'crop')) return null;
+  const x = Math.max(0, p.crop.x*scale), y = Math.max(0, p.crop.y*scale);
+  const x2 = Math.min(w, (p.crop.x+p.crop.w)*scale), y2 = Math.min(h, (p.crop.y+p.crop.h)*scale);
+  if(x2-x < 4 || y2-y < 4) return null;
+  return { x, y, w: x2-x, h: y2-y };
+}
+
+// Cắt canvas (đã vẽ cả trang ở tỉ lệ sc) còn lại đúng vùng crop. Trả true nếu có cắt.
+function cropCanvasToRect_(canvas, crop, sc){
+  if(!crop || !canvas.width || !canvas.height) return false;
+  const x = Math.max(0, Math.round(crop.x*sc)), y = Math.max(0, Math.round(crop.y*sc));
+  const w = Math.min(canvas.width - x, Math.round(crop.w*sc)), h = Math.min(canvas.height - y, Math.round(crop.h*sc));
+  if(w < 2 || h < 2) return false;
+  const off = document.createElement('canvas');
+  off.width = canvas.width; off.height = canvas.height;
+  off.getContext('2d').drawImage(canvas, 0, 0);
+  canvas.width = w; canvas.height = h;
+  canvas.getContext('2d').drawImage(off, x, y, w, h, 0, 0, w, h);
+  return true;
+}
+
+// Ghi vùng crop (hệ hiển thị) thành CropBox của trang pdf-lib (hệ toạ độ thật của trang).
+function applyCropBoxToPdfPage_(pageObj, crop, rotInfo){
+  const rr = rawRectFromDisplay_(rotInfo || getPageRotationTransform_(pageObj), crop.x, crop.y, crop.w, crop.h);
+  let bx = 0, by = 0, bw = Infinity, bh = Infinity;
+  try{ const cb = pageObj.getCropBox(); bx = cb.x; by = cb.y; bw = cb.width; bh = cb.height; }catch(e){}
+  const x1 = Math.max(bx, rr.x), y1 = Math.max(by, rr.y);
+  const x2 = Math.min(bx+bw, rr.x+rr.width), y2 = Math.min(by+bh, rr.y+rr.height);
+  if(x2-x1 < 1 || y2-y1 < 1) return;
+  pageObj.setCropBox(x1, y1, x2-x1, y2-y1);
+}
+
+// ---------- Thanh điều khiển Crop ----------
+var cropBarEl_ = (function(){
+  const d = document.createElement('div');
+  d.id = 'cropBar';
+  d.innerHTML =
+    '<b>📐 Crop</b><span class="cropInfo" id="cropInfo">Kéo trên trang để vẽ khung giữ lại</span>'+
+    '<button class="tbtn" id="cropAuto" title="Tự dò vùng có nội dung và cắt bỏ lề trắng xung quanh">✨ Dò lề</button>'+
+    '<select id="cropScope" title="Áp dụng cho">'+
+      '<option value="current">Trang này</option><option value="all">Tất cả trang</option>'+
+      '<option value="odd">Trang lẻ</option><option value="even">Trang chẵn</option><option value="range">Khoảng trang…</option></select>'+
+    '<input type="text" id="cropRange" placeholder="vd 1,3,5-8" style="display:none">'+
+    '<button class="tbtn primary" id="cropApply" title="Áp dụng crop (Enter)">✔ Áp dụng</button>'+
+    '<button class="tbtn" id="cropRemove" title="Bỏ crop của các trang trong phạm vi đã chọn">↺ Xoá crop</button>'+
+    '<button class="tbtn" id="cropCancel" title="Thoát công cụ Crop (Esc)">✕</button>';
+  const host = document.getElementById('canvasArea') || document.body;
+  host.appendChild(d);
+  return d;
+})();
+document.getElementById('cropScope').onchange = (e)=>{
+  document.getElementById('cropRange').style.display = e.target.value === 'range' ? '' : 'none';
+};
+
+function cropSyncDraft_(){
+  if(!pages.length || !cur()) return null;
+  const p = cur();
+  if(cropDraftPageId_ !== p.id){
+    cropDraftPageId_ = p.id;
+    cropDraft_ = p.crop ? Object.assign({}, p.crop) : null;
+  }
+  return cropDraft_;
+}
+function cropUpdateInfo_(){
+  const el = document.getElementById('cropInfo');
+  const d = cropDraft_;
+  el.textContent = d ? (Math.round(d.w) + '×' + Math.round(d.h) + ' pt') + (cur() && cur().crop ? ' · đã crop' : '')
+                     : 'Kéo trên trang để vẽ khung giữ lại';
+}
+
+function drawCropOverlay_(){
+  if(!cropModeOn_ || activeTool !== 'crop' || !pages.length) return;
+  const d = cropSyncDraft_();
+  cropUpdateInfo_();
+  if(!d) return;
+  const x = d.x*scale, y = d.y*scale, w = d.w*scale, h = d.h*scale;
+  octx.save();
+  octx.fillStyle = 'rgba(0,0,0,0.5)';
+  octx.beginPath();
+  octx.rect(0, 0, overlayCanvas.width, overlayCanvas.height);
+  octx.rect(x, y, w, h);
+  octx.fill('evenodd');
+  octx.strokeStyle = '#2196f3'; octx.lineWidth = 1.5; octx.setLineDash([6,4]);
+  octx.strokeRect(x, y, w, h);
+  octx.setLineDash([]);
+  const hs = CROP_HANDLE_PX;
+  for(const hp of cropHandlePoints_(d)){
+    octx.fillStyle = '#fff'; octx.strokeStyle = '#2196f3'; octx.lineWidth = 1.5;
+    octx.fillRect(hp.x-hs/2, hp.y-hs/2, hs, hs);
+    octx.strokeRect(hp.x-hs/2, hp.y-hs/2, hs, hs);
+  }
+  octx.restore();
+}
+function cropHandlePoints_(d){
+  const l = d.x*scale, t = d.y*scale, r = (d.x+d.w)*scale, b = (d.y+d.h)*scale, cx = (l+r)/2, cy = (t+b)/2;
+  return [{n:'nw',x:l,y:t},{n:'n',x:cx,y:t},{n:'ne',x:r,y:t},{n:'e',x:r,y:cy},
+          {n:'se',x:r,y:b},{n:'s',x:cx,y:b},{n:'sw',x:l,y:b},{n:'w',x:l,y:cy}];
+}
+function cropHitTest_(px, py){
+  const d = cropDraft_;
+  if(!d) return null;
+  for(const hp of cropHandlePoints_(d)){
+    if(Math.abs(px-hp.x) <= CROP_HANDLE_PX && Math.abs(py-hp.y) <= CROP_HANDLE_PX) return hp.n;
+  }
+  const x = d.x*scale, y = d.y*scale;
+  if(px >= x && px <= x+d.w*scale && py >= y && py <= y+d.h*scale) return 'move';
+  return null;
+}
+var CROP_CURSORS_ = { nw:'nwse-resize', se:'nwse-resize', ne:'nesw-resize', sw:'nesw-resize', n:'ns-resize', s:'ns-resize', e:'ew-resize', w:'ew-resize', move:'move' };
+
+overlayCanvas.addEventListener('mousedown', (e)=>{
+  if(activeTool !== 'crop' || !cropModeOn_ || !pages.length) return;
+  const { x:px, y:py } = clientToCanvasXY_(overlayCanvas, e.clientX, e.clientY);
+  cropSyncDraft_();
+  const hit = cropHitTest_(px, py);
+  const pt = toPdfSpace(px, py);
+  if(hit) cropDrag_ = { mode: hit, start: pt, orig: Object.assign({}, cropDraft_) };
+  else cropDrag_ = { mode: 'new', start: pt, orig: null };
+});
+overlayCanvas.addEventListener('mousemove', (e)=>{
+  if(activeTool !== 'crop' || !cropModeOn_ || cropDrag_ || !pages.length) return;
+  const { x:px, y:py } = clientToCanvasXY_(overlayCanvas, e.clientX, e.clientY);
+  cropSyncDraft_();
+  const hit = cropHitTest_(px, py);
+  overlayCanvas.style.cursor = hit ? CROP_CURSORS_[hit] : 'crosshair';
+});
+window.addEventListener('mousemove', (e)=>{
+  if(!cropDrag_ || !pages.length) return;
+  const W = overlayCanvas.width/scale, H = overlayCanvas.height/scale;
+  const c = clientToCanvasXY_(overlayCanvas, e.clientX, e.clientY);
+  const pt = toPdfSpace(c.x, c.y);
+  const clampX = v => Math.min(Math.max(v, 0), W), clampY = v => Math.min(Math.max(v, 0), H);
+  const g = cropDrag_;
+  if(g.mode === 'new'){
+    const x1 = clampX(g.start.x), y1 = clampY(g.start.y), x2 = clampX(pt.x), y2 = clampY(pt.y);
+    cropDraft_ = { x: Math.min(x1,x2), y: Math.min(y1,y2), w: Math.abs(x2-x1), h: Math.abs(y2-y1) };
+  } else if(g.mode === 'move'){
+    const o = g.orig;
+    const nx = Math.min(Math.max(o.x + pt.x - g.start.x, 0), W - o.w);
+    const ny = Math.min(Math.max(o.y + pt.y - g.start.y, 0), H - o.h);
+    cropDraft_ = { x: nx, y: ny, w: o.w, h: o.h };
+  } else {
+    let l = g.orig.x, t = g.orig.y, r = g.orig.x + g.orig.w, b = g.orig.y + g.orig.h;
+    if(g.mode.includes('w')) l = clampX(pt.x);
+    if(g.mode.includes('e')) r = clampX(pt.x);
+    if(g.mode.includes('n')) t = clampY(pt.y);
+    if(g.mode.includes('s')) b = clampY(pt.y);
+    cropDraft_ = { x: Math.min(l,r), y: Math.min(t,b), w: Math.abs(r-l), h: Math.abs(b-t) };
+  }
+  redrawOverlay();
+});
+window.addEventListener('mouseup', ()=>{
+  if(!cropDrag_) return;
+  cropDrag_ = null;
+  if(cropDraft_ && (cropDraft_.w < CROP_MIN_PT || cropDraft_.h < CROP_MIN_PT)){
+    cropDraft_ = cur() && cur().crop ? Object.assign({}, cur().crop) : null; // khung quá nhỏ: bỏ, quay lại crop cũ
+  }
+  redrawOverlay();
+});
+
+// Tự dò vùng có nội dung (bỏ lề trắng): quét ảnh trang đang mở, bỏ qua vài điểm nhiễu lẻ.
+document.getElementById('cropAuto').onclick = ()=>{
+  if(!pages.length) return;
+  const w = pdfCanvas.width, h = pdfCanvas.height;
+  if(!w || !h) return;
+  const data = pctx.getImageData(0, 0, w, h).data;
+  const rows = new Uint32Array(h), cols = new Uint32Array(w);
+  for(let y = 0; y < h; y++){
+    for(let x = 0; x < w; x++){
+      const i = (y*w + x)*4;
+      if(data[i+3] > 20 && (data[i] < 235 || data[i+1] < 235 || data[i+2] < 235)){ rows[y]++; cols[x]++; }
+    }
+  }
+  const first = (arr, n) => { for(let i = 0; i < n; i++) if(arr[i] >= 2) return i; return -1; };
+  const last  = (arr, n) => { for(let i = n-1; i >= 0; i--) if(arr[i] >= 2) return i; return -1; };
+  const t = first(rows,h), b = last(rows,h), l = first(cols,w), r = last(cols,w);
+  if(t < 0 || l < 0 || b <= t || r <= l){ alert('Không dò được vùng nội dung trên trang này (trang trống?).'); return; }
+  const pad = 6*scale; // chừa lại ~6pt cho khỏi sát chữ
+  const x1 = Math.max(0, l-pad), y1 = Math.max(0, t-pad), x2 = Math.min(w, r+1+pad), y2 = Math.min(h, b+1+pad);
+  cropDraftPageId_ = cur().id;
+  cropDraft_ = { x: x1/scale, y: y1/scale, w: (x2-x1)/scale, h: (y2-y1)/scale };
+  redrawOverlay();
+};
+
+// Danh sách trang áp dụng theo phạm vi đã chọn.
+function cropTargetIndexes_(){
+  const mode = document.getElementById('cropScope').value;
+  const n = pages.length, out = [];
+  if(mode === 'current') return [currentIndex];
+  if(mode === 'all') { for(let i = 0; i < n; i++) out.push(i); return out; }
+  if(mode === 'odd')  { for(let i = 0; i < n; i += 2) out.push(i); return out; }
+  if(mode === 'even') { for(let i = 1; i < n; i += 2) out.push(i); return out; }
+  const set = parsePageRangeText_(document.getElementById('cropRange').value, n); // ném lỗi nếu sai cú pháp
+  return Array.from(set).sort((a,b)=>a-b);
+}
+
+async function cropRefreshAll_(){
+  await rebuildPageSlots();
+  await renderPage(currentIndex);
+  buildThumbnails().catch(err=>console.warn('Không dựng lại ảnh thu nhỏ:', err));
+}
+
+document.getElementById('cropApply').onclick = async ()=>{
+  if(!pages.length) return;
+  const d = cropSyncDraft_();
+  if(!d || d.w < CROP_MIN_PT || d.h < CROP_MIN_PT){ alert('Hãy kéo một khung chữ nhật quanh vùng cần giữ lại (hoặc bấm "Tự dò lề trắng").'); return; }
+  let targets;
+  try{ targets = cropTargetIndexes_(); }catch(err){ alert(err.message); return; }
+  if(!targets.length){ alert('Chưa có trang nào trong phạm vi đã chọn.'); return; }
+  const base = await getPageSizePt_(currentIndex);
+  for(const i of targets){
+    if(i === currentIndex){ pages[i].crop = { x:d.x, y:d.y, w:d.w, h:d.h }; continue; }
+    // Trang khác: áp theo TỈ LỆ so với trang đang vẽ (đúng cả khi các trang khác khổ giấy).
+    const sz = await getPageSizePt_(i);
+    const kx = sz.w/base.w, ky = sz.h/base.h;
+    pages[i].crop = { x:d.x*kx, y:d.y*ky, w:d.w*kx, h:d.h*ky };
+  }
+  document.getElementById('toolSelect').click(); // thoát Crop -> hiện trang đã cắt
+  await cropRefreshAll_();
+  showToast_('Đã crop ' + targets.length + ' trang. Bấm Save PDF để lưu (phần ngoài khung chỉ bị ẩn).');
+};
+
+document.getElementById('cropRemove').onclick = async ()=>{
+  if(!pages.length) return;
+  let targets;
+  try{ targets = cropTargetIndexes_(); }catch(err){ alert(err.message); return; }
+  let n = 0;
+  for(const i of targets){ if(pages[i].crop){ delete pages[i].crop; n++; } }
+  cropDraft_ = null; cropDraftPageId_ = cur().id;
+  if(!n){ redrawOverlay(); return; }
+  document.getElementById('toolSelect').click();
+  await cropRefreshAll_();
+  showToast_('Đã xoá crop của ' + n + ' trang.');
+};
+document.getElementById('cropCancel').onclick = ()=> document.getElementById('toolSelect').click();
+
+window.addEventListener('keydown', (e)=>{
+  if(!cropModeOn_ || activeTool !== 'crop') return;
+  const tag = document.activeElement && document.activeElement.tagName;
+  if(tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+  if(e.key === 'Enter'){ e.preventDefault(); document.getElementById('cropApply').click(); }
+  else if(e.key === 'Escape'){ e.preventDefault(); document.getElementById('cropCancel').click(); }
+});
+
+// Vào/ra chế độ Crop khi đổi công cụ: vào -> hiện TOÀN BỘ trang để vẽ khung; ra -> hiện lại vùng đã crop.
+function cropSyncMode_(){
+  const want = (activeTool === 'crop' && pages.length > 0);
+  if(want === cropModeOn_) return;
+  cropModeOn_ = want;
+  cropBarEl_.classList.toggle('show', want);
+  const ca_ = document.getElementById('canvasArea'); if(ca_) ca_.classList.toggle('cropping', want);
+  cropDrag_ = null; cropDraftPageId_ = null; cropDraft_ = null;
+  if(pages.length && cur() && pdfCanvas.width){
+    applyLiveRotationDisplay_(currentIndex, pdfCanvas.width, pdfCanvas.height);
+  }
+  if(pages.length){ try{ redrawOverlay(); }catch(err){} }
+}
+document.querySelectorAll('.tbtn[data-tool]').forEach(btn=>{
+  btn.addEventListener('click', ()=> setTimeout(cropSyncMode_, 0)); // chạy SAU handler chọn công cụ chung
+});
+
+
+// =====================================================================
+//  PAGE SIZE — đổi khổ giấy / thêm lề trắng cho trang
+//  Cách làm: ghép các trang đích (kèm mọi chỉnh sửa + Crop + Rotate hiện có) bằng buildEditedOutDoc(), rồi với
+//  mỗi trang: đổi MediaBox/CropBox sang khổ mới, bọc nội dung bằng "q <cm> <clip> … Q" để co/dời nội dung vào
+//  khổ mới (chữ/vector vẫn là chữ/vector, không bị rasterize). Kết quả nạp lại thành trang mới trong trình sửa.
+// =====================================================================
+var PS_PRESETS_ = [
+  { id:'a3', name:'A3', w:841.89, h:1190.55 },
+  { id:'a4', name:'A4', w:595.28, h:841.89 },
+  { id:'a5', name:'A5', w:419.53, h:595.28 },
+  { id:'a6', name:'A6', w:297.64, h:419.53 },
+  { id:'b4', name:'B4', w:708.66, h:1000.63 },
+  { id:'b5', name:'B5', w:498.90, h:708.66 },
+  { id:'letter', name:'Letter', w:612, h:792 },
+  { id:'legal', name:'Legal', w:612, h:1008 },
+  { id:'tabloid', name:'Tabloid', w:792, h:1224 },
+  { id:'executive', name:'Executive', w:522, h:756 }
+];
+var PS_MIN_PT_ = 20, PS_MAX_PT_ = 14400;
+
+// Tên khổ giấy gần nhất (không phân biệt dọc/ngang), sai số 3pt; không khớp -> null.
+function psNameForSize_(w, h){
+  const a = Math.min(w,h), b = Math.max(w,h);
+  for(const p of PS_PRESETS_){
+    if(Math.abs(Math.min(p.w,p.h)-a) <= 3 && Math.abs(Math.max(p.w,p.h)-b) <= 3) return p.name;
+  }
+  return null;
+}
+
+// Kích thước hiển thị dự kiến (pt) của trang idx sau Crop + Rotate hiện có.
+async function psEstimateSize_(idx){
+  const p = pages[idx];
+  const sz = await getPageSizePt_(idx);
+  let w = sz.w, h = sz.h;
+  if(p && p.crop){ w = p.crop.w; h = p.crop.h; }
+  const rot = getPageRotation_(p);
+  if(rot === 90 || rot === 270){ const t = w; w = h; h = t; }
+  return { w, h };
+}
+
+// Tính khổ mới + hệ số co/dời cho một trang có kích thước hiển thị (w,h). cfg xem psReadCfg_().
+function psComputePlan_(w, h, cfg){
+  let Wt, Ht, kx = 1, ky = 1, ox = 0, oy = 0;
+  if(cfg.mode === 'margins'){
+    const m = cfg.margins;
+    Wt = w + m.l + m.r; Ht = h + m.t + m.b; ox = m.l; oy = m.t;
+  } else {
+    Wt = cfg.W; Ht = cfg.H;
+    const wantLandscape = cfg.orient === 'landscape' || (cfg.orient === 'auto' && w > h);
+    const wantPortrait  = cfg.orient === 'portrait'  || (cfg.orient === 'auto' && h > w);
+    if(wantLandscape && Wt < Ht){ const t = Wt; Wt = Ht; Ht = t; }
+    else if(wantPortrait && Wt > Ht){ const t = Wt; Wt = Ht; Ht = t; }
+    const m = Math.max(0, Math.min(cfg.inner || 0, Math.min(Wt, Ht)/2 - 1));
+    const aw = Math.max(1, Wt - 2*m), ah = Math.max(1, Ht - 2*m);
+    if(cfg.fit === 'fit'){ kx = ky = Math.min(aw/w, ah/h); }
+    else if(cfg.fit === 'fill'){ kx = ky = Math.max(aw/w, ah/h); }
+    else if(cfg.fit === 'stretch'){ kx = aw/w; ky = ah/h; }
+    ox = m + (aw - w*kx) * cfg.ax;
+    oy = m + (ah - h*ky) * cfg.ay;
+  }
+  Wt = Math.min(PS_MAX_PT_, Math.max(PS_MIN_PT_, Wt));
+  Ht = Math.min(PS_MAX_PT_, Math.max(PS_MIN_PT_, Ht));
+  return { Wt, Ht, kx, ky, ox, oy };
+}
+function psIsNoop_(w, h, pl){
+  return Math.abs(pl.Wt-w) < 0.5 && Math.abs(pl.Ht-h) < 0.5 && Math.abs(pl.kx-1) < 1e-4 && Math.abs(pl.ky-1) < 1e-4
+      && Math.abs(pl.ox) < 0.5 && Math.abs(pl.oy) < 0.5;
+}
+
+// ---- Toán affine theo quy ước PDF [a b c d e f]: x' = a·x + c·y + e ; y' = b·x + d·y + f ----
+function psMakeToRaw_(rot, ox, oy, rawW, rawH){
+  const dispW = (rot===90 || rot===270) ? rawH : rawW;
+  const dispH = (rot===90 || rot===270) ? rawW : rawH;
+  if(rot === 90)  return (dx,dy) => ({ x: ox + dy, y: oy + dx });
+  if(rot === 180) return (dx,dy) => ({ x: ox + dispW - dx, y: oy + dy });
+  if(rot === 270) return (dx,dy) => ({ x: ox + dispH - dy, y: oy + dispW - dx });
+  return (dx,dy) => ({ x: ox + dx, y: oy + rawH - dy });
+}
+function psAffOf_(fn){
+  const p0 = fn(0,0), p1 = fn(1,0), p2 = fn(0,1);
+  return { a:p1.x-p0.x, b:p1.y-p0.y, c:p2.x-p0.x, d:p2.y-p0.y, e:p0.x, f:p0.y };
+}
+function psInv_(m){
+  const det = m.a*m.d - m.b*m.c;
+  return { a:m.d/det, b:-m.b/det, c:-m.c/det, d:m.a/det, e:(m.c*m.f - m.d*m.e)/det, f:(m.b*m.e - m.a*m.f)/det };
+}
+function psMul_(m1, m2){ // áp m2 trước, rồi m1
+  return { a:m1.a*m2.a + m1.c*m2.b, b:m1.b*m2.a + m1.d*m2.b,
+           c:m1.a*m2.c + m1.c*m2.d, d:m1.b*m2.c + m1.d*m2.d,
+           e:m1.a*m2.e + m1.c*m2.f + m1.e, f:m1.b*m2.e + m1.d*m2.f + m1.f };
+}
+
+// Áp kế hoạch (khổ mới + co/dời) lên MỘT trang pdf-lib (đã có đủ chỉnh sửa/crop/rotate).
+function psApplyPlanToPdfPage_(pageObj, pl, bgHex){
+  const L = PDFLib;
+  const ri = getPageRotationTransform_(pageObj);
+  const rot = ri.rot;
+  let cb;
+  try{ cb = pageObj.getCropBox(); }catch(e){ cb = { x:0, y:0, width:pageObj.getWidth(), height:pageObj.getHeight() }; }
+  const swapped = (rot === 90 || rot === 270);
+  const rawWn = swapped ? pl.Ht : pl.Wt, rawHn = swapped ? pl.Wt : pl.Ht;
+  const Aold = psAffOf_(ri.toRaw);
+  const Anew = psAffOf_(psMakeToRaw_(rot, 0, 0, rawWn, rawHn));
+  const S = { a:pl.kx, b:0, c:0, d:pl.ky, e:pl.ox, f:pl.oy };
+  const T = psMul_(Anew, psMul_(S, psInv_(Aold)));
+  const ctx = pageObj.doc.context;
+
+  const pre = [];
+  if(bgHex && String(bgHex).toLowerCase() !== '#ffffff'){
+    const [br,bg,bb] = hexToRgbFloats(bgHex);
+    pre.push(L.pushGraphicsState(), L.setFillingRgbColor(br,bg,bb), L.rectangle(0,0,rawWn,rawHn), L.fill(), L.popGraphicsState());
+  }
+  pre.push(L.pushGraphicsState(),
+           L.concatTransformationMatrix(T.a, T.b, T.c, T.d, T.e, T.f),
+           L.rectangle(cb.x, cb.y, cb.width, cb.height), L.clip(), L.endPath());
+  const startRef = ctx.register(L.PDFContentStream.of(ctx.obj({}), pre));
+  const endRef = ctx.register(L.PDFContentStream.of(ctx.obj({}), [L.popGraphicsState()]));
+  pageObj.node.normalize();
+  pageObj.getContentStream();
+  pageObj.node.wrapContentStreams(startRef, endRef);
+
+  // Annotation (link...): dời/co Rect theo cùng phép biến đổi để không lệch khỏi nội dung.
+  try{
+    const annots = pageObj.node.Annots();
+    if(annots){
+      for(let i = 0; i < annots.size(); i++){
+        const d = ctx.lookupMaybe(annots.get(i), L.PDFDict);
+        if(!d) continue;
+        const r = d.lookupMaybe(L.PDFName.of('Rect'), L.PDFArray);
+        if(!r || r.size() < 4) continue;
+        const v = [0,1,2,3].map(k => r.lookup(k, L.PDFNumber).asNumber());
+        const xa = T.a*v[0] + T.c*v[1] + T.e, ya = T.b*v[0] + T.d*v[1] + T.f;
+        const xb = T.a*v[2] + T.c*v[3] + T.e, yb = T.b*v[2] + T.d*v[3] + T.f;
+        d.set(L.PDFName.of('Rect'), ctx.obj([Math.min(xa,xb), Math.min(ya,yb), Math.max(xa,xb), Math.max(ya,yb)]));
+      }
+    }
+  }catch(e){ console.warn('Page Size: không dời được annotation', e); }
+
+  pageObj.setMediaBox(0, 0, rawWn, rawHn);
+  pageObj.setCropBox(0, 0, rawWn, rawHn);
+  for(const nm of ['TrimBox','BleedBox','ArtBox']){ try{ pageObj.node.delete(L.PDFName.of(nm)); }catch(e){} }
+}
+
+// ---------- Page Size: giao diện + áp dụng ----------
+var psModal_ = document.getElementById('pageSizeModal');
+var PS_UNIT_PT_ = { mm: 72/25.4, in: 72, pt: 1 };
+var psUnit_ = 'mm', psAnchor_ = { ax: 0.5, ay: 0.5 }, psCurSize_ = { w: 595.28, h: 841.89 };
+var psUndoStack_ = [];
+var PS_NUM_IDS_ = ['psW','psH','psInner','psMAll','psMT','psMR','psMB','psML'];
+
+function psEl_(id){ return document.getElementById(id); }
+function psGetPt_(id){ const v = parseFloat(String(psEl_(id).value).replace(',', '.')); return isFinite(v) ? v * PS_UNIT_PT_[psUnit_] : 0; }
+function psFmt_(pt){
+  const v = pt / PS_UNIT_PT_[psUnit_];
+  return String(psUnit_ === 'in' ? +v.toFixed(3) : +v.toFixed(1));
+}
+function psSetPt_(id, pt){ psEl_(id).value = psFmt_(pt); }
+
+// Dựng danh sách khổ giấy (nhãn luôn ghi theo mm để dễ nhận biết).
+(function(){
+  const sel = psEl_('psPreset');
+  let html = '<option value="current">📄 Giống trang đang mở</option>';
+  for(const p of PS_PRESETS_){
+    html += '<option value="'+p.id+'">'+p.name+' ('+Math.round(p.w*25.4/72)+' × '+Math.round(p.h*25.4/72)+' mm)</option>';
+  }
+  html += '<option value="custom">✏️ Tùy chỉnh…</option>';
+  sel.innerHTML = html;
+  sel.value = 'a4';
+  // Lưới 9 ô chọn vị trí đặt nội dung trong khổ mới.
+  const g = psEl_('psAnchor');
+  for(let r = 0; r < 3; r++) for(let c = 0; c < 3; c++){
+    const b = document.createElement('button');
+    b.type = 'button'; b.dataset.ax = c/2; b.dataset.ay = r/2; b.title = ['Trên','Giữa','Dưới'][r] + ' – ' + ['Trái','Giữa','Phải'][c];
+    b.onclick = ()=>{ psAnchor_ = { ax: c/2, ay: r/2 }; psRefreshAnchor_(); psUpdatePreview_(); };
+    g.appendChild(b);
+  }
+})();
+function psRefreshAnchor_(){
+  psEl_('psAnchor').querySelectorAll('button').forEach(b=>{
+    b.classList.toggle('on', Number(b.dataset.ax) === psAnchor_.ax && Number(b.dataset.ay) === psAnchor_.ay);
+  });
+}
+
+function psApplyPresetToInputs_(){
+  const v = psEl_('psPreset').value;
+  if(v === 'custom') return;
+  if(v === 'current'){ psSetPt_('psW', psCurSize_.w); psSetPt_('psH', psCurSize_.h); return; }
+  const p = PS_PRESETS_.find(x=>x.id === v);
+  if(p){ psSetPt_('psW', p.w); psSetPt_('psH', p.h); }
+}
+
+function psMode_(){ return document.querySelector('input[name=psMode]:checked').value; }
+function psSyncModeUi_(){
+  const m = psMode_();
+  psEl_('psSizeBox').style.display = (m === 'size') ? '' : 'none';
+  psEl_('psMarginBox').style.display = (m === 'margins') ? '' : 'none';
+  psUpdatePreview_();
+}
+
+function psReadCfg_(){
+  const mode = psMode_();
+  const cfg = { mode, bg: psEl_('psBg').value, ax: psAnchor_.ax, ay: psAnchor_.ay,
+                orient: psEl_('psOrient').value, fit: psEl_('psFit').value, inner: psGetPt_('psInner') };
+  if(mode === 'margins'){
+    cfg.margins = { t: psGetPt_('psMT'), r: psGetPt_('psMR'), b: psGetPt_('psMB'), l: psGetPt_('psML') };
+    const m = cfg.margins;
+    if(m.t < 0 || m.r < 0 || m.b < 0 || m.l < 0) throw new Error('Lề không được âm.');
+    if(m.t + m.r + m.b + m.l <= 0) throw new Error('Hãy nhập ít nhất một cạnh có lề lớn hơn 0.');
+  } else {
+    cfg.W = psGetPt_('psW'); cfg.H = psGetPt_('psH');
+    if(!(cfg.W >= PS_MIN_PT_ && cfg.H >= PS_MIN_PT_)) throw new Error('Kích thước quá nhỏ (tối thiểu ' + Math.ceil(PS_MIN_PT_) + ' pt ≈ 7 mm mỗi chiều).');
+    if(cfg.W > PS_MAX_PT_ || cfg.H > PS_MAX_PT_) throw new Error('Kích thước vượt giới hạn của PDF (tối đa 14400 pt ≈ 5,08 m).');
+    if(cfg.inner < 0) throw new Error('Lề trong không được âm.');
+  }
+  return cfg;
+}
+
+function psTargetIndexes_(){
+  const mode = psEl_('psScope').value, n = pages.length, out = [];
+  if(mode === 'current') return [currentIndex];
+  if(mode === 'all'){ for(let i = 0; i < n; i++) out.push(i); return out; }
+  if(mode === 'odd'){ for(let i = 0; i < n; i += 2) out.push(i); return out; }
+  if(mode === 'even'){ for(let i = 1; i < n; i += 2) out.push(i); return out; }
+  return Array.from(parsePageRangeText_(psEl_('psRange').value, n)).sort((a,b)=>a-b);
+}
+
+function psUpdateWarn_(){
+  let idxs = [];
+  try{ idxs = psTargetIndexes_(); }catch(e){ idxs = []; }
+  const withEdits = idxs.filter(i => pages[i] && pages[i].edits && pages[i].edits.length).length;
+  psEl_('psWarn').textContent = withEdits
+    ? ('⚠ ' + withEdits + ' trang có chỉnh sửa (chữ/ảnh/tô…) — khi đổi khổ chúng được ghi thẳng vào trang và không sửa lại bằng Edit Text được nữa (có thể Hoàn tác).')
+    : '';
+  psEl_('psUndoBtn').disabled = psUndoStack_.length === 0;
+  psEl_('psUndoBtn').style.opacity = psUndoStack_.length ? '1' : '.4';
+}
+
+// Xem trước sơ đồ: khung khổ mới + vị trí/tỉ lệ nội dung của trang đang mở.
+function psUpdatePreview_(){
+  psUpdateWarn_();
+  const cv = psEl_('psPreview'), c = cv.getContext('2d'), cap = psEl_('psPreviewCap');
+  c.clearRect(0, 0, cv.width, cv.height);
+  let cfg, pl;
+  try{ cfg = psReadCfg_(); pl = psComputePlan_(psCurSize_.w, psCurSize_.h, cfg); }
+  catch(e){ cap.textContent = e.message; return; }
+  const box = 176, s = Math.min(box/pl.Wt, box/pl.Ht);
+  const W = pl.Wt*s, H = pl.Ht*s, X = (cv.width - W)/2, Y = (cv.height - H)/2;
+  c.fillStyle = cfg.bg || '#fff'; c.fillRect(X, Y, W, H);
+  c.save(); c.beginPath(); c.rect(X, Y, W, H); c.clip();
+  c.fillStyle = 'rgba(33,150,243,.35)'; c.strokeStyle = '#2196f3'; c.lineWidth = 1.5;
+  const cx = X + pl.ox*s, cy = Y + pl.oy*s, cw = psCurSize_.w*pl.kx*s, ch = psCurSize_.h*pl.ky*s;
+  c.fillRect(cx, cy, cw, ch); c.strokeRect(cx, cy, cw, ch);
+  c.restore();
+  c.strokeStyle = '#9aa0a8'; c.lineWidth = 1; c.strokeRect(X + .5, Y + .5, W - 1, H - 1);
+  const nm = psNameForSize_(pl.Wt, pl.Ht);
+  const zoom = (Math.abs(pl.kx - pl.ky) < 1e-3) ? ('co giãn ' + Math.round(pl.kx*100) + '%') : ('giãn ' + Math.round(pl.kx*100) + '% × ' + Math.round(pl.ky*100) + '%');
+  cap.textContent = 'Trang mới: ' + psFmt_(pl.Wt) + ' × ' + psFmt_(pl.Ht) + ' ' + psUnit_ + (nm ? ' (' + nm + ')' : '') +
+                    (psIsNoop_(psCurSize_.w, psCurSize_.h, pl) ? ' — trang đang mở đã đúng khổ này' : ' · nội dung ' + zoom);
+}
+
+async function psRefreshInfo_(){
+  const el = psEl_('psInfo');
+  const counts = new Map();
+  try{
+    for(let i = 0; i < pages.length; i++){
+      const z = await psEstimateSize_(i);
+      const key = (psNameForSize_(z.w, z.h) || (Math.round(z.w) + '×' + Math.round(z.h) + ' pt')) + ((z.w > z.h + 1) ? ' ngang' : '');
+      counts.set(key, (counts.get(key) || 0) + 1);
+      if(i === currentIndex) psCurSize_ = { w: z.w, h: z.h };
+    }
+  }catch(err){ console.warn('Page Size: không đọc được khổ trang', err); }
+  const parts = Array.from(counts.entries()).map(([k,v]) => k + ' ×' + v);
+  const cz = psCurSize_;
+  el.textContent = 'Trang đang mở: ' + Math.round(cz.w) + ' × ' + Math.round(cz.h) + ' pt' + (psNameForSize_(cz.w, cz.h) ? ' (' + psNameForSize_(cz.w, cz.h) + ')' : '') +
+                   ' · Tài liệu có: ' + (parts.join(', ') || '—');
+  if(psEl_('psPreset').value === 'current') psApplyPresetToInputs_();
+  psUpdatePreview_();
+}
+
+async function openPageSizeModal_(){
+  if(!pages.length){ alert('Hãy mở một file PDF trước.'); return; }
+  flushPendingEdit();
+  psEl_('psError').textContent = '';
+  psRefreshAnchor_();
+  psModal_.style.display = 'flex';
+  try{ const z = await psEstimateSize_(currentIndex); psCurSize_ = { w: z.w, h: z.h }; }catch(e){}
+  if(!psEl_('psW').value) psApplyPresetToInputs_();
+  psUpdatePreview_();
+  psRefreshInfo_();
+}
+function closePageSizeModal_(){ psModal_.style.display = 'none'; }
+
+// ---- Áp dụng thật: ghép → đổi khổ → nạp lại thành trang mới ----
+async function applyPageSizeToPages_(indexes, cfg){
+  flushPendingEdit();
+  const todo = [];
+  for(const i of indexes){
+    const z = await psEstimateSize_(i);
+    if(!psIsNoop_(z.w, z.h, psComputePlan_(z.w, z.h, cfg))) todo.push(i);
+  }
+  if(!todo.length) return 0;
+  const spinner = document.getElementById('spinner');
+  const spinnerLabel = spinner.lastChild;
+  spinner.classList.add('show');
+  try{
+    const outDoc = await buildEditedOutDoc(todo, spinnerLabel);
+    const outPages = outDoc.getPages();
+    for(let j = 0; j < outPages.length; j++){
+      spinnerLabel.textContent = ' Đang đổi khổ trang ' + (j+1) + '/' + outPages.length + '…';
+      const pg = outPages[j];
+      const ri = getPageRotationTransform_(pg);
+      psApplyPlanToPdfPage_(pg, psComputePlan_(ri.dispW, ri.dispH, cfg), cfg.bg);
+    }
+    spinnerLabel.textContent = ' Đang nạp lại các trang…';
+    const bytes = await saveOutDocWithVietWidthFix(outDoc);
+    const buf = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+    const newDoc = await pdfjsLib.getDocument({ data: buf.slice(0) }).promise;
+    const entry = { items: [] };
+    for(let j = 0; j < todo.length; j++){
+      const old = pages[todo[j]];
+      const np = { id: nextId++, type:'pdf', doc: newDoc, srcPage: j+1, srcBuf: buf, edits:[], ocrWords:null, ocrText:'', textItems:null };
+      pages[todo[j]] = np;
+      entry.items.push({ newId: np.id, oldPage: old });
+    }
+    psUndoStack_.push(entry);
+    if(psUndoStack_.length > 20) psUndoStack_.shift();
+    selectedEditIndex = -1;
+  }finally{
+    spinner.classList.remove('show');
+    spinnerLabel.textContent = ' Đang xử lý OCR…';
+  }
+  await cropRefreshAll_();
+  return todo.length;
+}
+
+async function psUndoLast_(){
+  const e = psUndoStack_.pop();
+  if(!e){ psUpdateWarn_(); return; }
+  let n = 0;
+  for(const it of e.items){
+    const k = pages.findIndex(p => p.id === it.newId);
+    if(k >= 0){ pages[k] = it.oldPage; n++; }
+  }
+  psUpdateWarn_();
+  if(!n){ showToast_('Không còn trang nào để hoàn tác (các trang đã bị xoá hoặc thay đổi).'); return; }
+  closePageSizeModal_();
+  await cropRefreshAll_();
+  showToast_('Đã hoàn tác đổi khổ của ' + n + ' trang.');
+}
+
+async function psApplyClick_(){
+  psEl_('psError').textContent = '';
+  let cfg, idxs;
+  try{ cfg = psReadCfg_(); idxs = psTargetIndexes_(); }catch(err){ psEl_('psError').textContent = err.message; return; }
+  if(!idxs.length){ psEl_('psError').textContent = 'Chưa có trang nào trong phạm vi đã chọn.'; return; }
+  closePageSizeModal_();
+  try{
+    const n = await applyPageSizeToPages_(idxs, cfg);
+    showToast_(n ? ('Đã đổi khổ ' + n + ' trang. Bấm Save PDF để lưu (mở lại Page Size → Hoàn tác nếu cần).')
+                 : 'Các trang đã chọn đã đúng khổ này, không có gì thay đổi.');
+  }catch(err){
+    console.error('Page Size lỗi:', err);
+    alert('Lỗi khi đổi khổ trang: ' + (err && err.message ? err.message : err));
+  }
+}
+
+// Sự kiện
+document.getElementById('btnPageSize').onclick = openPageSizeModal_;
+psEl_('psCloseBtn').onclick = closePageSizeModal_;
+psEl_('psCancelBtn').onclick = closePageSizeModal_;
+psEl_('psApplyBtn').onclick = psApplyClick_;
+psEl_('psUndoBtn').onclick = psUndoLast_;
+psModal_.addEventListener('mousedown', (e)=>{ if(e.target === psModal_) closePageSizeModal_(); });
+document.querySelectorAll('input[name=psMode]').forEach(r => r.addEventListener('change', psSyncModeUi_));
+psEl_('psPreset').addEventListener('change', ()=>{ psApplyPresetToInputs_(); psUpdatePreview_(); });
+['psW','psH'].forEach(id => psEl_(id).addEventListener('input', ()=>{ psEl_('psPreset').value = 'custom'; psUpdatePreview_(); }));
+['psInner','psMT','psMR','psMB','psML','psOrient','psFit','psBg'].forEach(id => psEl_(id).addEventListener('input', psUpdatePreview_));
+psEl_('psFit').addEventListener('change', ()=>{ psEl_('psAnchor').style.opacity = (psEl_('psFit').value === 'stretch') ? '.35' : '1'; psUpdatePreview_(); });
+psEl_('psMAll').addEventListener('input', ()=>{
+  const v = psEl_('psMAll').value;
+  ['psMT','psMR','psMB','psML'].forEach(id => psEl_(id).value = v);
+  psUpdatePreview_();
+});
+psEl_('psScope').addEventListener('change', ()=>{
+  psEl_('psRange').style.display = psEl_('psScope').value === 'range' ? '' : 'none';
+  psUpdatePreview_();
+});
+psEl_('psRange').addEventListener('input', psUpdateWarn_);
+psEl_('psUnit').addEventListener('change', ()=>{
+  const old = psUnit_, nu = psEl_('psUnit').value;
+  const keep = PS_NUM_IDS_.map(id => [id, (parseFloat(String(psEl_(id).value).replace(',', '.')) || 0) * PS_UNIT_PT_[old], psEl_(id).value !== '']);
+  psUnit_ = nu;
+  for(const [id, pt, has] of keep) if(has) psEl_(id).value = psFmt_(pt);
+  document.querySelectorAll('.psUnitTxt').forEach(el => el.textContent = nu);
+  psUpdatePreview_();
+});
+window.addEventListener('keydown', (e)=>{
+  if(psModal_.style.display !== 'flex') return;
+  if(e.key === 'Escape'){ e.preventDefault(); closePageSizeModal_(); }
+  else if(e.key === 'Enter' && document.activeElement && document.activeElement.tagName === 'INPUT' && document.activeElement.type !== 'radio'){ e.preventDefault(); psApplyClick_(); }
+});
+psApplyPresetToInputs_();
+psRefreshAnchor_();
 
 </script>
 
@@ -16111,6 +16928,653 @@ function wxBuildDocxBlob(models){
   for(const m of media) files.push({ name:'word/media/'+m.name, data:m.data });
   return wxZip(files);
 }
+
+</script>
+<script>
+/* ===== DOCUMENT COMPARE — So sánh tài liệu (bản gốc ↔ bản chỉnh sửa) =====
+   Phát hiện: (1) Văn bản xóa/thêm/thay thế (diff mức từ, LCS) (2) Định dạng: font, cỡ chữ, đậm, nghiêng
+   (3) Hình ảnh: thêm/xóa/dời/đổi kích thước (đọc operator list của pdf.js) (4) Bố cục/màu sắc: so sánh
+   điểm ảnh theo lưới ô. Kết quả: cửa sổ 2 bên song song + danh sách khác biệt + xuất PDF báo cáo thứ ba. */
+(function(){
+'use strict';
+const SC=1.5, tick=()=>new Promise(r=>setTimeout(r,0));
+const LBL={del:'Đã xóa',ins:'Thêm mới',rep:'Thay thế',fmt:'Định dạng',img:'Hình ảnh',lay:'Bố cục/màu'};
+const GRP={del:'text',ins:'text',rep:'text',fmt:'fmt',img:'img',lay:'lay'};
+const COL={del:'#e53935',ins:'#2ea043',rep:'#e53935',fmt:'#fb8c00',img:'#1e88e5',lay:'#8e24aa'};
+let S=null, root=null;
+const $=s=>root.querySelector(s);
+const h=(t,c,x)=>{const e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e;};
+const cut=(s,n)=>s.length>n?s.slice(0,n)+'…':s;
+
+const CSS=`#dcRoot{position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.72);display:flex;align-items:center;justify-content:center;font:13px "Segoe UI",Roboto,Arial,sans-serif;color:#eceff1}
+#dcRoot .dcBox{background:#25282e;border:1px solid #454a52;border-radius:10px;width:min(1600px,97vw);height:94vh;display:flex;flex-direction:column;overflow:hidden}
+#dcRoot .dcHead{display:flex;align-items:center;gap:10px;padding:10px 14px;background:#3a3f47;font-weight:600;font-size:15px}
+#dcRoot .sp{flex:1}
+#dcRoot .dcBtn{background:#4a5a72;color:#fff;border:0;border-radius:5px;padding:6px 12px;cursor:pointer;font-size:12.5px}
+#dcRoot .dcBtn:hover{background:#5a6d8a}#dcRoot .dcBtn.pri{background:#e2402c}#dcRoot .dcBtn:disabled{opacity:.5;cursor:default}
+#dcRoot .dcSetup{padding:24px;display:flex;flex-direction:column;gap:16px;overflow:auto}
+#dcRoot .dcDrops{display:flex;gap:16px;flex-wrap:wrap}
+#dcRoot .dcDrop{flex:1;min-width:280px;border:2px dashed #5d6470;border-radius:10px;padding:26px;text-align:center;cursor:pointer;background:#1c1e22}
+#dcRoot .dcDrop.has{border-color:#2ea043}#dcRoot .dcDrop b{display:block;font-size:15px;margin-bottom:6px}
+#dcRoot .dcOpts{display:flex;gap:18px;flex-wrap:wrap}#dcRoot label{cursor:pointer}
+#dcRoot .dcBar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:8px 14px;background:#33373e;border-bottom:1px solid #454a52}
+#dcRoot .dcChip{padding:2px 9px;border-radius:10px;font-size:11.5px;color:#fff;cursor:pointer;user-select:none}
+#dcRoot .dcChip.off{opacity:.35}
+#dcRoot .dcMain{flex:1;display:flex;min-height:0}
+#dcRoot .dcList{width:350px;overflow:auto;border-right:1px solid #454a52;background:#1f2227}
+#dcRoot .dcItem{padding:7px 10px;border-bottom:1px solid #2f3339;cursor:pointer;font-size:12px;line-height:1.45;word-break:break-word}
+#dcRoot .dcItem:hover,#dcRoot .dcItem.sel{background:#33404f}
+#dcRoot .dcTag{display:inline-block;padding:0 6px;border-radius:3px;color:#fff;font-size:10.5px;margin-right:5px}
+#dcRoot .dcPanes{flex:1;overflow:auto;background:#1c1e22;padding:12px}
+#dcRoot .dcRow{display:flex;gap:14px;align-items:flex-start;width:max-content}
+#dcRoot .dcPane h4{margin:0 0 6px;font-size:12px;color:#9aa0a8;font-weight:500}
+#dcRoot .dcCv{position:relative;background:#fff;box-shadow:0 2px 10px #0008}
+#dcRoot .dcCv canvas{display:block;position:absolute;left:0;top:0;width:100%;height:100%}
+#dcRoot .dcCv.none{background:#2a2d33;color:#9aa0a8;display:flex;align-items:center;justify-content:center}
+#dcRoot .dcStat{padding:6px 14px;color:#9aa0a8;font-size:12px}`;
+
+/* ---------- Trích xuất văn bản / ảnh từ PDF ---------- */
+async function extract(file, tag){
+  const buf=await file.arrayBuffer();
+  const doc=await pdfjsLib.getDocument({data:buf.slice(0)}).promise;
+  const words=[], imgs=[], sizes=[], OPS=pdfjsLib.OPS, U=pdfjsLib.Util;
+  for(let p=0;p<doc.numPages;p++){
+    status(`${tag}: đọc trang ${p+1}/${doc.numPages}…`); await tick();
+    const page=await doc.getPage(p+1), vp=page.getViewport({scale:SC});
+    sizes.push([vp.width,vp.height]);
+    const ol=await page.getOperatorList(), tc=await page.getTextContent();
+    const st=[]; let m=[1,0,0,1,0,0];
+    ol.fnArray.forEach((fn,k)=>{
+      const a=ol.argsArray[k];
+      if(fn===OPS.save) st.push(m); else if(fn===OPS.restore) m=st.pop()||m;
+      else if(fn===OPS.transform) m=U.transform(m,a);
+      else if(fn===OPS.paintImageXObject||fn===OPS.paintInlineImageXObject||fn===OPS.paintImageMaskXObject||fn===OPS.paintJpegXObject){
+        const t=U.transform(vp.transform,m),
+          xs=[t[4],t[4]+t[0],t[4]+t[2],t[4]+t[0]+t[2]], ys=[t[5],t[5]+t[1],t[5]+t[3],t[5]+t[1]+t[3]];
+        const b={pg:p,x0:Math.min(...xs),y0:Math.min(...ys),x1:Math.max(...xs),y1:Math.max(...ys)};
+        if(b.x1-b.x0>4&&b.y1-b.y0>4) imgs.push(b);
+      }
+    });
+    const fi={};
+    const finfo=n=>fi[n]||(fi[n]=(()=>{
+      let f=null; try{ if(page.commonObjs.has(n)) f=page.commonObjs.get(n); }catch(e){}
+      const nm=String((f&&f.name)||(tc.styles[n]&&tc.styles[n].fontFamily)||n);
+      return {fam:nm.replace(/^[A-Z]{6}\+/,'').replace(/[-,_ ]?(bold|italic|oblique|regular|roman|black|semibold|mt|ps)/gi,'').toLowerCase(),
+        b:!!(f&&f.bold)||/bold|black|heavy|demi/i.test(nm), i:!!(f&&f.italic)||/italic|oblique/i.test(nm)};
+    })());
+    for(const it of tc.items){
+      if(!it.str||!it.str.trim()) continue;
+      const t=U.transform(vp.transform,it.transform), fs=Math.hypot(t[2],t[3])||1, l=Math.hypot(t[0],t[1])||1,
+        ux=t[0]/l, uy=t[1]/l, L=it.width*SC, n=it.str.length, f=finfo(it.fontName), sz=Math.round(fs/SC*2)/2;
+      const pt=k=>[t[4]+ux*L*k, t[5]+uy*L*k], re=/\S+/g; let mm;
+      while((mm=re.exec(it.str))){
+        const a=pt(mm.index/n), b=pt((mm.index+mm[0].length)/n);
+        const cs=[a,b].flatMap(q=>[[q[0]+uy*fs*.82,q[1]-ux*fs*.82],[q[0]-uy*fs*.22,q[1]+ux*fs*.22]]);
+        const X=cs.map(c=>c[0]), Y=cs.map(c=>c[1]);
+        words.push({pg:p,t:mm[0],n:mm[0].normalize('NFC'),x0:Math.min(...X),x1:Math.max(...X),y0:Math.min(...Y),y1:Math.max(...Y),
+          fk:`${f.fam}|${+f.b}|${+f.i}|${sz}`, fd:`${f.b?'đậm ':''}${f.i?'nghiêng ':''}${f.fam||'?'} ${sz}pt`});
+      }
+    }
+  }
+  return {doc,words,imgs,sizes};
+}
+
+/* ---------- Diff ---------- */
+function lcsOps(A,B,ia,ib){
+  let s=0; while(s<ia.length&&s<ib.length&&A[ia[s]].n===B[ib[s]].n) s++;
+  let ea=ia.length, eb=ib.length;
+  while(ea>s&&eb>s&&A[ia[ea-1]].n===B[ib[eb-1]].n){ea--;eb--;}
+  const n=ea-s, m=eb-s, ops=[];
+  if(n*m>2.2e7) return null;
+  for(let k=0;k<s;k++) ops.push(['=',ia[k],ib[k]]);
+  const W=m+1, L=new Uint32Array((n+1)*W);
+  for(let i=n-1;i>=0;i--) for(let j=m-1;j>=0;j--)
+    L[i*W+j]=A[ia[s+i]].n===B[ib[s+j]].n?L[(i+1)*W+j+1]+1:Math.max(L[(i+1)*W+j],L[i*W+j+1]);
+  let i=0,j=0;
+  while(i<n&&j<m){
+    if(A[ia[s+i]].n===B[ib[s+j]].n){ops.push(['=',ia[s+i],ib[s+j]]);i++;j++;}
+    else if(L[(i+1)*W+j]>=L[i*W+j+1]){ops.push(['-',ia[s+i],null]);i++;}
+    else {ops.push(['+',null,ib[s+j]]);j++;}
+  }
+  while(i<n){ops.push(['-',ia[s+i],null]);i++;} while(j<m){ops.push(['+',null,ib[s+j]]);j++;}
+  for(let k=ea;k<ia.length;k++) ops.push(['=',ia[k],ib[eb+k-ea]]);
+  return ops;
+}
+function diffAll(A,B){
+  const all=w=>w.map((_,i)=>i);
+  let ops=lcsOps(A.words,B.words,all(A.words),all(B.words));
+  if(ops) return ops;
+  ops=[]; const n=Math.max(A.sizes.length,B.sizes.length);
+  for(let p=0;p<n;p++){
+    const ia=[],ib=[]; A.words.forEach((w,i)=>w.pg===p&&ia.push(i)); B.words.forEach((w,i)=>w.pg===p&&ib.push(i));
+    const o=lcsOps(A.words,B.words,ia,ib)||[...ia.map(i=>['-',i,null]),...ib.map(i=>['+',null,i])];
+    for(const x of o) ops.push(x);
+  }
+  return ops;
+}
+function buildChanges(A,B,ops,withFmt){
+  const ch=[]; let dA=[],iB=[],fm=null;
+  const mk=(type,ba,bb)=>({type,bA:ba,bB:bb,tA:ba.map(w=>w.t).join(' '),tB:bb.map(w=>w.t).join(' ')});
+  const flush=()=>{
+    if(!dA.length&&!iB.length) return;
+    const ba=dA.map(k=>A.words[k]), bb=iB.map(k=>B.words[k]);
+    [...ba,...bb].forEach(w=>w.ch=1);
+    ch.push(mk(dA.length&&iB.length?'rep':dA.length?'del':'ins',ba,bb)); dA=[];iB=[];
+  };
+  const flushF=()=>{if(fm){ch.push(fm);fm=null;}};
+  for(const [o,a,b] of ops){
+    if(o==='='){
+      flush(); const wa=A.words[a], wb=B.words[b];
+      if(withFmt&&wa.fk!==wb.fk){
+        wa.ch=wb.ch=1;
+        if(fm&&fm.fa===wa.fd&&fm.fb===wb.fd){fm.bA.push(wa);fm.bB.push(wb);fm.tA+=' '+wa.t;fm.tB+=' '+wb.t;}
+        else {flushF(); fm=mk('fmt',[wa],[wb]); fm.fa=wa.fd; fm.fb=wb.fd;}
+      } else flushF();
+    } else { flushF(); if(o==='-') dA.push(a); else iB.push(b); }
+  }
+  flush(); flushF(); return ch;
+}
+function align(A,B,ops){
+  const nA=A.sizes.length, nB=B.sizes.length, votes=B.sizes.map(()=>({})), views=[];
+  for(const [o,a,b] of ops) if(o==='='){const pa=A.words[a].pg,pb=B.words[b].pg;votes[pb][pa]=(votes[pb][pa]||0)+1;}
+  let last=-1;
+  for(let j=0;j<nB;j++){
+    let best=null,bc=0;
+    for(const k in votes[j]) if(votes[j][k]>bc&&+k>last){bc=votes[j][k];best=+k;}
+    if(best===null&&nA===nB&&j>last) best=j;
+    if(best!==null){for(let k=last+1;k<best;k++) views.push([k,null]); views.push([best,j]); last=best;}
+    else views.push([null,j]);
+  }
+  for(let k=last+1;k<nA;k++) views.push([k,null]);
+  return views;
+}
+const iou=(a,b)=>{const w=Math.min(a.x1,b.x1)-Math.max(a.x0,b.x0),hh=Math.min(a.y1,b.y1)-Math.max(a.y0,b.y0);
+  if(w<=0||hh<=0) return 0; const i=w*hh; return i/((a.x1-a.x0)*(a.y1-a.y0)+(b.x1-b.x0)*(b.y1-b.y0)-i);};
+const pt=x=>Math.round(x/SC);
+function imgChanges(v,a,b){
+  const ia=a==null?[]:S.A.imgs.filter(x=>x.pg===a), ib=b==null?[]:S.B.imgs.filter(x=>x.pg===b), used=new Set(), out=[];
+  const mk=(ba,bb,d)=>({type:'img',v,bA:ba,bB:bb,tA:'',tB:'',d});
+  for(const x of ia){
+    let bi=-1,bs=0; ib.forEach((y,k)=>{if(used.has(k))return;const s=iou(x,y);if(s>bs){bs=s;bi=k;}});
+    if(bi<0||bs<.05){out.push(mk([x],[],'Hình ảnh bị xóa'));continue;}
+    used.add(bi); const y=ib[bi];
+    if(bs<.93) out.push(mk([x],[y],`Hình ảnh đổi vị trí/kích thước: ${pt(x.x1-x.x0)}×${pt(x.y1-x.y0)} → ${pt(y.x1-y.x0)}×${pt(y.y1-y.y0)} pt, dời (${pt(y.x0-x.x0)}, ${pt(y.y0-x.y0)}) pt`));
+  }
+  ib.forEach((y,k)=>{if(!used.has(k)) out.push(mk([],[y],'Hình ảnh thêm mới'));});
+  return out;
+}
+
+/* ---------- So sánh điểm ảnh (bố cục / màu sắc) ---------- */
+async function renderPage(doc,i,scale){
+  const p=await doc.getPage(i+1), vp=p.getViewport({scale}), c=document.createElement('canvas');
+  c.width=Math.ceil(vp.width); c.height=Math.ceil(vp.height);
+  const x=c.getContext('2d'); x.fillStyle='#fff'; x.fillRect(0,0,c.width,c.height);
+  await p.render({canvasContext:x,viewport:vp}).promise; return c;
+}
+async function pixDiff(v,a,b){
+  const ca=await renderPage(S.A.doc,a,SC), cb=await renderPage(S.B.doc,b,SC), W=ca.width, H=ca.height;
+  const sx=W/cb.width, sy=H/cb.height, tmp=document.createElement('canvas'); tmp.width=W; tmp.height=H;
+  const t=tmp.getContext('2d'); t.fillStyle='#fff'; t.fillRect(0,0,W,H); t.drawImage(cb,0,0,W,H);
+  const da=ca.getContext('2d').getImageData(0,0,W,H).data, db=t.getImageData(0,0,W,H).data;
+  const G=12, gw=Math.ceil(W/G), gh=Math.ceil(H/G), cnt=new Uint16Array(gw*gh);
+  for(let y=0;y<H;y++){const r=(y/G|0)*gw; for(let x=0;x<W;x++){const i=(y*W+x)*4;
+    if(Math.abs(da[i]-db[i])+Math.abs(da[i+1]-db[i+1])+Math.abs(da[i+2]-db[i+2])>90) cnt[r+(x/G|0)]++;}}
+  const mask=[]; // vùng đã được báo cáo bởi diff văn bản / ảnh
+  S.ch.filter(c=>c.v===v&&c.type!=='lay').forEach(c=>{
+    c.bA.forEach(w=>w.pg===a&&mask.push(w)); c.bB.forEach(w=>w.pg===b&&mask.push({x0:w.x0*sx,x1:w.x1*sx,y0:w.y0*sy,y1:w.y1*sy}));});
+  const P=6, hit=(x0,y0,x1,y1)=>mask.some(m=>m.x0-P<x1&&m.x1+P>x0&&m.y0-P<y1&&m.y1+P>y0);
+  const on=new Uint8Array(gw*gh);
+  for(let gy=0;gy<gh;gy++)for(let gx=0;gx<gw;gx++){const k=gy*gw+gx;
+    if(cnt[k]>=6&&!hit(gx*G,gy*G,gx*G+G,gy*G+G)) on[k]=1;}
+  const out=[], seen=new Uint8Array(gw*gh);
+  for(let k=0;k<on.length;k++){
+    if(!on[k]||seen[k]) continue;
+    const q=[k]; seen[k]=1; let x0=1e9,y0=1e9,x1=-1,y1=-1,n=0,c=0;
+    while(q.length){const z=q.pop(), gx=z%gw, gy=z/gw|0; n++; c+=cnt[z];
+      x0=Math.min(x0,gx);x1=Math.max(x1,gx);y0=Math.min(y0,gy);y1=Math.max(y1,gy);
+      for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){const nx=gx+dx,ny=gy+dy,nk=ny*gw+nx;
+        if(nx>=0&&ny>=0&&nx<gw&&ny<gh&&on[nk]&&!seen[nk]){seen[nk]=1;q.push(nk);}}}
+    if(n>=2||c>=25) out.push({x0:x0*G,y0:y0*G,x1:Math.min(W,(x1+1)*G),y1:Math.min(H,(y1+1)*G),n});
+  }
+  out.sort((p,q)=>q.n-p.n);
+  return out.slice(0,30).map(r=>{
+    const same=S.B.words.some(w=>w.pg===b&&!w.ch&&w.x0*sx<r.x1&&w.x1*sx>r.x0&&w.y0*sy<r.y1&&w.y1*sy>r.y0);
+    return {type:'lay',v,tA:'',tB:'',bA:[{pg:a,...r}],bB:[{pg:b,x0:r.x0/sx,x1:r.x1/sx,y0:r.y0/sy,y1:r.y1/sy}],
+      d:same?'Màu sắc / hiển thị của nội dung khác nhau':'Bố cục hoặc hình ảnh khác nhau'};
+  });
+}
+
+/* ---------- Điều phối ---------- */
+function status(t){root&&root.querySelectorAll('.dcStat').forEach(e=>e.textContent=t);}
+async function run(){
+  const btn=$('.dcRun'); btn.disabled=true;
+  const opt={text:$('#dcoT').checked,fmt:$('#dcoF').checked,img:$('#dcoI').checked,lay:$('#dcoL').checked};
+  try{
+    const A=await extract(S.fa,'Bản gốc'), B=await extract(S.fb,'Bản chỉnh sửa'); A.name=S.fa.name; B.name=S.fb.name; S.A=A; S.B=B;
+    status('Đang so sánh văn bản…'); await tick();
+    const ops=diffAll(A,B); S.views=align(A,B,ops);
+    let ch=opt.text||opt.fmt?buildChanges(A,B,ops,opt.fmt):[];
+    if(!opt.text) ch=ch.filter(c=>c.type==='fmt');
+    const vA={},vB={}; S.views.forEach(([a,b],i)=>{if(a!=null)vA[a]=i;if(b!=null)vB[b]=i;});
+    ch.forEach(c=>{c.v=c.bB[0]?vB[c.bB[0].pg]:vA[c.bA[0].pg];});
+    S.ch=ch;
+    for(let i=0;i<S.views.length;i++){
+      const [a,b]=S.views[i]; status(`Đang đối chiếu trang ${i+1}/${S.views.length}…`); await tick();
+      if(a==null||b==null){ S.ch.push({type:'lay',v:i,bA:[],bB:[],tA:'',tB:'',d:a==null?'Trang mới thêm ở bản chỉnh sửa':'Trang chỉ có ở bản gốc (đã bị xóa)'}); continue; }
+      const sa=A.sizes[a], sb=B.sizes[b];
+      if(opt.lay&&(Math.abs(sa[0]-sb[0])>6||Math.abs(sa[1]-sb[1])>6))
+        S.ch.push({type:'lay',v:i,bA:[],bB:[],tA:'',tB:'',d:`Khổ trang khác: ${pt(sa[0])}×${pt(sa[1])} → ${pt(sb[0])}×${pt(sb[1])} pt`});
+      if(opt.img) imgChanges(i,a,b).forEach(c=>S.ch.push(c));
+      if(opt.lay) (await pixDiff(i,a,b)).forEach(c=>S.ch.push(c));
+    }
+    const fy=c=>(c.bB[0]||c.bA[0]||{y0:0}).y0;
+    S.ch.sort((p,q)=>p.v-q.v||fy(p)-fy(q));
+    showResult();
+  }catch(e){ console.error(e); status('Lỗi: '+(e.message||e)); btn.disabled=false; }
+}
+
+/* ---------- Vẽ đánh dấu (dùng chung cho màn hình & báo cáo) ---------- */
+function marks(ctx,which,pg,sel,k){
+  S.ch.forEach(c=>{
+    if(!S.filter[GRP[c.type]]) return;
+    const hot=c===sel, bs=which==='A'?c.bA:c.bB;
+    for(const b of bs){
+      if(b.pg!==pg) continue;
+      const x0=b.x0*k,x1=b.x1*k,y0=b.y0*k,y1=b.y1*k, w=x1-x0, hh=y1-y0; ctx.save(); ctx.lineWidth=Math.max(1.5,2*k);
+      if((c.type==='del'||c.type==='rep')&&which==='A'){
+        ctx.fillStyle='rgba(229,57,53,.22)'; ctx.fillRect(x0,y0,w,hh); ctx.strokeStyle='#e53935';
+        ctx.beginPath(); ctx.moveTo(x0,(y0+y1)/2); ctx.lineTo(x1,(y0+y1)/2); ctx.stroke();
+      } else if((c.type==='ins'||c.type==='rep')&&which==='B'){
+        ctx.fillStyle='rgba(46,160,67,.2)'; ctx.fillRect(x0,y0,w,hh); ctx.strokeStyle='#2ea043'; ctx.lineWidth*=1.4;
+        ctx.beginPath(); ctx.moveTo(x0,y1); ctx.lineTo(x1,y1); ctx.stroke();
+      } else if(c.type==='fmt'){
+        ctx.fillStyle='rgba(251,140,0,.25)'; ctx.fillRect(x0,y0,w,hh); ctx.strokeStyle='#fb8c00'; ctx.strokeRect(x0,y0,w,hh);
+      } else if(c.type==='img'||c.type==='lay'){
+        const col=COL[c.type]; ctx.strokeStyle=col; ctx.setLineDash([8*k,5*k]); ctx.fillStyle=col+'20';
+        ctx.fillRect(x0,y0,w,hh); ctx.strokeRect(x0,y0,w,hh);
+      }
+      if(hot){ctx.setLineDash([]); ctx.strokeStyle='#ffd600'; ctx.lineWidth=3*Math.max(1,k); ctx.strokeRect(x0-3,y0-3,w+6,hh+6);}
+      ctx.restore();
+    }
+  });
+}
+const desc=c=>c.type==='del'?`“${cut(c.tA,120)}”`:c.type==='ins'?`“${cut(c.tB,120)}”`:c.type==='rep'?`“${cut(c.tA,70)}” → “${cut(c.tB,70)}”`
+  :c.type==='fmt'?`“${cut(c.tA,50)}”: ${c.fa} → ${c.fb}`:c.d;
+
+/* ---------- Giao diện kết quả ---------- */
+function showResult(){
+  $('.dcSetup').style.display='none'; $('.dcResult').style.display='flex';
+  S.filter={text:true,fmt:true,img:true,lay:true}; S.zoom=.7; S.vi=0; S.sel=null; S.tok=0;
+  const chips=$('.dcChips'); chips.textContent='';
+  [['text','Văn bản','#e53935'],['fmt','Định dạng','#fb8c00'],['img','Hình ảnh','#1e88e5'],['lay','Bố cục/màu','#8e24aa']].forEach(([g,n,col])=>{
+    const cnt=S.ch.filter(c=>GRP[c.type]===g).length, e=h('span','dcChip',`${n}: ${cnt}`); e.style.background=col;
+    e.onclick=()=>{S.filter[g]=!S.filter[g]; e.classList.toggle('off',!S.filter[g]); renderList(); paint();}; chips.appendChild(e);
+  });
+  renderList(); showView(0);
+}
+function renderList(){
+  const L=$('.dcList'); L.textContent=''; let n=0;
+  S.ch.forEach(c=>{
+    if(!S.filter[GRP[c.type]]) return; n++;
+    const it=h('div','dcItem'+(c===S.sel?' sel':'')), tg=h('span','dcTag',LBL[c.type]); tg.style.background=COL[c.type];
+    it.append(tg,h('span',null,`Tr.${c.v+1}: ${desc(c)}`));
+    it.onclick=()=>{S.sel=c; renderList(); showView(c.v,c);}; L.appendChild(it);
+  });
+  if(!n) L.appendChild(h('div','dcItem','Không có khác biệt nào (theo bộ lọc hiện tại).'));
+}
+function paint(){
+  if(!S.cur) return; const {a,b}=S.cur;
+  [['A',a],['B',b]].forEach(([w,pg])=>{const ov=$('.ov'+w); if(!ov) return; const x=ov.getContext('2d'); x.clearRect(0,0,ov.width,ov.height); marks(x,w,pg,S.sel,1);});
+}
+function applyZoom(){ root.querySelectorAll('.dcCv').forEach(b=>{b.style.width=b.dataset.w*S.zoom+'px'; b.style.height=b.dataset.h*S.zoom+'px';}); }
+async function showView(i,focus){
+  S.vi=Math.max(0,Math.min(S.views.length-1,i)); const [a,b]=S.views[S.vi], tok=++S.tok;
+  $('.dcPg').textContent=`Trang ${S.vi+1}/${S.views.length}  (Gốc: ${a==null?'—':a+1} · Sửa: ${b==null?'—':b+1})`;
+  const row=$('.dcRow'); row.textContent='Đang vẽ trang…';
+  const [ca,cb]=await Promise.all([a==null?null:renderPage(S.A.doc,a,SC),b==null?null:renderPage(S.B.doc,b,SC)]);
+  if(tok!==S.tok) return; row.textContent=''; S.cur={a,b};
+  [['A',ca,S.A.name,'Bản gốc'],['B',cb,S.B.name,'Bản chỉnh sửa']].forEach(([w,cv,nm,lb])=>{
+    const p=h('div','dcPane'); p.appendChild(h('h4',null,`${lb}: ${nm}`));
+    const ref=cv||(w==='A'?cb:ca), box=h('div','dcCv'+(cv?'':' none')); box.dataset.w=ref.width; box.dataset.h=ref.height;
+    if(cv){box.appendChild(cv); const ov=h('canvas','ov'+w); ov.width=cv.width; ov.height=cv.height; box.appendChild(ov);} else box.textContent='(Không có trang này)';
+    p.appendChild(box); row.appendChild(p);
+  });
+  applyZoom(); paint();
+  if(focus){const b0=(focus.bB[0]||focus.bA[0]); if(b0) $('.dcPanes').scrollTop=Math.max(0,b0.y0*S.zoom-120);}
+}
+
+/* ---------- Xuất PDF báo cáo (bản thứ ba) ---------- */
+async function exportReport(){
+  const btn=$('.dcExp'); btn.disabled=true; const {PDFDocument}=PDFLib, out=await PDFDocument.create();
+  const add=async cv=>{const d=cv.toDataURL('image/jpeg',.88), by=Uint8Array.from(atob(d.split(',')[1]),c=>c.charCodeAt(0)),
+    im=await out.embedJpg(by), pg=out.addPage([cv.width*.6,cv.height*.6]); pg.drawImage(im,{x:0,y:0,width:cv.width*.6,height:cv.height*.6});};
+  const vis=S.ch.filter(c=>S.filter[GRP[c.type]]);
+  // Trang tóm tắt
+  const W=1240,H=1754,M=60,LH=28; let cv,x,y;
+  const np=()=>{cv=document.createElement('canvas');cv.width=W;cv.height=H;x=cv.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,W,H);y=M;};
+  const flushP=async()=>{await add(cv);};
+  np(); x.fillStyle='#111'; x.font='bold 34px Segoe UI,Arial'; x.fillText('BÁO CÁO SO SÁNH TÀI LIỆU',M,y+30); y+=70;
+  x.font='18px Segoe UI,Arial'; x.fillStyle='#333';
+  [`Bản gốc: ${S.A.name}  (${S.A.sizes.length} trang)`,`Bản chỉnh sửa: ${S.B.name}  (${S.B.sizes.length} trang)`,`Ngày tạo: ${new Date().toLocaleString('vi-VN')}`,
+   `Tổng số khác biệt: ${vis.length}`].forEach(s=>{x.fillText(s,M,y);y+=LH;}); y+=10;
+  [['del','Chữ bị xóa: gạch ngang đỏ (bản gốc)'],['ins','Chữ thêm mới: gạch chân xanh (bản sửa)'],['fmt','Đổi định dạng: nền cam'],['img','Hình ảnh: khung nét đứt xanh dương'],['lay','Bố cục/màu: khung nét đứt tím']]
+    .forEach(([t,s])=>{x.fillStyle=COL[t];x.fillRect(M,y-14,18,18);x.fillStyle='#333';x.fillText(s+`  —  ${vis.filter(c=>c.type===t||(t==='del'&&c.type==='rep')).length}`,M+28,y);y+=LH;}); y+=16;
+  x.font='16px Segoe UI,Arial';
+  for(const c of vis){
+    const txt=`Tr.${c.v+1} [${LBL[c.type]}] ${desc(c)}`, words=txt.split(' '); let line='', lines=[];
+    for(const w of words){const t=line?line+' '+w:w; if(x.measureText(t).width>W-2*M&&line){lines.push(line);line=w;}else line=t;} lines.push(line);
+    if(y+lines.length*22>H-M){await flushP(); np(); x.font='16px Segoe UI,Arial';}
+    x.fillStyle=COL[c.type]; x.fillRect(M-14,y-13,6,lines.length*22-4); x.fillStyle='#222';
+    lines.forEach(l=>{x.fillText(l,M,y);y+=22;}); y+=6;
+  }
+  await flushP();
+  // Trang đối chiếu song song
+  const K=1.3;
+  for(let i=0;i<S.views.length;i++){
+    status(`Đang xuất báo cáo: trang ${i+1}/${S.views.length}…`); await tick();
+    const [a,b]=S.views[i], ca=a==null?null:await renderPage(S.A.doc,a,K), cb=b==null?null:await renderPage(S.B.doc,b,K), ref=ca||cb, P=30, T=90;
+    const c2=document.createElement('canvas'); c2.width=ref.width*2+P*3; c2.height=ref.height+T+P+40;
+    const g=c2.getContext('2d'); g.fillStyle='#eceff1'; g.fillRect(0,0,c2.width,c2.height);
+    g.fillStyle='#111'; g.font='bold 22px Segoe UI,Arial'; g.fillText(`Trang ${i+1}/${S.views.length} — Gốc: ${a==null?'—':a+1} | Sửa: ${b==null?'—':b+1}`,P,36);
+    g.font='14px Segoe UI,Arial'; g.fillStyle='#555'; g.fillText('Bản gốc: '+S.A.name,P,T-12); g.fillText('Bản chỉnh sửa: '+S.B.name,ref.width+2*P,T-12);
+    [[ca,a,'A',P],[cb,b,'B',ref.width+2*P]].forEach(([cv,pg,w,ox])=>{
+      if(!cv){g.fillStyle='#cfd4d9';g.fillRect(ox,T,ref.width,ref.height);g.fillStyle='#666';g.fillText('(Không có trang này)',ox+20,T+30);return;}
+      g.drawImage(cv,ox,T); g.save(); g.translate(ox,T); marks(g,w,pg,null,K/SC); g.restore();
+    });
+    const lg=[['del','Xóa'],['ins','Thêm'],['fmt','Định dạng'],['img','Hình ảnh'],['lay','Bố cục/màu']]; let lx=P;
+    lg.forEach(([t,s])=>{g.fillStyle=COL[t];g.fillRect(lx,c2.height-30,14,14);g.fillStyle='#333';g.fillText(s,lx+20,c2.height-18);lx+=120;});
+    await add(c2);
+  }
+  const bytes=await out.save(), a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([bytes],{type:'application/pdf'})); a.download='Bao_cao_so_sanh.pdf'; a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),4000); status(''); btn.disabled=false;
+}
+
+/* ---------- Mở / đóng ---------- */
+function close(){
+  if(S){try{S.A&&S.A.doc.destroy();S.B&&S.B.doc.destroy();}catch(e){}}
+  root&&root.remove(); root=null; S=null; document.removeEventListener('keydown',onKey,true);
+}
+function onKey(e){
+  if(!root) return;
+  if(e.key==='Escape'){e.stopPropagation();close();}
+  else if(S&&S.views&&$('.dcResult').style.display!=='none'){
+    if(e.key==='ArrowRight'){e.stopPropagation();showView(S.vi+1);} else if(e.key==='ArrowLeft'){e.stopPropagation();showView(S.vi-1);}
+  }
+}
+function open(){
+  document.querySelectorAll('.menu-dropdown.open').forEach(m=>m.classList.remove('open'));
+  if(root) return;
+  if(!document.getElementById('dcStyle')){const st=document.createElement('style');st.id='dcStyle';st.textContent=CSS;document.head.appendChild(st);}
+  S={fa:null,fb:null}; root=h('div'); root.id='dcRoot';
+  root.innerHTML=`<div class="dcBox"><div class="dcHead">🆚 Document Compare — So sánh tài liệu<span class="sp"></span><button class="dcBtn dcX">✕ Đóng</button></div>
+  <div class="dcSetup"><div class="dcDrops">
+    <div class="dcDrop" data-k="fa"><b>📄 Bản gốc</b><span>Bấm để chọn file PDF gốc</span><input type="file" accept="application/pdf" hidden></div>
+    <div class="dcDrop" data-k="fb"><b>📝 Bản đã chỉnh sửa</b><span>Bấm để chọn file PDF đã sửa</span><input type="file" accept="application/pdf" hidden></div></div>
+    <div class="dcOpts"><label><input type="checkbox" id="dcoT" checked> Văn bản (xóa/thêm/thay)</label><label><input type="checkbox" id="dcoF" checked> Định dạng (font, cỡ, đậm, nghiêng)</label>
+    <label><input type="checkbox" id="dcoI" checked> Hình ảnh (vị trí, kích thước)</label><label><input type="checkbox" id="dcoL" checked> Bố cục &amp; màu sắc (so điểm ảnh)</label></div>
+    <div><button class="dcBtn pri dcRun" disabled>🔍 So sánh</button></div><div class="dcStat"></div></div>
+  <div class="dcResult" style="display:none;flex:1;flex-direction:column;min-height:0">
+    <div class="dcBar"><button class="dcBtn dcPrev">◀</button><b class="dcPg"></b><button class="dcBtn dcNext">▶</button><span class="dcChips" style="display:flex;gap:6px"></span>
+      <span class="sp"></span><button class="dcBtn dcZm">−</button><button class="dcBtn dcZp">+</button>
+      <button class="dcBtn pri dcExp">📄 Xuất PDF báo cáo</button><button class="dcBtn dcNew">↺ So sánh mới</button></div>
+    <div class="dcStat"></div><div class="dcMain"><div class="dcList"></div><div class="dcPanes"><div class="dcRow"></div></div></div></div></div>`;
+  document.body.appendChild(root);
+  $('.dcX').onclick=close;
+  root.querySelectorAll('.dcDrop').forEach(d=>{
+    const inp=d.querySelector('input'), k=d.dataset.k;
+    d.onclick=()=>inp.click();
+    inp.onchange=()=>{const f=inp.files[0]; if(!f) return; S[k]=f; d.classList.add('has'); d.querySelector('span').textContent=f.name; $('.dcRun').disabled=!(S.fa&&S.fb);};
+  });
+  $('.dcRun').onclick=run; $('.dcPrev').onclick=()=>showView(S.vi-1); $('.dcNext').onclick=()=>showView(S.vi+1);
+  $('.dcZm').onclick=()=>{S.zoom=Math.max(.3,S.zoom-.1);applyZoom();}; $('.dcZp').onclick=()=>{S.zoom=Math.min(1.6,S.zoom+.1);applyZoom();};
+  $('.dcExp').onclick=()=>exportReport().catch(e=>{alert('Lỗi xuất báo cáo: '+e.message);$('.dcExp').disabled=false;});
+  $('.dcNew').onclick=()=>{close();open();};
+  document.addEventListener('keydown',onKey,true);
+}
+const btn=document.getElementById('btnDocCompare'); if(btn) btn.onclick=open;
+window.openDocumentCompare=open;
+})();
+
+</script>
+<script>
+/* ===== ORGANIZE PAGES — Quản lý và sắp xếp trang =====
+   • Hình thu nhỏ (Thumbnails): kéo một trang thả lên trang khác để ĐỔI CHỖ (hoặc CHÈN vào vị trí).
+   • Hai file cạnh nhau: File A = tài liệu đang mở trong editor, File B = PDF mở thêm. Kéo trang
+     từ A sang B (hoặc ngược lại) để DI CHUYỂN / SAO CHÉP (giữ Ctrl để đảo chế độ).
+   Trang giữ nguyên mọi chỉnh sửa (edits, xoay, crop). "Áp dụng" ghi thứ tự mới vào File A. */
+(function(){
+'use strict';
+let O=null, root=null;
+const $=s=>root.querySelector(s), $$=s=>root.querySelectorAll(s);
+const h=(t,c,x)=>{const e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e;};
+const toast=m=>{try{showToast_(m);}catch(e){console.log(m);}};
+
+const CSS=`#orgRoot{position:fixed;inset:0;z-index:99998;background:rgba(0,0,0,.72);display:flex;align-items:center;justify-content:center;font:13px "Segoe UI",Roboto,Arial,sans-serif;color:#eceff1}
+#orgRoot .box{background:#25282e;border:1px solid #454a52;border-radius:10px;width:min(1700px,97vw);height:94vh;display:flex;flex-direction:column;overflow:hidden}
+#orgRoot .head{display:flex;align-items:center;gap:10px;padding:10px 14px;background:#3a3f47;font-weight:600;font-size:15px}
+#orgRoot .sp{flex:1}
+#orgRoot .tb{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:8px 14px;background:#33373e;border-bottom:1px solid #454a52}
+#orgRoot .tb .g{display:flex;gap:6px;align-items:center;padding:0 10px;border-left:1px solid #50565f;font-size:12px}
+#orgRoot .tb .g:first-child{border:0;padding-left:0}
+#orgRoot .btn{background:#4a5a72;color:#fff;border:0;border-radius:5px;padding:6px 11px;cursor:pointer;font-size:12.5px}
+#orgRoot .btn:hover{background:#5a6d8a}#orgRoot .btn.pri{background:#e2402c}#orgRoot .btn:disabled{opacity:.45;cursor:default}
+#orgRoot label{cursor:pointer;display:flex;gap:4px;align-items:center}
+#orgRoot .body{flex:1;display:flex;gap:10px;padding:10px;min-height:0}
+#orgRoot .pane{flex:1;display:flex;flex-direction:column;min-width:0;background:#1c1e22;border:1px solid #3a3f47;border-radius:8px}
+#orgRoot .ph{padding:7px 10px;background:#2d3036;border-radius:8px 8px 0 0;font-weight:600;display:flex;gap:8px;align-items:center}
+#orgRoot .ph .t{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#orgRoot .grid{flex:1;overflow:auto;padding:10px;display:flex;flex-wrap:wrap;gap:10px;align-content:flex-start}
+#orgRoot .grid.dropEnd{outline:2px dashed #ffd600;outline-offset:-4px}
+#orgRoot .card{width:112px;padding:5px;border-radius:6px;border:2px solid transparent;background:#2a2d33;cursor:grab;text-align:center;position:relative;user-select:none}
+#orgRoot .card .cv{height:150px;display:flex;align-items:center;justify-content:center}
+#orgRoot .card canvas{max-width:100%;max-height:150px;background:#fff;box-shadow:0 1px 5px #0008;pointer-events:none}
+#orgRoot .card .n{margin-top:3px;font-size:11.5px;color:#b0b6be}
+#orgRoot .card.sel{border-color:#4aa3ff;background:#2f4157}
+#orgRoot .card.drag{opacity:.4}
+#orgRoot .card.swap{border-color:#ffd600;background:#4a4423}
+#orgRoot .card.dropL::before,#orgRoot .card.dropR::after{content:"";position:absolute;top:0;bottom:0;width:4px;background:#ffd600;border-radius:2px}
+#orgRoot .card.dropL::before{left:-8px}#orgRoot .card.dropR::after{right:-8px}
+#orgRoot .empty{margin:auto;color:#8b929b;text-align:center;padding:30px;line-height:1.6}
+#orgRoot .hint{padding:6px 14px;font-size:12px;color:#9aa0a8;border-top:1px solid #3a3f47}`;
+
+const mkPage=(doc,buf,i)=>({id:nextId++,type:'pdf',doc,srcPage:i,srcBuf:buf,edits:[],ocrWords:null,ocrText:'',textItems:null});
+const clone=p=>Object.assign({},p,{id:nextId++,edits:(p.edits||[]).map(e=>Object.assign({},e))});
+
+/* ---------- Hình thu nhỏ (có crop + xoay giống thanh bên của editor) ---------- */
+async function thumb(p){
+  if(O.cache.has(p.id)) return O.cache.get(p.id);
+  const S=.3, c=document.createElement('canvas');
+  if(p.type==='pdf'){
+    const pg=await p.doc.getPage(p.srcPage), vp=pg.getViewport({scale:S}); c.width=Math.ceil(vp.width); c.height=Math.ceil(vp.height);
+    await pg.render({canvasContext:c.getContext('2d'),viewport:vp}).promise;
+  } else {
+    c.width=Math.max(1,Math.round((p.width||595)*S)); c.height=Math.max(1,Math.round((p.height||842)*S));
+    const x=c.getContext('2d'); x.fillStyle='#fff'; x.fillRect(0,0,c.width,c.height);
+  }
+  try{ cropCanvasToRect_(c,p.crop,S); }catch(e){}
+  try{ const r=getPageRotation_(p); if(r) applyCanvasRotation_(c,r); }catch(e){}
+  O.cache.set(p.id,c); return c;
+}
+function paintThumb(p,cv){
+  O.q=O.q.then(async()=>{
+    if(!root) return;
+    try{ const t=await thumb(p); cv.width=t.width; cv.height=t.height; cv.getContext('2d').drawImage(t,0,0); }catch(e){ console.warn('thumb',e); }
+  });
+}
+
+/* ---------- Hiển thị 2 khung ---------- */
+function renderPane(k){
+  const g=$('.g'+k), L=O[k].list; g.textContent='';
+  $('.t'+k).textContent=`${O[k].name} — ${L.length} trang`;
+  if(!L.length){
+    g.appendChild(h('div','empty',k==='B'?'Chưa có File B.\nBấm “Mở file B” để chọn một PDF, hoặc kéo trang từ File A sang đây để tạo file mới.':'(không còn trang nào)'));
+    g.firstChild.style.whiteSpace='pre-line'; return;
+  }
+  L.forEach((p,i)=>{
+    const c=h('div','card'), cv=h('canvas'), w=h('div','cv'); c.dataset.id=p.id; c.draggable=true; cv.width=100; cv.height=140; w.appendChild(cv);
+    let rot=0; try{rot=getPageRotation_(p);}catch(e){}
+    c.append(w,h('div','n',(i+1)+(rot?`  ⟳${rot}°`:'')));
+    c.title='Kéo thả để đổi chỗ / di chuyển. Ctrl hoặc Shift để chọn nhiều trang.';
+    c.onclick=e=>pick(k,i,e);
+    c.ondragstart=e=>dragStart(k,p,c,e);
+    c.ondragover=e=>dragOver(k,p,c,e);
+    c.ondrop=e=>{e.preventDefault();e.stopPropagation();doDrop(e.ctrlKey||e.metaKey||e.altKey);};
+    c.ondragend=endDrag;
+    g.appendChild(c); paintThumb(p,cv);
+  });
+  refreshSel(k);
+}
+function refreshSel(k){ $$('.g'+k+' .card').forEach(c=>c.classList.toggle('sel',O.sel[k].has(+c.dataset.id))); }
+function pick(k,i,e){
+  const L=O[k].list, id=L[i].id, S=O.sel[k];
+  if(e.shiftKey&&O.last[k]!=null){ const a=Math.min(O.last[k],i), b=Math.max(O.last[k],i); if(!(e.ctrlKey||e.metaKey)) S.clear(); for(let j=a;j<=b;j++) S.add(L[j].id); }
+  else if(e.ctrlKey||e.metaKey){ S.has(id)?S.delete(id):S.add(id); O.last[k]=i; }
+  else { S.clear(); S.add(id); O.last[k]=i; }
+  refreshSel(k);
+}
+
+/* ---------- Kéo thả ---------- */
+function clearMarks(){ $$('.card').forEach(c=>c.classList.remove('swap','dropL','dropR')); $$('.grid').forEach(g=>g.classList.remove('dropEnd')); }
+function endDrag(){ clearMarks(); $$('.card.drag').forEach(c=>c.classList.remove('drag')); O.drag=null; O.tgt=null; }
+function autoScroll(k,e){ const g=$('.g'+k), r=g.getBoundingClientRect(); if(e.clientY<r.top+40) g.scrollTop-=18; else if(e.clientY>r.bottom-40) g.scrollTop+=18; }
+function dragStart(k,p,card,e){
+  if(!O.sel[k].has(p.id)){ O.sel[k].clear(); O.sel[k].add(p.id); refreshSel(k); }
+  O.drag={from:k,ids:O[k].list.filter(q=>O.sel[k].has(q.id)).map(q=>q.id)};
+  e.dataTransfer.effectAllowed='copyMove'; e.dataTransfer.setData('text/plain','org-pages');
+  setTimeout(()=>$$('.g'+k+' .card.sel').forEach(c=>c.classList.add('drag')),0);
+}
+function dragOver(k,p,card,e){
+  if(!O.drag) return; e.preventDefault(); e.stopPropagation(); autoScroll(k,e); clearMarks();
+  const d=O.drag, same=d.from===k;
+  if(same&&O.mode==='swap'&&d.ids.length===1&&d.ids[0]!==p.id){ card.classList.add('swap'); O.tgt={k,id:p.id,side:'swap'}; }
+  else { const r=card.getBoundingClientRect(), side=e.clientX<r.left+r.width/2?'L':'R'; card.classList.add(side==='L'?'dropL':'dropR'); O.tgt={k,id:p.id,side}; }
+  e.dataTransfer.dropEffect=same?'move':(((O.cross==='copy')!==(e.ctrlKey||e.metaKey||e.altKey))?'copy':'move');
+}
+function snap(){ const all=[...O.A.list,...O.B.list]; O.undo.push({A:[...O.A.list],B:[...O.B.list],Bn:O.B.name,rots:all.map(p=>[p,p.rotation])}); if(O.undo.length>50) O.undo.shift(); }
+function doDrop(inv){
+  const d=O.drag, t=O.tgt; clearMarks(); if(!d||!t) return;
+  const src=O[d.from], dst=O[t.k], items=d.ids.map(id=>src.list.find(p=>p.id===id)).filter(Boolean);
+  if(!items.length) return;
+  const cross=d.from!==t.k, copy=cross&&((O.cross==='copy')!==inv);
+  if(cross&&!copy&&d.from==='A'&&src.list.length===items.length){ toast('File A phải còn ít nhất 1 trang.'); return; }
+  if(!cross&&t.side!=='swap'&&t.id!=null&&items.some(p=>p.id===t.id)) return;
+  snap();
+  if(!cross){
+    const L=src.list;
+    if(t.side==='swap'){ const i=L.indexOf(items[0]), j=L.findIndex(p=>p.id===t.id); [L[i],L[j]]=[L[j],L[i]]; }
+    else { const rest=L.filter(p=>!items.includes(p)); const at=t.id==null?rest.length:rest.findIndex(p=>p.id===t.id)+(t.side==='R'?1:0); rest.splice(at,0,...items); L.splice(0,L.length,...rest); }
+  } else {
+    const ins=copy?items.map(clone):items;
+    if(!copy){ src.list=src.list.filter(p=>!items.includes(p)); O.sel[d.from].clear(); }
+    if(t.k==='B'&&dst.name==='File B (trống)') dst.name='File B (mới)';
+    const at=t.id==null?dst.list.length:dst.list.findIndex(p=>p.id===t.id)+(t.side==='R'?1:0);
+    dst.list.splice(at,0,...ins); O.sel[t.k]=new Set(ins.map(p=>p.id));
+  }
+  if(d.from==='B'||t.k==='B') O.bDirty=true;
+  O.dirty=true; O.drag=null; O.tgt=null; renderPane('A'); renderPane('B'); upd();
+}
+function upd(){ $('.bUndo').disabled=!O.undo.length; $('.bSave').disabled=!O.B.list.length; }
+
+/* ---------- Thao tác trên trang đã chọn ---------- */
+function selected(){ return ['A','B'].flatMap(k=>O[k].list.filter(p=>O.sel[k].has(p.id))); }
+function rotateSel(deg){
+  const s=selected(); if(!s.length){ toast('Hãy chọn trang cần xoay.'); return; }
+  snap(); s.forEach(p=>{ p.rotation=normalizeRotation_(getPageRotation_(p)+deg); O.cache.delete(p.id); });
+  O.dirty=true; O.bDirty=O.bDirty||O.B.list.some(p=>s.includes(p)); renderPane('A'); renderPane('B');
+}
+function deleteSel(){
+  const nA=O.A.list.filter(p=>O.sel.A.has(p.id)).length, nB=O.B.list.filter(p=>O.sel.B.has(p.id)).length;
+  if(!nA&&!nB){ toast('Hãy chọn trang cần xóa.'); return; }
+  if(nA>=O.A.list.length){ toast('File A phải còn ít nhất 1 trang.'); return; }
+  snap(); ['A','B'].forEach(k=>{ O[k].list=O[k].list.filter(p=>!O.sel[k].has(p.id)); O.sel[k].clear(); });
+  O.dirty=true; if(nB) O.bDirty=true; renderPane('A'); renderPane('B'); upd();
+}
+function undo(){
+  const s=O.undo.pop(); if(!s) return;
+  O.A.list=s.A; O.B.list=s.B; O.B.name=s.Bn; s.rots.forEach(([p,r])=>{ if(p.rotation!==r){ p.rotation=r; O.cache.delete(p.id); } });
+  ['A','B'].forEach(k=>O.sel[k].clear()); O.dirty=true; renderPane('A'); renderPane('B'); upd();
+}
+
+/* ---------- File B ---------- */
+async function loadB(file){
+  try{
+    const buf=await file.arrayBuffer(), doc=await pdfjsLib.getDocument({data:buf.slice(0)}).promise, L=[];
+    for(let i=1;i<=doc.numPages;i++) L.push(mkPage(doc,buf,i));
+    snap(); O.B.list=L; O.B.name=file.name; O.sel.B.clear(); O.bDirty=false; renderPane('B'); upd();
+  }catch(e){ alert('Không mở được file B: '+e.message); }
+}
+async function saveB(){
+  if(!O.B.list.length) return;
+  let name=prompt('Tên file PDF cho File B:',(O.B.name||'File_B').replace(/\.pdf$/i,'')+'_organized.pdf'); if(!name) return;
+  if(!/\.pdf$/i.test(name)) name+='.pdf';
+  const keep=pages, keepIdx=currentIndex; root.style.display='none';
+  try{ pages=O.B.list.slice(); currentIndex=0; await exportPdfAs(name); O.bDirty=false; }
+  finally{ pages=keep; currentIndex=keepIdx; root.style.display='flex'; }
+}
+
+/* ---------- Áp dụng / đóng ---------- */
+async function apply(){
+  if(!O.A.list.length){ alert('File A phải còn ít nhất 1 trang.'); return; }
+  if(O.bDirty&&O.B.list.length&&!confirm('File B có thay đổi CHƯA LƯU (bấm “Lưu file B” để tải về). Vẫn áp dụng cho File A và bỏ File B?')) return;
+  const cur=pages[currentIndex], changed=O.A.list.length!==pages.length||O.A.list.some((p,i)=>p!==pages[i]);
+  const need=changed||O.dirty;
+  if(need){
+    pages.splice(0,pages.length,...O.A.list);
+    let ni=pages.indexOf(cur); if(ni<0) ni=Math.min(currentIndex,pages.length-1); currentIndex=ni;
+  }
+  close(true);
+  if(need){ await rebuildPageSlots(); await renderPage(currentIndex); buildThumbnails(); }
+  toast('Đã áp dụng thứ tự trang mới cho File A.');
+}
+function close(force){
+  if(!force&&O&&(O.dirty||(O.bDirty&&O.B.list.length))&&!confirm('Đóng và bỏ các thay đổi chưa áp dụng?')) return;
+  document.removeEventListener('keydown',onKey,true); root&&root.remove(); root=null; O=null;
+}
+function onKey(e){
+  if(!root) return;
+  if(e.key==='Escape'){ e.stopPropagation(); close(); }
+  else if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'){ e.preventDefault(); e.stopPropagation(); undo(); }
+  else if(e.key==='Delete'&&!/INPUT|TEXTAREA/.test((e.target||{}).tagName||'')){ e.stopPropagation(); deleteSel(); }
+}
+function open(){
+  document.querySelectorAll('.menu-dropdown.open').forEach(m=>m.classList.remove('open'));
+  if(root) return;
+  if(!pages.length){ alert('Hãy mở một file PDF trước.'); return; }
+  try{ flushPendingEdit(); }catch(e){}
+  if(!document.getElementById('orgStyle')){ const st=document.createElement('style'); st.id='orgStyle'; st.textContent=CSS; document.head.appendChild(st); }
+  O={A:{name:'File A — tài liệu đang mở',list:pages.slice()},B:{name:'File B (trống)',list:[]},sel:{A:new Set(),B:new Set()},last:{A:null,B:null},
+     mode:'swap',cross:'move',cache:new Map(),undo:[],q:Promise.resolve(),dirty:false,bDirty:false,drag:null,tgt:null};
+  root=h('div'); root.id='orgRoot';
+  root.innerHTML=`<div class="box"><div class="head">🗂️ Organize Pages — Quản lý và sắp xếp trang<span class="sp"></span><button class="btn bX">✕ Đóng</button></div>
+  <div class="tb">
+    <div class="g"><button class="btn bOpenB">📂 Mở file B</button><input type="file" accept="application/pdf" hidden class="fB"></div>
+    <div class="g">Trong cùng file:<label><input type="radio" name="om" value="swap" checked> Đổi chỗ</label><label><input type="radio" name="om" value="move"> Chèn vào vị trí</label></div>
+    <div class="g">Giữa 2 file:<label><input type="radio" name="oc" value="move" checked> Di chuyển</label><label><input type="radio" name="oc" value="copy"> Sao chép</label></div>
+    <div class="g"><button class="btn bRL" title="Xoay trái 90°">⟲</button><button class="btn bRR" title="Xoay phải 90°">⟳</button><button class="btn bDel">🗑️ Xóa trang chọn</button><button class="btn bUndo" disabled>↩️ Hoàn tác</button></div>
+    <span class="sp"></span><button class="btn bSave" disabled>💾 Lưu file B…</button><button class="btn pri bApply">✔ Áp dụng cho File A</button></div>
+  <div class="body"><div class="pane"><div class="ph"><span class="t tA"></span></div><div class="grid gA"></div></div>
+    <div class="pane"><div class="ph"><span class="t tB"></span></div><div class="grid gB"></div></div></div>
+  <div class="hint">Kéo một trang thả lên trang khác để đổi chỗ · Chọn nhiều trang bằng Ctrl/Shift+bấm · Kéo sang khung bên kia để di chuyển/sao chép (giữ Ctrl để đảo chế độ) · Ctrl+Z hoàn tác · Delete xóa</div></div>`;
+  document.body.appendChild(root);
+  ['A','B'].forEach(k=>{
+    const g=$('.g'+k);
+    g.ondragover=e=>{ if(!O.drag) return; e.preventDefault(); autoScroll(k,e); clearMarks(); g.classList.add('dropEnd'); O.tgt={k,id:null,side:'end'};
+      e.dataTransfer.dropEffect=(k!==O.drag.from&&((O.cross==='copy')!==(e.ctrlKey||e.metaKey||e.altKey)))?'copy':'move'; };
+    g.ondrop=e=>{ e.preventDefault(); doDrop(e.ctrlKey||e.metaKey||e.altKey); };
+    g.onclick=e=>{ if(e.target===g){ O.sel[k].clear(); refreshSel(k); } };
+  });
+  $$('input[name=om]').forEach(r=>r.onchange=()=>O.mode=r.value); $$('input[name=oc]').forEach(r=>r.onchange=()=>O.cross=r.value);
+  $('.bX').onclick=()=>close(); $('.bOpenB').onclick=()=>$('.fB').click();
+  $('.fB').onchange=e=>{ const f=e.target.files[0]; if(f) loadB(f); e.target.value=''; };
+  $('.bRL').onclick=()=>rotateSel(-90); $('.bRR').onclick=()=>rotateSel(90); $('.bDel').onclick=deleteSel; $('.bUndo').onclick=undo;
+  $('.bSave').onclick=saveB; $('.bApply').onclick=apply;
+  document.addEventListener('keydown',onKey,true);
+  renderPane('A'); renderPane('B'); upd();
+}
+window.openOrganizePages=open; window.__orgInternals=()=>O;
+const btn=document.getElementById('btnOrganizePages'); if(btn) btn.onclick=open;
+})();
 
 </script>
 </body>
