@@ -1302,7 +1302,7 @@
         <input type="radio" name="cprLevel" id="cprLevelStandard" value="standard" checked style="margin-top:2px;">
         <span>
           <b>📦 Nén tiêu chuẩn</b><br>
-          <span style="font-size:11.5px;color:#9aa0a8;">Giảm dung lượng vừa phải, vẫn giữ chất lượng hiển thị tốt — phù hợp cho hầu hết trường hợp.</span>
+          <span style="font-size:11.5px;color:#9aa0a8;">Giảm còn khoảng <b>40%–60%</b> dung lượng file gốc, vẫn giữ chất lượng hiển thị tốt — phù hợp cho hầu hết trường hợp.</span>
         </span>
       </label>
       <label style="display:flex;align-items:flex-start;gap:9px;font-size:13px;cursor:pointer;
@@ -1310,7 +1310,7 @@
         <input type="radio" name="cprLevel" id="cprLevelExtreme" value="extreme" style="margin-top:2px;">
         <span>
           <b>🗜️ Siêu nén</b><br>
-          <span style="font-size:11.5px;color:#9aa0a8;">Giảm dung lượng tối đa, chất lượng ảnh/độ nét giảm rõ rệt hơn — phù hợp khi cần file nhỏ nhất có thể (ví dụ để gửi email).</span>
+          <span style="font-size:11.5px;color:#9aa0a8;">Giảm còn khoảng <b>20%–40%</b> dung lượng file gốc, chất lượng ảnh/độ nét giảm rõ rệt hơn — phù hợp khi cần file nhỏ nhất có thể (ví dụ để gửi email).</span>
         </span>
       </label>
     </div>
@@ -10519,10 +10519,11 @@ document.getElementById('btnPrint').onclick = printPdf;
 // nén cố định trước đây (maxSide/quality cao) có thể tạo ra ảnh JPEG nặng hơn cả nội dung chữ vector
 // gốc, khiến file "đã nén" LỚN HƠN file gốc — sai với mục đích của tính năng nén. Để khắc phục, hàm
 // nén bên dưới giờ chạy theo kiểu THÍCH ỨNG (adaptive): sau khi nén thử với cấu hình ban đầu, nó so
-// sánh dung lượng nén được với file gốc; nếu mức giảm chưa đạt khoảng mục tiêu (20%-50%), nó sẽ tự
+// sánh dung lượng nén được với file gốc; nếu mức giảm chưa đạt khoảng mục tiêu (tiêu chuẩn: giảm 40%-60%,
+// siêu nén: giảm 60%-80% — xem COMPRESS_LEVELS), nó sẽ tự
 // động giảm tiếp chất lượng/độ phân giải và nén lại (tối đa vài lần) cho tới khi đạt mức giảm mong
 // muốn, hoặc dùng phương án tốt nhất tìm được nếu không thể đạt đúng khoảng mục tiêu. Nhờ vậy, mọi
-// loại file (kể cả file toàn chữ) đều được đảm bảo nhỏ hơn đáng kể so với file gốc (khoảng 20%-50%).
+// loại file (kể cả file toàn chữ) đều được đảm bảo nhỏ hơn đáng kể so với file gốc (đúng khoảng mục tiêu của từng mức nén).
 // VẤN ĐỀ ĐÃ SỬA (lần 2 — lỗi cốt lõi): với PDF chủ yếu là CHỮ VECTOR (chữ dạng văn bản thật, gần
 // như không có ảnh), việc "vẽ lại" (rasterize) cả trang thành ảnh JPEG — dù đã giảm chất lượng/độ
 // phân giải tới mức thấp nhất — vẫn có thể NẶNG HƠN chính nội dung chữ vector gốc (chữ vector nén
@@ -10533,20 +10534,25 @@ document.getElementById('btnPrint').onclick = printPdf;
 // hoá stream/loại bỏ object thừa nên thường NHỎ HƠN file gốc, xem hàm compressPdfAndDownload) là
 // MỘT ỨNG VIÊN ngay từ đầu trong vòng lặp so sánh; chỉ thay bằng bản rasterize khi nó thực sự nhỏ
 // hơn. Nhờ vậy file "đã nén" được ĐẢM BẢO toán học sẽ không bao giờ nặng hơn bản trước khi nén.
+// targetMin/targetMax là MỨC GIẢM dung lượng so với file gốc (0.40 = giảm 40%).
+// Cách hiểu "giảm còn X% so với file gốc": file sau nén chỉ còn X% dung lượng gốc.
+//   - Nén tiêu chuẩn: file sau nén còn khoảng 40%-60% dung lượng gốc  => giảm 40%-60%
+//   - Siêu nén      : file sau nén còn khoảng 20%-40% dung lượng gốc  => giảm 60%-80%
+//     (đây chính là tỷ lệ 20%-40% mà mức "tiêu chuẩn" cũ đang dùng, nay chuyển sang Siêu nén)
+// maxSide/quality chỉ là cấu hình KHỞI ĐẦU của lượt nén thử đầu tiên; thuật toán thích ứng bên dưới
+// sẽ tự tăng/giảm để bám sát khoảng mục tiêu.
 const COMPRESS_LEVELS = {
-  // Nén tiêu chuẩn: nhắm tới mức giảm 20%-40%, vẫn giữ chất lượng hiển thị tốt
-  standard: { maxSide: 1400, quality: 0.60, targetMin: 0.20, targetMax: 0.40 },
-  // Siêu nén: nhắm tới mức giảm 35%-55%, ưu tiên dung lượng nhỏ nhất có thể
-  extreme:  { maxSide: 900,  quality: 0.32, targetMin: 0.35, targetMax: 0.55 }
+  standard: { maxSide: 1100, quality: 0.45, targetMin: 0.40, targetMax: 0.60 },
+  extreme:  { maxSide: 760,  quality: 0.24, targetMin: 0.60, targetMax: 0.80 }
 };
 
 // Giới hạn an toàn khi thuật toán thích ứng tự điều chỉnh, tránh nén quá tệ (không đọc được) hoặc
 // không nén tí nào (vòng lặp vô hạn).
 const COMPRESS_QUALITY_FLOOR = 0.10;
 const COMPRESS_QUALITY_CEIL  = 0.90;
-const COMPRESS_MAXSIDE_FLOOR = 480;
+const COMPRESS_MAXSIDE_FLOOR = 420;
 const COMPRESS_MAXSIDE_CEIL  = 2200;
-const COMPRESS_MAX_ATTEMPTS  = 5;
+const COMPRESS_MAX_ATTEMPTS  = 7;   // tăng từ 5 -> 7 vì khoảng mục tiêu mới (nhất là Siêu nén 60%-80%) cần nhiều lượt tinh chỉnh hơn
 
 // Lưu ý: chuyển "data:image/jpeg;base64,...." thành Uint8Array để nhúng ảnh JPEG vào PDF (pdf-lib
 // embedJpg) dùng lại đúng hàm dataUrlToBytes_() đã có sẵn ở trên (dùng cho Insert Image) — không
@@ -10676,35 +10682,67 @@ async function compressPdfAndDownload(level){
 
     let finalReduction = trueOriginalSize > 0 ? (1 - bestBytes.length / trueOriginalSize) : 0;
 
+    // Gom TẤT CẢ các lượt rasterize vào danh sách rồi mới chọn kết quả tốt nhất ở cuối (thay vì chỉ
+    // giữ file nhỏ nhất như trước). Lý do: với khoảng mục tiêu mới (tiêu chuẩn 40%-60%, siêu nén
+    // 60%-80%), nếu một lượt nén "quá tay" (giảm vượt targetMax) rồi lượt sau nới lại đúng khoảng, bản
+    // "quá tay" vẫn bị giữ lại chỉ vì nó nhỏ hơn -> ảnh mờ hơn mức cần thiết. Cách chọn mới:
+    //   1) Ưu tiên bản NẰM TRONG khoảng [targetMin, targetMax] và có dung lượng LỚN NHẤT (= nét nhất).
+    //   2) Nếu không có bản nào nằm trong khoảng nhưng có bản giảm VƯỢT targetMax: lấy bản gần targetMax nhất.
+    //   3) Nếu tất cả đều chưa đạt targetMin: lấy bản nhỏ nhất (giảm nhiều nhất) tìm được.
+    // Sau đó vẫn chỉ thay ứng viên vector/RAW khi bản rasterize được chọn THỰC SỰ nhỏ hơn.
+    const rasterCandidates = [];
     for(let attempt=0; attempt<COMPRESS_MAX_ATTEMPTS; attempt++){
-      const attemptInfo = COMPRESS_MAX_ATTEMPTS>1 ? ` (lượt ${attempt+1})` : '';
+      const attemptInfo = COMPRESS_MAX_ATTEMPTS>1 ? ` (lượt ${attempt+1}/${COMPRESS_MAX_ATTEMPTS})` : '';
       const candidateBytes = await renderCompressedDoc_(editedDocJs, cfg, spinnerLabel, attemptInfo);
       const reduction = trueOriginalSize > 0 ? (1 - candidateBytes.length / trueOriginalSize) : 0;
+      rasterCandidates.push({ bytes: candidateBytes, reduction: reduction });
 
-      if(candidateBytes.length < bestBytes.length){
-        bestBytes = candidateBytes;
-        usedRasterize = true;
-        usedRawOriginal = false;
-        finalReduction = reduction;
-      }
-
-      // Đã đạt khoảng mục tiêu mong muốn (và bản rasterize này đang là ứng viên tốt nhất) -> dừng.
-      if(reduction >= baseCfg.targetMin && reduction <= baseCfg.targetMax && bestBytes===candidateBytes){
+      // Đã đạt khoảng mục tiêu mong muốn -> dừng.
+      if(reduction >= baseCfg.targetMin && reduction <= baseCfg.targetMax){
         break;
       }
 
+      let nextCfg;
       if(reduction < baseCfg.targetMin){
         // Giảm chưa đủ (hoặc file rasterize ra còn to hơn cả bản vector) -> nén mạnh tay hơn ở lượt sau.
-        cfg = {
-          quality: Math.max(COMPRESS_QUALITY_FLOOR, +(cfg.quality * 0.65).toFixed(2)),
-          maxSide: Math.max(COMPRESS_MAXSIDE_FLOOR, Math.round(cfg.maxSide * 0.80))
+        // Nếu còn cách mục tiêu xa thì giảm mạnh hơn, gần mục tiêu thì giảm nhẹ để khỏi "vọt" qua targetMax.
+        const gap = baseCfg.targetMin - reduction;
+        const qFactor = gap > 0.15 ? 0.60 : 0.80;
+        const sFactor = gap > 0.15 ? 0.80 : 0.90;
+        nextCfg = {
+          quality: Math.max(COMPRESS_QUALITY_FLOOR, +(cfg.quality * qFactor).toFixed(2)),
+          maxSide: Math.max(COMPRESS_MAXSIDE_FLOOR, Math.round(cfg.maxSide * sFactor))
         };
       } else {
         // Giảm nhiều hơn khoảng mục tiêu (ảnh có thể mờ hơn cần thiết) -> nới nhẹ lại chất lượng.
-        cfg = {
-          quality: Math.min(COMPRESS_QUALITY_CEIL, +(cfg.quality * 1.25).toFixed(2)),
-          maxSide: Math.min(COMPRESS_MAXSIDE_CEIL, Math.round(cfg.maxSide * 1.15))
+        nextCfg = {
+          quality: Math.min(COMPRESS_QUALITY_CEIL, +(cfg.quality * 1.20).toFixed(2)),
+          maxSide: Math.min(COMPRESS_MAXSIDE_CEIL, Math.round(cfg.maxSide * 1.10))
         };
+      }
+      // Đã chạm sàn/trần (cấu hình không đổi được nữa) -> dừng, tránh nén lặp lại y hệt vô ích.
+      if(nextCfg.quality === cfg.quality && nextCfg.maxSide === cfg.maxSide){
+        break;
+      }
+      cfg = nextCfg;
+    }
+
+    if(rasterCandidates.length){
+      const inRange = rasterCandidates.filter(c => c.reduction >= baseCfg.targetMin && c.reduction <= baseCfg.targetMax);
+      const over    = rasterCandidates.filter(c => c.reduction >  baseCfg.targetMax);
+      let chosen;
+      if(inRange.length){
+        chosen = inRange.reduce((a,b) => (b.bytes.length > a.bytes.length ? b : a));      // nét nhất trong khoảng
+      } else if(over.length){
+        chosen = over.reduce((a,b) => (b.reduction < a.reduction ? b : a));               // gần targetMax nhất
+      } else {
+        chosen = rasterCandidates.reduce((a,b) => (b.bytes.length < a.bytes.length ? b : a)); // nhỏ nhất tìm được
+      }
+      if(chosen.bytes.length < bestBytes.length){
+        bestBytes = chosen.bytes;
+        usedRasterize = true;
+        usedRawOriginal = false;
+        finalReduction = chosen.reduction;
       }
     }
 
