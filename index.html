@@ -302,12 +302,14 @@
     outline:1px dashed rgba(226,64,44,.6);
     outline-offset:1px;
   }
-  #floatingHighlightBtn{
+  #floatingHighlightBtn, #floatingCopyBtn{
     position:absolute; z-index:60; display:none; background:var(--accent); color:#fff;
     border:none; border-radius:5px; padding:6px 10px; font-size:12.5px; cursor:pointer;
     box-shadow:0 2px 10px rgba(0,0,0,.35); white-space:nowrap;
   }
-  #floatingHighlightBtn:hover{ background:var(--accent-dim); }
+  #floatingHighlightBtn:hover, #floatingCopyBtn:hover{ background:var(--accent-dim); }
+  #floatingCopyBtn{ background:#2f6fb5; }
+  #floatingCopyBtn:hover{ background:#255a96; }
 
   /* ===== NÚT "Sửa lỗi Font (OCR)" nổi cạnh #editInput =====
      Dùng cho trường hợp PDF tiếng Việt bị lỗi bảng mã (thiếu bảng ToUnicode) khiến chữ bóc ra từ
@@ -959,7 +961,7 @@
         background:transparent;border:none;color:#9aa0a8;font-size:18px;cursor:pointer;line-height:1;">✕</button>
     </div>
     <div style="font-size:12px;color:#9aa0a8;margin-bottom:12px;">
-      Chọn một hoặc nhiều trang, sau đó bấm một trong các nút xoay bên dưới để áp dụng ngay cho các
+      Chọn một hoặc nhiều trang, sau đó bấm nút xoay 90°/180° hoặc nhập góc tùy ý bên dưới để áp dụng ngay cho các
       trang đã chọn (có thể bấm nhiều lần / theo nhiều hướng khác nhau cho tới khi ưng ý). Hướng
       xoay sẽ được áp dụng khi bạn bấm "Save PDF" hoặc "Extract Pages".
     </div>
@@ -987,6 +989,40 @@
       <button type="button" id="rpRotate180" style="
         flex:1;min-width:150px;padding:10px;border:1px solid #454a52;border-radius:6px;background:transparent;color:#eceff1;
         font-weight:600;font-size:13px;cursor:pointer;">⟲ Xoay 180°</button>
+    </div>
+    <!-- ===== THÊM: xoay theo GÓC TUỲ Ý ===== -->
+    <div style="border:1px solid #454a52;border-radius:8px;padding:12px;margin-top:12px;">
+      <div style="font-weight:600;font-size:13px;margin-bottom:8px;">🎯 Xoay theo góc tùy ý</div>
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+        <input type="range" id="rpAngleRange" min="-180" max="180" step="1" value="15" style="flex:1;min-width:0;accent-color:#e2402c;cursor:pointer;">
+        <input type="number" id="rpAngleInput" min="-360" max="360" step="0.1" value="15" style="
+          width:78px;padding:6px 8px;border:1px solid #454a52;border-radius:6px;background:#1b1d21;color:#eceff1;font-size:13px;text-align:right;">
+        <span style="font-size:13px;color:#9aa0a8;">°</span>
+      </div>
+      <div id="rpAnglePresets" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;">
+        <button type="button" data-a="5" style="padding:4px 10px;border:1px solid #454a52;border-radius:14px;background:transparent;color:#eceff1;font-size:12px;cursor:pointer;">5°</button>
+        <button type="button" data-a="15" style="padding:4px 10px;border:1px solid #454a52;border-radius:14px;background:transparent;color:#eceff1;font-size:12px;cursor:pointer;">15°</button>
+        <button type="button" data-a="30" style="padding:4px 10px;border:1px solid #454a52;border-radius:14px;background:transparent;color:#eceff1;font-size:12px;cursor:pointer;">30°</button>
+        <button type="button" data-a="45" style="padding:4px 10px;border:1px solid #454a52;border-radius:14px;background:transparent;color:#eceff1;font-size:12px;cursor:pointer;">45°</button>
+        <button type="button" data-a="60" style="padding:4px 10px;border:1px solid #454a52;border-radius:14px;background:transparent;color:#eceff1;font-size:12px;cursor:pointer;">60°</button>
+        <button type="button" data-a="90" style="padding:4px 10px;border:1px solid #454a52;border-radius:14px;background:transparent;color:#eceff1;font-size:12px;cursor:pointer;">90°</button>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button type="button" id="rpAngleCCW" style="
+          flex:1;min-width:130px;padding:9px;border:1px solid #454a52;border-radius:6px;background:transparent;color:#eceff1;
+          font-weight:600;font-size:12.5px;cursor:pointer;">↺ Xoay trái thêm</button>
+        <button type="button" id="rpAngleCW" style="
+          flex:1;min-width:130px;padding:9px;border:1px solid #454a52;border-radius:6px;background:transparent;color:#eceff1;
+          font-weight:600;font-size:12.5px;cursor:pointer;">↻ Xoay phải thêm</button>
+        <button type="button" id="rpAngleSet" style="
+          flex:1;min-width:130px;padding:9px;border:1px solid #e2402c;border-radius:6px;background:transparent;color:#ff8a7a;
+          font-weight:600;font-size:12.5px;cursor:pointer;">🎯 Đặt đúng góc này</button>
+      </div>
+      <div style="font-size:11.5px;color:#9aa0a8;margin-top:8px;line-height:1.5;">
+        “Xoay thêm” cộng dồn vào góc hiện có của trang; “Đặt đúng góc” gán góc tuyệt đối (so với trang gốc).
+        Góc dương = chiều kim đồng hồ. Với góc không phải bội số của 90°, khi Save PDF trang sẽ có khổ lớn hơn
+        (vừa khít trang đã xoay), phần dư để trắng.
+      </div>
     </div>
     <div style="display:flex;gap:8px;margin-top:8px;">
       <button type="button" id="rpResetBtn" style="
@@ -1410,7 +1446,7 @@
       <button class="tbtn" id="btnInsertBlank" title="Chèn trang trắng sau trang hiện tại"><span class="ic">➕</span>Insert a blank page</button>
       <button class="tbtn" id="btnDeletePage" title="Chọn một hoặc nhiều trang để xóa khỏi tài liệu"><span class="ic">🗑️</span>Delete page</button>
       <button class="tbtn" id="btnExtractPages" title="Chọn một hoặc nhiều trang để tách ra thành 1 file PDF mới (không ảnh hưởng tài liệu đang mở)"><span class="ic">✂️</span>Extract Pages</button>
-      <button class="tbtn" id="btnRotatePages" title="Chọn một hoặc nhiều trang để xoay 90°/180° (áp dụng khi Save PDF hoặc Extract Pages)"><span class="ic">🔄</span>Rotate pages</button>
+      <button class="tbtn" id="btnRotatePages" title="Chọn một hoặc nhiều trang để xoay 90°/180° hoặc theo góc tùy ý (áp dụng khi Save PDF hoặc Extract Pages)"><span class="ic">🔄</span>Rotate pages</button>
       <button class="tbtn" id="btnPageSize" title="Đổi khổ giấy (A4, A3, Letter, Legal…) hoặc kích thước tùy chỉnh cho các trang; hoặc thêm lề trắng quanh nội dung (chừa chỗ ghi chú/đóng gáy)"><span class="ic">📏</span>Page Size</button>
       <button class="tbtn" id="btnOrganizePages" title="Quản lý và sắp xếp trang: kéo thả hình thu nhỏ để đổi chỗ trang; mở thêm File B và kéo trang qua lại giữa hai file (di chuyển / sao chép)"><span class="ic">🗂️</span>Organize Pages</button>
       <div class="sep"></div>
@@ -1458,8 +1494,8 @@
     <div class="menu-dropdown" id="toolMenuDropdown">
       <button class="tbtn" id="btnInsertImage" data-perm="insertImage" style="display:none" title="Chèn ảnh (PNG/JPG) — sau khi chọn ảnh, bạn CHỌN TRANG cần chèn (một hoặc nhiều trang), chỉnh vị trí/kích thước rồi bấm Chèn; ảnh chèn xong có thể kéo để di chuyển, kéo 4 góc để đổi kích thước"><span class="ic">🖼️</span>Insert Image</button>
       <input type="file" id="insertImageInput" accept="image/png,image/jpeg,image/jpg,image/webp,image/gif,image/bmp" style="display:none">
-      <button class="tbtn" id="btnCopyImage" title="Copy ảnh đang chọn (Ctrl+C) — dùng được để dán lại trong chính PDF này, và dán sang cả ứng dụng khác (Word, Paint...) nếu trình duyệt hỗ trợ"><span class="ic">📋</span>Copy</button>
-      <button class="tbtn" id="btnPasteImage" data-perm="insertImage" style="display:none" title="Dán ảnh (Ctrl+V) — ưu tiên ảnh vừa copy từ ứng dụng khác (vd: công cụ chụp màn hình, trình duyệt), nếu không có sẽ dán ảnh vừa Copy trong chính PDF này"><span class="ic">📌</span>Paste</button>
+      <button class="tbtn" id="btnCopyImage" title="Copy — copy CHỮ đang bôi đen (công cụ 'Select text to copy') hoặc khối chữ đang chọn, hoặc copy ẢNH đang chọn (Ctrl+C). Dùng Paste để dán lại."><span class="ic">📋</span>Copy</button>
+      <button class="tbtn" id="btnPasteImage" title="Paste (Ctrl+V) — dán CHỮ vừa chọn/copy thành khối chữ mới trên trang (kéo để di chuyển, đúp chuột để sửa); nếu vừa copy ảnh thì dán ảnh"><span class="ic">📌</span>Paste</button>
       <div class="sep"></div>
       <button class="tbtn" data-tool="region" id="toolRegion" title="Kéo chọn một vùng trên trang, sau đó bấm 'Edit Text' hoặc 'Sửa văn bản (OCR)' để sửa nhanh cả vùng"><span class="ic">🔲</span>Selection area</button>
       <button class="tbtn" id="btnSnapshot" title="Dùng công cụ 'Selection area' để kéo chọn một vùng trên trang, sau đó bấm nút này để chụp đúng vùng đó (kèm mọi chỉnh sửa đã thêm) và lưu thành file ảnh PNG"><span class="ic">📸</span>Snapshot</button>
@@ -1630,6 +1666,7 @@
         <canvas id="overlayCanvas"></canvas>
         <div id="textLayer"></div>
         <button id="floatingHighlightBtn">🖍️ Đánh dấu</button>
+        <button id="floatingCopyBtn" title="Copy đoạn chữ đang bôi đen — sau đó vào Tool ▸ Paste (hoặc Ctrl+V) để dán thành chữ trên trang">📋 Copy chữ</button>
       </div>
     </div>
   </div>
@@ -1703,6 +1740,10 @@ function requirePermission_(key, silent){
 function applyPermissions(){
   document.querySelectorAll('[data-perm]').forEach(function(el){
     el.style.display = hasPermission(el.getAttribute('data-perm')) ? '' : 'none';
+  });
+  // data-perm-any="a,b": hiện nếu có BẤT KỲ quyền nào trong danh sách (dùng cho nút Paste: ảnh hoặc chữ).
+  document.querySelectorAll('[data-perm-any]').forEach(function(el){
+    el.style.display = el.getAttribute('data-perm-any').split(',').some(function(k){ return hasPermission(k.trim()); }) ? '' : 'none';
   });
   // Đang dùng công cụ Edit Text mà vừa bị thu hồi quyền -> tự chuyển về công cụ Select.
   try{
@@ -4277,6 +4318,9 @@ iiConfirmBtn.addEventListener('click', async () => {
 // duyệt có hỗ trợ Clipboard API đầy đủ hay không; chỉ riêng việc dán ảnh SANG ứng dụng khác (Word,
 // Paint...) mới cần trình duyệt hỗ trợ.
 let appImageClipboard = null; // { dataUrl, w, h }
+// Clipboard CHỮ nội bộ + loại nội dung vừa copy gần nhất ('text' | 'image') để nút Paste biết dán gì.
+let appTextClipboard = null; // { text, fontSize, fontFamily, color, bold, italic, underline, x, y, page, pasteN }
+let clipboardKind_ = null;
 
 // Hiện một thông báo nhỏ, tự biến mất sau ít giây — dùng để xác nhận Copy/Paste thành công mà
 // không cần alert() gây gián đoạn thao tác (alert() chặn cả trang, không phù hợp cho việc phản hồi
@@ -4345,6 +4389,7 @@ async function copySelectedImage(){
   }
 
   appImageClipboard = { dataUrl: snapshotDataUrl, w: ed.w, h: ed.h, pxW, pxH, opacity: (editOpacity_(ed) < 1 ? editOpacity_(ed) : undefined) };
+  clipboardKind_ = 'image';
 
   try{
     if(navigator.clipboard && window.ClipboardItem){
@@ -4426,8 +4471,8 @@ async function pasteImage(){
   }
 }
 
-document.getElementById('btnCopyImage').onclick = copySelectedImage;
-document.getElementById('btnPasteImage').onclick = pasteImage;
+document.getElementById('btnCopyImage').onclick = ()=>{ copyAny_(); };
+document.getElementById('btnPasteImage').onclick = ()=>{ pasteAny_(); };
 
 
 
@@ -4798,8 +4843,20 @@ document.getElementById('epConfirmBtn').addEventListener('click', async () => {
 //      toạ độ nội dung/chữ đã vẽ bên trong trang) nên hoàn toàn an toàn, không làm lệch bất kỳ chỉnh
 //      sửa nào đã áp dụng.
 function normalizeRotation_(deg){
-  return ((Math.round(deg||0) % 360) + 360) % 360;
+  // Cho phép góc TÙY Ý (có số lẻ, làm tròn 0.01°) — trước đây chỉ làm tròn số nguyên.
+  const v = Math.round((Number(deg) || 0) * 100) / 100;
+  return Math.round((((v % 360) + 360) % 360) * 100) / 100 % 360;
 }
+// Kích thước hộp bao (bounding box) của hình chữ nhật w×h sau khi xoay `deg` độ. Với bội số của 90°
+// trả về đúng w/h hoán đổi (không sai số); với góc bất kỳ trả về hộp bao của hình đã xoay.
+function rotBounds_(w, h, deg){
+  const d = normalizeRotation_(deg);
+  if(d % 90 === 0){ const sw = (d === 90 || d === 270); return { w: sw ? h : w, h: sw ? w : h }; }
+  const r = d * Math.PI / 180, c = Math.abs(Math.cos(r)), s = Math.abs(Math.sin(r));
+  return { w: w*c + h*s, h: w*s + h*c };
+}
+// Chuỗi hiển thị góc (bỏ số 0 thừa): 30 -> "30", 12.5 -> "12.5"
+function fmtAngle_(d){ return String(Math.round(d * 100) / 100); }
 function getPageRotation_(p){
   return normalizeRotation_(p && p.rotation);
 }
@@ -4835,14 +4892,14 @@ function getPageRotation_(p){
 function applyLiveRotationDisplay_(idx, w, h){
   const slot = pageSlots[idx];
   const rot = getPageRotation_(pages[idx]);
-  const swapped = (rot === 90 || rot === 270);
   // Crop: nếu trang có vùng crop (và không đang ở chế độ vẽ crop) thì ô chỉ rộng/cao bằng vùng giữ lại,
   // #pageWrap vẫn giữ NGUYÊN kích thước/toạ độ gốc rồi được dời sao cho tâm vùng crop trùng tâm ô.
   const cr = cropDisplayRect_(pages[idx], w, h);
   const cw = cr ? cr.w : w, ch = cr ? cr.h : h;
+  const bnd = rotBounds_(cw, ch, rot);   // hộp bao sau khi xoay (góc tuỳ ý)
   if(slot){
-    slot.el.style.width = (swapped ? ch : cw)+'px';
-    slot.el.style.height = (swapped ? cw : ch)+'px';
+    slot.el.style.width = bnd.w+'px';
+    slot.el.style.height = bnd.h+'px';
     slot.el.classList.toggle('cropped', !!cr);
   }
   pageWrap.style.width = w+'px';
@@ -4851,7 +4908,7 @@ function applyLiveRotationDisplay_(idx, w, h){
     const dx = cr.x + cr.w/2 - w/2, dy = cr.y + cr.h/2 - h/2;
     const rad = rot*Math.PI/180, co = Math.cos(rad), si = Math.sin(rad);
     const rx = dx*co - dy*si, ry = dx*si + dy*co;
-    const slotW = swapped ? ch : cw, slotH = swapped ? cw : ch;
+    const slotW = bnd.w, slotH = bnd.h;
     pageWrap.style.left = (slotW/2 - rx)+'px';
     pageWrap.style.top = (slotH/2 - ry)+'px';
     pageWrap.style.transform = 'translate(-50%,-50%) rotate('+rot+'deg)';
@@ -4901,9 +4958,9 @@ function applyCanvasRotation_(canvas, deg){
   const off = document.createElement('canvas');
   off.width = w; off.height = h;
   off.getContext('2d').drawImage(canvas, 0, 0);
-  const swapped = (d === 90 || d === 270);
-  const newW = swapped ? h : w;
-  const newH = swapped ? w : h;
+  const bnd = rotBounds_(w, h, d);
+  const newW = Math.max(1, Math.ceil(bnd.w - 1e-6));
+  const newH = Math.max(1, Math.ceil(bnd.h - 1e-6));
   canvas.width = newW; canvas.height = newH;
   const ctx = canvas.getContext('2d');
   ctx.save();
@@ -4996,7 +5053,7 @@ async function openRotatePagesModal(){
 
 function setRpItemLabel(idx, pnumEl){
   const rot = getPageRotation_(pages[idx]);
-  pnumEl.textContent = 'Trang ' + (idx+1) + (rot ? (' · ' + rot + '°') : '');
+  pnumEl.textContent = 'Trang ' + (idx+1) + (rot ? (' · ' + fmtAngle_(rot) + '°') : '');
 }
 
 rpSelectAll.addEventListener('change', (e) => {
@@ -5010,7 +5067,7 @@ rpSelectAll.addEventListener('change', (e) => {
 // Áp dụng thêm `deltaDeg` (cộng dồn vào góc xoay hiện có, ví dụ -90/+90/180) cho các trang đang
 // được chọn (checkbox) trong modal, rồi vẽ lại ngay ảnh thu nhỏ + nhãn góc xoay của đúng những
 // trang vừa đổi (không cần đóng/mở lại modal).
-async function rotateSelectedPages_(deltaDeg){
+async function rotateSelectedPages_(deltaDeg, absolute){
   const selected = rpSelectedIndexes();
   if(selected.length === 0){
     rpError.textContent = 'Hãy chọn ít nhất 1 trang cần xoay.';
@@ -5019,7 +5076,7 @@ async function rotateSelectedPages_(deltaDeg){
   rpError.textContent = '';
   for(const idx of selected){
     const p = pages[idx];
-    p.rotation = normalizeRotation_(getPageRotation_(p) + deltaDeg);
+    p.rotation = normalizeRotation_(absolute ? deltaDeg : getPageRotation_(p) + deltaDeg);
   }
   // Vẽ lại đúng những ô (item) vừa đổi góc xoay trong modal
   for(const idx of selected){
@@ -5043,6 +5100,39 @@ async function rotateSelectedPages_(deltaDeg){
 document.getElementById('rpRotateCW').addEventListener('click', () => rotateSelectedPages_(90));
 document.getElementById('rpRotateCCW').addEventListener('click', () => rotateSelectedPages_(-90));
 document.getElementById('rpRotate180').addEventListener('click', () => rotateSelectedPages_(180));
+
+// ----- Xoay theo góc TUỲ Ý -----
+const rpAngleRange = document.getElementById('rpAngleRange');
+const rpAngleInput = document.getElementById('rpAngleInput');
+function rpReadAngle_(){
+  const v = parseFloat(String(rpAngleInput.value).replace(',', '.'));
+  if(!isFinite(v)){ rpError.textContent = 'Hãy nhập một góc hợp lệ (số, đơn vị độ).'; return null; }
+  if(Math.abs(v) > 360){ rpError.textContent = 'Góc phải nằm trong khoảng -360° đến 360°.'; return null; }
+  rpError.textContent = '';
+  return v;
+}
+rpAngleRange.addEventListener('input', () => { rpAngleInput.value = rpAngleRange.value; });
+rpAngleInput.addEventListener('input', () => {
+  const v = parseFloat(String(rpAngleInput.value).replace(',', '.'));
+  if(isFinite(v)) rpAngleRange.value = Math.max(-180, Math.min(180, v));
+});
+rpAngleInput.addEventListener('keydown', (e) => {
+  if(e.key === 'Enter'){ e.preventDefault(); document.getElementById('rpAngleSet').click(); }
+});
+document.querySelectorAll('#rpAnglePresets button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    rpAngleInput.value = btn.dataset.a; rpAngleRange.value = btn.dataset.a; rpError.textContent = '';
+  });
+});
+document.getElementById('rpAngleCW').addEventListener('click', () => {
+  const v = rpReadAngle_(); if(v === null) return; rotateSelectedPages_(v);
+});
+document.getElementById('rpAngleCCW').addEventListener('click', () => {
+  const v = rpReadAngle_(); if(v === null) return; rotateSelectedPages_(-v);
+});
+document.getElementById('rpAngleSet').addEventListener('click', () => {
+  const v = rpReadAngle_(); if(v === null) return; rotateSelectedPages_(v, true);
+});
 document.getElementById('rpResetBtn').addEventListener('click', async () => {
   const selected = rpSelectedIndexes();
   if(selected.length === 0){
@@ -6006,7 +6096,7 @@ async function updateZoom(){
 // ---------- Chọn công cụ ----------
 const toolLabels = {
   select:'Select — nhấn để chọn, kéo để di chuyển, kéo 8 ô vuông xanh ở viền để chỉnh khung chữ (khung sẽ được LƯU LẠI đúng kích thước vừa canh, không tự to ra nữa; phím F để trả về khung tự động), đúp chuột để sửa chữ, phím Delete để xóa',
-  textselect:'Select text to copy — bôi đen (kéo chuột) qua chữ trong PDF rồi Ctrl+C để copy ra ngoài; bấm nút "🖍️ Marker" nổi lên cạnh vùng vừa bôi đen để tô sáng đúng đoạn chữ đó.',
+  textselect:'Select text to copy — bôi đen (kéo chuột) qua chữ trong PDF, bấm "📋 Copy chữ" (hoặc Ctrl+C) rồi vào Tool ▸ Paste (hoặc Ctrl+V) để dán chữ đó lên trang; bấm nút "🖍️ Marker" nổi lên cạnh vùng vừa bôi đen để tô sáng đúng đoạn chữ đó.',
   crop:'Crop — kéo khung quanh vùng muốn GIỮ LẠI (kéo cạnh/góc để chỉnh, kéo trong khung để dời), rồi bấm Áp dụng hoặc Enter. Phần ngoài khung sẽ bị ẩn khi lưu PDF.',
   addtext:'Add text',
   edittext:'Edit Text — trỏ chuột vào bất kỳ đoạn chữ nào (chữ PDF thật hoặc chữ trong ảnh/scan) rồi bấm để sửa ngay, không cần chọn vùng.',
@@ -9314,13 +9404,19 @@ window.addEventListener('keydown', (e)=>{
   if((e.ctrlKey || e.metaKey) && e.key.toLowerCase()==='c' && activeTool==='select' && selectedEditIndex>=0 && pages.length){
     const ed = cur().edits[selectedEditIndex];
     if(ed && ed.type==='image'){ e.preventDefault(); copySelectedImage(); }
+    else if(isTextEdit(ed)){ e.preventDefault(); copyAny_(); }
   }
   // Ctrl/Cmd+V: dán ảnh — bỏ qua nếu người dùng đang bấm Ctrl+V vào một ô nhập liệu/contenteditable
   // khác (đã lọc INPUT/TEXTAREA ở trên; còn lại kiểm tra thêm contenteditable cho các ô soạn chữ).
   if((e.ctrlKey || e.metaKey) && e.key.toLowerCase()==='v' && pages.length){
     const ce = document.activeElement && document.activeElement.isContentEditable;
     // PHÂN QUYỀN: không có quyền Insert Image thì KHÔNG chặn Ctrl+V (để im lặng, không làm phiền).
-    if(!ce && hasPermission('insertImage')){ e.preventDefault(); pasteImage(); }
+    if(!ce){
+      // KHÔNG preventDefault: để trình duyệt bắn sự kiện 'paste' (xem khối Copy/Paste CHỮ) — sự kiện này đọc được
+      // clipboard hệ thống không cần xin quyền. Nếu 150ms sau vẫn không có sự kiện 'paste' thì tự dán bằng pasteAny_().
+      pasteHandledByEvent_ = false;
+      setTimeout(()=>{ if(!pasteHandledByEvent_) pasteAny_(); }, 150);
+    }
   }
 });
 
@@ -9896,6 +9992,280 @@ floatingHighlightBtn.addEventListener('click', ()=>{
   redrawOverlay();
 });
 
+// ---------- Copy / Paste CHỮ (dùng cùng công cụ "Select text to copy") ----------
+// Quy trình: (1) chọn "Select text to copy" -> bôi đen đoạn chữ; (2) bấm "📋 Copy chữ" nổi lên (hoặc
+// Tool ▸ Copy, hoặc Ctrl+C); (3) vào Tool ▸ Paste (hoặc Ctrl+V) -> chữ được dán thành MỘT KHỐI CHỮ MỚI
+// (edit type:'text') trên trang đang xem.
+// SỬA LỖI "copy chữ trong file rồi paste không thấy gì (chỉ dán được chữ copy từ ngoài)":
+//  - Trước đây khối chữ dán ra nằm ngay sát/đè lên chính đoạn chữ gốc (chỉ lệch 14pt) nên trên trang nhiều chữ
+//    nó chồng lên các dòng khác, nhìn như "không dán được"; chữ copy từ ngoài thì dán ở góc trống nên thấy rõ.
+//    Nay khối chữ luôn được đặt vào VÙNG ĐANG NHÌN THẤY của trang đang xem, tự tìm chỗ TRỐNG (tránh chữ gốc và
+//    các khối đã dán) — và luôn được chọn sẵn để kéo di chuyển / đúp chuột sửa.
+//  - Dán chữ không còn bắt quyền "Edit Text" (giống công cụ Add text), nút Paste luôn hiện.
+//  - Phân biệt được chữ vừa copy TRONG file với chữ vừa copy NGOÀI file (so với clipboard hệ thống).
+
+let pasteHandledByEvent_ = false;
+
+function sameText_(a, b){
+  const n = t => String(t||'').replace(/\u00a0/g,' ').replace(/\s+/g,' ').trim();
+  return n(a) === n(b);
+}
+
+// Lấy nội dung đang bôi đen trong lớp văn bản -> { text, fontSize, x, y, page } (toạ độ PDF) hoặc null.
+function getTextLayerSelectionClip_(){
+  const sel = window.getSelection();
+  if(!sel || sel.isCollapsed || sel.rangeCount===0 || !pages.length) return null;
+  const range = sel.getRangeAt(0);
+  if(!textLayer.contains(range.commonAncestorContainer)) return null;
+  const text = sel.toString().replace(/\u00a0/g,' ').replace(/\r/g,'')
+    .replace(/[ \t]+\n/g,'\n').replace(/\n{3,}/g,'\n\n').trim();
+  if(!text) return null;
+  const rect = Array.from(range.getClientRects()).find(r=>r.width>0.5 && r.height>0.5);
+  let x = 20, y = 20;
+  if(rect){
+    const c = clientToCanvasXY_(pdfCanvas, rect.left, rect.top);
+    if(isFinite(c.x) && isFinite(c.y)){ x = c.x/scale; y = c.y/scale; }
+  }
+  let fontSize = null;
+  try{
+    const n = range.startContainer;
+    let el = (n.nodeType===1) ? n : n.parentElement;
+    el = el && el.closest ? el.closest('span') : null;
+    if(el && textLayer.contains(el)){
+      const px = parseFloat(getComputedStyle(el).fontSize);
+      if(px > 0) fontSize = Math.max(6, Math.min(96, Math.round(px/scale*2)/2));
+    }
+  }catch(err){ /* dùng cỡ chữ mặc định */ }
+  return { text, fontSize, x, y, page: currentIndex };
+}
+
+function clipFromTextEdit_(ed){
+  return { text: ed.text, fontSize: ed.fontSize, fontFamily: ed.fontFamily, color: ed.color,
+           bold: ed.bold, italic: ed.italic, underline: ed.underline, x: ed.x, y: ed.y, page: currentIndex, styled: true };
+}
+
+function previewText_(t){ t = t.replace(/\s+/g,' '); return t.length>40 ? t.slice(0,40)+'…' : t; }
+
+// Ghi nhớ đoạn chữ đang bôi đen (nếu có) vào clipboard nội bộ — gọi nhiều chỗ (selectionchange, mouseup,
+// sự kiện copy, nút Copy) để KHÔNG phụ thuộc vào một cơ chế duy nhất.
+function captureTextSelection_(){
+  const clip = getTextLayerSelectionClip_();
+  if(clip){ appTextClipboard = Object.assign({ pasteN: 0 }, clip); clipboardKind_ = 'text'; }
+  return clip;
+}
+
+async function storeTextClip_(clip, silent){
+  appTextClipboard = Object.assign({ pasteN: 0 }, clip);
+  clipboardKind_ = 'text';
+  // Ghi thêm lên clipboard hệ thống (dán sang Word, Notepad... được) nếu trình duyệt cho phép.
+  try{
+    if(navigator.clipboard && navigator.clipboard.writeText) await navigator.clipboard.writeText(clip.text);
+  }catch(err){ console.warn('Không ghi được clipboard hệ thống (vẫn dán được trong app):', err); }
+  if(!silent) showToast_('📋 Đã copy chữ: "' + previewText_(clip.text) + '" — vào Tool ▸ Paste (hoặc Ctrl+V) để dán.');
+}
+
+// Nút Copy chung: ảnh đang chọn -> copy ảnh; chữ đang bôi đen / khối chữ đang chọn -> copy chữ.
+async function copyAny_(){
+  const ed = (pages.length && selectedEditIndex>=0) ? cur().edits[selectedEditIndex] : null;
+  if(ed && ed.type==='image'){ return copySelectedImage(); }
+  const clip = getTextLayerSelectionClip_()
+    || (ed && isTextEdit(ed) && ed.text ? clipFromTextEdit_(ed) : null)
+    || (clipboardKind_==='text' ? appTextClipboard : null);
+  if(clip){ return storeTextClip_(clip); }
+  showToast_('Hãy bôi đen chữ bằng "Select text to copy" (hoặc chọn một ảnh/khối chữ) rồi bấm Copy.');
+}
+
+// Vùng ĐANG NHÌN THẤY của trang đang xem, theo toạ độ PDF (đơn vị gốc, chưa nhân scale).
+function getVisiblePdfRect_(){
+  const pageW = pdfCanvas.width/scale, pageH = pdfCanvas.height/scale;
+  const full = { x0:0, y0:0, x1:pageW, y1:pageH };
+  try{
+    const a = pagesScroll.getBoundingClientRect();
+    const r = pdfCanvas.getBoundingClientRect();
+    const l = Math.max(a.left, r.left), t = Math.max(a.top, r.top);
+    const rr = Math.min(a.right, r.right), b = Math.min(a.bottom, r.bottom);
+    if(rr - l < 20 || b - t < 20) return full;
+    const c1 = clientToCanvasXY_(pdfCanvas, l, t), c2 = clientToCanvasXY_(pdfCanvas, rr, b);
+    const cl = v => Math.max(0, v);
+    const v = { x0: cl(Math.min(c1.x,c2.x)/scale), y0: cl(Math.min(c1.y,c2.y)/scale),
+                x1: Math.min(pageW, Math.max(c1.x,c2.x)/scale), y1: Math.min(pageH, Math.max(c1.y,c2.y)/scale) };
+    return (isFinite(v.x0+v.y0+v.x1+v.y1) && v.x1-v.x0 > 20 && v.y1-v.y0 > 20) ? v : full;
+  }catch(err){ return full; }
+}
+
+// Các hình chữ nhật chữ gốc của trang (pdf.js) — để chọn chỗ dán không đè lên chữ có sẵn.
+async function getPageTextRects_(idx){
+  const rects = [];
+  const p = pages[idx];
+  if(!p || p.type !== 'pdf') return rects;
+  try{
+    const page = await p.doc.getPage(p.srcPage);
+    const vp = page.getViewport({ scale: 1 });
+    const tc = await page.getTextContent();
+    for(const it of tc.items){
+      if(!it.str || !it.str.trim() || !it.transform) continue;
+      const pt = vp.convertToViewportPoint(it.transform[4], it.transform[5]);
+      const h = it.height || Math.abs(it.transform[3]) || 10;
+      rects.push({ x0: pt[0], y0: pt[1]-h, x1: pt[0]+(it.width||0), y1: pt[1]+h*0.3 });
+    }
+  }catch(err){ /* không lấy được -> bỏ qua việc tránh chữ gốc */ }
+  return rects;
+}
+
+// Tìm vị trí TRỐNG trong vùng nhìn thấy để đặt khối chữ rộng w, cao h. Không có chỗ trống -> trả về null.
+async function findFreePasteSpot_(w, h, vis){
+  const rects = await getPageTextRects_(currentIndex);
+  for(const ed of cur().edits){
+    if((isTextEdit(ed) || ed.type==='image') && ed.w && ed.h) rects.push({ x0:ed.x, y0:ed.y, x1:ed.x+ed.w, y1:ed.y+ed.h });
+  }
+  const pad = 4, margin = 24;
+  const xs = [ vis.x0 + margin ];
+  if(w < (vis.x1 - vis.x0) * 0.6) xs.push(vis.x1 - w - margin);
+  const hit = (x,y) => rects.some(r => x < r.x1+pad && x+w > r.x0-pad && y < r.y1+pad && y+h > r.y0-pad);
+  for(let y = vis.y0 + margin; y + h <= vis.y1 - 8; y += 6){
+    for(const x of xs){
+      if(x < 0 || x + w > vis.x1 + 1) continue;
+      if(!hit(x,y)) return { x, y };
+    }
+  }
+  return null;
+}
+
+// Dán chữ thành khối chữ mới ngay trong vùng đang nhìn thấy của trang đang xem.
+async function pasteTextClip_(clip){
+  if(!pages.length || !clip || !clip.text) return;
+  try{
+    const p = cur();
+    const text = normalizeEditText(clip.text);
+    if(!text || !text.trim()) return;
+    const fs = clip.fontSize || currentFontSize || 14;
+    const ff = clip.fontFamily || currentFontFamily;
+    const bold = clip.styled ? !!clip.bold : false;
+    const italic = clip.styled ? !!clip.italic : false;
+    const underline = clip.styled ? !!clip.underline : false;
+    const pageW = pdfCanvas.width/scale, pageH = pdfCanvas.height/scale;
+    const vis = getVisiblePdfRect_();
+    const margin = 24;
+    let auto = computeAutoBoxSize(text, ff, fs, vis.x0 + margin, bold, italic, undefined);
+    let spot = await findFreePasteSpot_(auto.w, auto.h, vis);
+    if(!spot){
+      // Không còn chỗ trống -> đặt giữa vùng nhìn thấy (khối chữ được chọn sẵn, kéo đi chỗ khác tuỳ ý).
+      spot = { x: vis.x0 + margin + (clip.pasteN||0)*14, y: vis.y0 + (vis.y1-vis.y0)*0.35 + (clip.pasteN||0)*14 };
+    }
+    clip.pasteN = (clip.pasteN || 0) + 1;
+    const x = Math.max(0, Math.min(spot.x, Math.max(0, pageW - auto.w)));
+    const y = Math.max(0, Math.min(spot.y, Math.max(0, pageH - auto.h)));
+    pushUndo(currentIndex);
+    const newIdx = p.edits.length;
+    p.edits.push({
+      type:'text', x, y, w:auto.w, h:auto.h, text, fontSize:fs, fontFamily:ff,
+      color: clip.color || currentFontColor, bold, italic, underline, align: currentAlign, bg:false,
+      ...newTextOpacityProps_()
+    });
+    // Chuyển sang công cụ Select (lớp văn bản của Select-text không cho kéo/sửa khối chữ), rồi chọn sẵn khối vừa dán.
+    const selBtn = document.getElementById('toolSelect');
+    if(activeTool !== 'select' && selBtn) selBtn.click();
+    selectedEditIndex = newIdx;
+    redrawOverlay();
+    showToast_('📌 Đã dán chữ lên trang ' + (currentIndex+1) + ' — kéo để di chuyển, đúp chuột để sửa.');
+  }catch(err){
+    console.error('Lỗi khi dán chữ:', err);
+    alert('Không dán được chữ: ' + (err && err.message ? err.message : err));
+  }
+}
+
+// Đọc chữ trên clipboard hệ thống NẾU trình duyệt đã cấp quyền (không bật hộp xin quyền). Không đọc được -> null.
+async function peekSystemText_(){
+  try{
+    if(!navigator.clipboard || !navigator.clipboard.readText) return null;
+    if(navigator.permissions && navigator.permissions.query){
+      const st = await navigator.permissions.query({ name:'clipboard-read' });
+      if(st.state !== 'granted') return null;
+    } else return null;
+    return await navigator.clipboard.readText();
+  }catch(err){ return null; }
+}
+
+// Nút Paste chung: ưu tiên chữ nếu nội dung copy gần nhất là chữ; nếu là ảnh thì dán ảnh;
+// nếu app chưa copy gì thì thử clipboard hệ thống (ảnh trước, rồi chữ).
+async function pasteAny_(){
+  if(!pages.length){ showToast_('Hãy mở một file PDF trước khi dán.'); return; }
+  captureTextSelection_(); // lỡ còn vùng bôi đen chưa kịp ghi nhớ
+  if(clipboardKind_==='text' && appTextClipboard){
+    const sys = await peekSystemText_();
+    if(sys && sys.trim() && !sameText_(sys, appTextClipboard.text)){
+      // Người dùng vừa copy chữ ở NGOÀI app sau lần copy trong file -> dán chữ mới nhất đó.
+      return pasteTextClip_({ text: sys, fontSize: currentFontSize, pasteN: 0 });
+    }
+    return pasteTextClip_(appTextClipboard);
+  }
+  if(clipboardKind_==='image' || appImageClipboard){ return pasteImage(); }
+  try{
+    if(navigator.clipboard && navigator.clipboard.read){
+      const items = await navigator.clipboard.read();
+      if(items.some(it => it.types.some(t => t.indexOf('image/')===0))) return pasteImage();
+    }
+  }catch(err){ /* bị chặn quyền -> thử đọc chữ bên dưới */ }
+  try{
+    if(navigator.clipboard && navigator.clipboard.readText){
+      const t = await navigator.clipboard.readText();
+      if(t && t.trim()) return pasteTextClip_({ text: t, fontSize: currentFontSize, pasteN: 0 });
+    }
+  }catch(err){ console.warn('Không đọc được chữ từ clipboard hệ thống:', err); }
+  return pasteImage(); // hiện thông báo "chưa có gì để dán" sẵn có
+}
+
+// Ctrl+V -> sự kiện 'paste': đọc clipboard hệ thống KHÔNG cần xin quyền, nên so được chữ vừa copy trong file
+// với chữ copy từ ngoài (giống nhau -> dán bản trong file kèm kiểu chữ; khác -> dán chữ từ ngoài).
+document.addEventListener('paste', (e)=>{
+  if(!pages.length) return;
+  const t = e.target;
+  if(t && (t.tagName==='INPUT' || t.tagName==='TEXTAREA' || t.isContentEditable)) return; // đang gõ trong ô nhập
+  pasteHandledByEvent_ = true;
+  e.preventDefault();
+  const cd = e.clipboardData;
+  const hasImg = !!cd && Array.from(cd.items||[]).some(it => it.kind==='file' && it.type.indexOf('image/')===0);
+  const txt = (cd && cd.getData('text/plain')) || '';
+  captureTextSelection_();
+  if(hasImg){ pasteImage(); return; }
+  if(txt.trim()){
+    if(appTextClipboard && sameText_(txt, appTextClipboard.text)) pasteTextClip_(appTextClipboard);
+    else pasteTextClip_({ text: txt, fontSize: currentFontSize, pasteN: 0 });
+    return;
+  }
+  pasteAny_();
+});
+
+// Mỗi lần bôi đen xong, ghi nhớ ngay đoạn chữ (để chọn rồi bấm Paste là dán được, không bắt buộc bấm Copy)
+// và đặt nút "📋 Copy chữ" nổi ngay bên phải nút "🖍️ Đánh dấu".
+const floatingCopyBtn = document.getElementById('floatingCopyBtn');
+document.addEventListener('selectionchange', ()=>{
+  if(!pages.length || activeTool !== 'textselect' || floatingHighlightBtn.style.display === 'none'){
+    floatingCopyBtn.style.display = 'none';
+    return;
+  }
+  const clip = captureTextSelection_();
+  if(!clip){ floatingCopyBtn.style.display = 'none'; return; }
+  floatingCopyBtn.style.left = (parseFloat(floatingHighlightBtn.style.left) + floatingHighlightBtn.offsetWidth + 6) + 'px';
+  floatingCopyBtn.style.top = floatingHighlightBtn.style.top;
+  floatingCopyBtn.style.display = 'block';
+});
+// Ghi nhớ thêm khi nhả chuột/ngón tay trên lớp chữ (phòng khi selectionchange bị trình duyệt gộp/bỏ qua).
+['mouseup','touchend','keyup'].forEach(evt => document.addEventListener(evt, ()=>{
+  if(activeTool === 'textselect') setTimeout(captureTextSelection_, 0);
+}));
+floatingCopyBtn.addEventListener('mousedown', (e)=> e.preventDefault());
+floatingCopyBtn.addEventListener('click', ()=>{
+  const clip = getTextLayerSelectionClip_() || (clipboardKind_==='text' ? appTextClipboard : null);
+  if(clip) storeTextClip_(clip);
+});
+// Ctrl+C khi đang bôi đen chữ: trình duyệt vẫn copy như bình thường; ta chỉ ghi nhớ thêm cho nút Paste.
+document.addEventListener('copy', ()=>{
+  if(activeTool !== 'textselect') return;
+  const clip = getTextLayerSelectionClip_();
+  if(clip){ storeTextClip_(clip, true); showToast_('📋 Đã copy chữ — vào Tool ▸ Paste (hoặc Ctrl+V) để dán.'); }
+});
+
 // ---------- OCR (dùng cho PDF scan/ảnh) ----------
 async function getWorker(){
   if(typeof Tesseract === 'undefined'){
@@ -10373,13 +10743,43 @@ async function buildEditedOutDoc(indexes, spinnerLabel){
     const extraRotation = getPageRotation_(p);
     if(extraRotation){
       const baseRotation = (pageObj.getRotation && pageObj.getRotation().angle) || 0;
-      pageObj.setRotation(degrees(normalizeRotation_(baseRotation + extraRotation)));
+      if(extraRotation % 90 === 0){
+        pageObj.setRotation(degrees(normalizeRotation_(baseRotation + extraRotation)));
+      } else {
+        // Góc TÙY Ý: cờ /Rotate chỉ nhận bội số của 90° nên phải dựng trang mới (khổ = hộp bao của
+        // trang đã xoay) rồi vẽ trang cũ (đã gồm mọi chỉnh sửa + crop) xoay vào giữa trang mới.
+        await applyFreeRotationToPdfPage_(outDoc, pageObj, baseRotation + extraRotation);
+      }
     }
   }
   // Gắn thống kê vào outDoc (đối tượng JS thường, cho phép thêm thuộc tính tuỳ ý) để nơi gọi
   // buildEditedOutDoc() (exportPdfAs...) lấy ra hiển thị cho người dùng qua showNativeEditToast().
   outDoc.__nativeEditStats = nativeStats;
   return outDoc;
+}
+
+
+// Xoay trang PDF theo góc TUỲ Ý (totalDeg = tổng góc xoay thuận chiều kim đồng hồ, đã gồm /Rotate gốc).
+// Trang mới có khổ bằng hộp bao của trang đã xoay (phần dư để trống); nội dung trang cũ được nhúng
+// (embedPage) và vẽ xoay quanh tâm. Lưu ý: link/annotation của trang đó không được giữ lại.
+async function applyFreeRotationToPdfPage_(outDoc, pageObj, totalDeg){
+  let cb;
+  try{ cb = pageObj.getCropBox(); }catch(e){ cb = { x:0, y:0, width:pageObj.getWidth(), height:pageObj.getHeight() }; }
+  const w = cb.width, h = cb.height;
+  const r = totalDeg * Math.PI / 180;
+  let W = Math.abs(w*Math.cos(r)) + Math.abs(h*Math.sin(r));
+  let H = Math.abs(w*Math.sin(r)) + Math.abs(h*Math.cos(r));
+  const k = Math.min(1, 14400 / Math.max(W, H));      // giới hạn khổ tối đa của PDF
+  const emb = await outDoc.embedPage(pageObj, { left: cb.x, bottom: cb.y, right: cb.x + cb.width, top: cb.y + cb.height });
+  const phi = -r;                                       // pdf-lib xoay NGƯỢC chiều kim đồng hồ khi góc dương
+  const cx = w/2*k, cy = h/2*k;
+  const px = W*k/2 - (cx*Math.cos(phi) - cy*Math.sin(phi));
+  const py = H*k/2 - (cx*Math.sin(phi) + cy*Math.cos(phi));
+  const idx = outDoc.getPages().indexOf(pageObj);
+  const np = outDoc.insertPage(idx, [W*k, H*k]);
+  np.drawPage(emb, { x: px, y: py, xScale: k, yScale: k, rotate: degrees(-totalDeg) });
+  outDoc.removePage(idx + 1);
+  return np;
 }
 
 async function exportPdfAs(filename, pageIndexes){
@@ -13592,9 +13992,8 @@ async function psEstimateSize_(idx){
   const sz = await getPageSizePt_(idx);
   let w = sz.w, h = sz.h;
   if(p && p.crop){ w = p.crop.w; h = p.crop.h; }
-  const rot = getPageRotation_(p);
-  if(rot === 90 || rot === 270){ const t = w; w = h; h = t; }
-  return { w, h };
+  const rb = rotBounds_(w, h, getPageRotation_(p));
+  return { w: rb.w, h: rb.h };
 }
 
 // Tính khổ mới + hệ số co/dời cho một trang có kích thước hiển thị (w,h). cfg xem psReadCfg_().
@@ -15692,7 +16091,80 @@ async function wxOcrLines(A, lines, onProgress){
 }
 
 // ---- Phát hiện ký hiệu đầu dòng (gạch đầu dòng / chấm tròn) và làm sạch từ OCR ----
-const WX_BULLET_RE = /^[-–—−•·●○▪■□*+]+$/;
+const WX_BULLET_RE = /^[-–—−•·●○◦▪■□◆◇❖➢➤➔►▶‣∙⁃⬥*+]+$/;
+
+/* ===== KÝ HIỆU ĐẶC BIỆT (bullet / dingbat) khi xuất Word =====
+   NGUYÊN NHÂN LỖI: PDF xuất từ Word thường vẽ ký hiệu đầu dòng bằng font Symbol / Wingdings / ZapfDingbats / Courier New.
+   Các font này KHÔNG dùng mã Unicode thật mà dùng mã "vùng riêng" (U+F0xx) hoặc chữ cái thường (Wingdings "v" = ❖,
+   Courier "o" = vòng tròn rỗng). Trước đây app chép nguyên mã đó sang Word bằng font chữ thường (Times New Roman) nên:
+     - mã U+F0xx hiện thành ô vuông trống / mất hẳn;
+     - "v" hiện đúng chữ v, "o" hiện đúng chữ o (không còn là ký hiệu, mất cả thụt dòng kiểu bullet);
+     - ảnh scan: mọi ký hiệu bị quy hết về "•" hoặc "-".
+   CÁCH SỬA: quy đổi về ký tự Unicode thật (kèm font có đủ glyph), nhận diện thêm bằng HÌNH DẠNG (vòng tròn rỗng, ❖, ◆, ■ ...),
+   còn ký hiệu lạ chưa có bản Unicode thì giữ nguyên mã + font gốc (Symbol/Wingdings) để Word tự vẽ đúng. */
+const WX_PUA_SYM = { 0xF0B7:'\u2022', 0xF09F:'\u2022', 0xF0A7:'\u25AA', 0xF076:'\u2756', 0xF06C:'\u25CF', 0xF06E:'\u25A0',
+  0xF075:'\u25C6', 0xF077:'\u2B25', 0xF0D8:'\u27A2', 0xF0E8:'\u2794' };
+const WX_DING_ASCII = { v:'\u2756', l:'\u25CF', n:'\u25A0', u:'\u25C6', w:'\u2B25', '\u00A7':'\u25AA', '\u00D8':'\u27A2', '\u00E8':'\u2794' };
+function wxSymFamOf_(fontName){
+  const n = String(fontName || '');
+  if(/webdings/i.test(n)) return 'Webdings';
+  if(/wingdings|dingbats/i.test(n)) return 'Wingdings';
+  if(/symbol/i.test(n)) return 'Symbol';
+  return null;
+}
+function wxNormSymbolText_(str, fontName){
+  const ding = /wingdings|dingbats|webdings/i.test(String(fontName || ''));
+  if(ding && str.length === 1 && WX_DING_ASCII[str]) return WX_DING_ASCII[str];
+  let out = '';
+  for(const ch of str){ const cp = ch.codePointAt(0); out += ((cp >= 0xF020 && cp <= 0xF0FF && WX_PUA_SYM[cp]) || ch); }
+  return out;
+}
+// Ký hiệu -> { ch, fam } sẽ ghi vào Word. fam = font có đủ glyph (không đặt = dùng font chữ của dòng).
+function wxBulletSpec_(raw){
+  const t = String(raw || ''), c = Array.from(t)[0] || '';
+  if(/[•●∙·‣]/.test(c)) return { ch:'•' };
+  if(/[○◦]/.test(c)) return { ch:'o', fam:'Courier New' };            // bullet cấp 2 chuẩn của Word: chữ "o" font Courier New
+  if(/[▪■]/.test(c)) return { ch: c, fam:'Segoe UI Symbol' };
+  if(/[□◻]/.test(c)) return { ch:'\u25A1', fam:'Segoe UI Symbol' };
+  if(/[◆◇❖➢➤➔►▶⬥]/.test(c)) return { ch: c, fam:'Segoe UI Symbol' };
+  if(/^\*+$/.test(t)) return { ch:'*' };
+  return { ch:'-' };
+}
+// Phân loại HÌNH DẠNG ký hiệu đầu dòng từ mặt nạ mực A.T trong khung bb: '•' | '○' | '▪' | '◆' | '❖' | null
+function wxClassifyBulletShape_(A, bb, nPieces){
+  if(nPieces >= 3 && nPieces <= 5) return '\u2756';                      // ❖ = 4 hình thoi rời nhau
+  const T = A.T, W = A.w, H = A.h;
+  const w = bb.x1 - bb.x0 + 1, h = bb.y1 - bb.y0 + 1;
+  if(!T || w < 5 || h < 5) return null;
+  const rad0 = Math.min(w, h) >= 14 ? 1 : 0;
+  const at = (fx, fy, rad) => {
+    if(rad === undefined) rad = rad0;
+    const cx = Math.round(bb.x0 + (fx + 1) / 2 * (w - 1)), cy = Math.round(bb.y0 + (fy + 1) / 2 * (h - 1));
+    for(let dy = -rad; dy <= rad; dy++) for(let dx = -rad; dx <= rad; dx++){
+      const x = cx + dx, y = cy + dy;
+      if(x >= 0 && y >= 0 && x < W && y < H && T[y * W + x]) return 1;
+    }
+    return 0;
+  };
+  const center = at(0, 0);
+  // điểm chéo lấy ĐÚNG 1 điểm ảnh (không nới vùng) để phân biệt hình tròn/vuông (có mực ở góc chéo) với hình thoi (không có)
+  const diag = at(.66, .66, 0) + at(-.66, .66, 0) + at(.66, -.66, 0) + at(-.66, -.66, 0);
+  const inner = at(.28, .28) + at(-.28, .28) + at(.28, -.28) + at(-.28, -.28);
+  const edge = at(0, .85) + at(0, -.85) + at(.85, 0) + at(-.85, 0);
+  if(edge < 3) return null;
+  if(diag >= 3){
+    let ink = 0; for(let y = bb.y0; y <= bb.y1; y++) for(let x = bb.x0; x <= bb.x1; x++) if(T[y * W + x]) ink++;
+    const fill = ink / (w * h);
+    if(center && inner >= 3){                                            // đặc: chấm tròn hay ô vuông? (chữ cái như a, e, s có tỉ lệ mực thấp -> loại)
+      if(fill < 0.62) return null;
+      return fill > 0.88 ? '\u25AA' : '•';
+    }
+    if(!center && inner <= 1 && fill > 0.18 && fill < 0.7) return '\u25CB';   // rỗng ở giữa: vòng tròn "o"
+    return null;
+  }
+  if(diag <= 1 && inner >= 3) return '\u25C6';                           // hình thoi đặc
+  return null;
+}
 // ---- Chia vùng (ngoài bảng + từng ô bảng) và tách dòng ----
 function wxBuildLines(A){
   const { tables, comps, medH, cc, w } = A;
@@ -15921,19 +16393,50 @@ const wxPt = v => v * WX_PX2PT;
 function wxSplitBullet(L, A){
   const words = (L.ocrWords || []).slice();
   const cs = L.comps.slice().sort((p,q)=>p.x0-q.x0);
-  const c0 = cs[0], c1 = c0 ? cs.find(c=>c.x0 > c0.x1) : null;
-  let bullet = null;
+  const c0 = cs[0], mH = A.medH;
+  let bullet = null, geo = false;
   if(c0 && !c0._cb){
-    const h0=c0.y1-c0.y0+1, w0=c0.x1-c0.x0+1;
-    const dashLike = h0 <= A.medH*0.25 && w0 >= A.medH*0.3 && w0 <= A.medH*1.2;
-    const dotLike  = h0 <= A.medH*0.5 && w0 <= A.medH*0.5 && h0 >= A.medH*0.18 && Math.abs(h0-w0) <= 0.45*Math.max(h0,w0);
-    if((dashLike || dotLike) && c1 && (c1.x0 - c0.x1) > A.medH*0.55) bullet = { ch: dashLike ? '-' : '•', x0: c0.x0, x1: c0.x1 };
+    // gom các mảnh nhỏ sát nhau ở đầu dòng (ký hiệu ❖ gồm 4 hình thoi rời)
+    const small = c => (c.x1-c.x0+1) <= 0.55*mH && (c.y1-c.y0+1) <= 0.55*mH;
+    let cl = { x0:c0.x0, y0:c0.y0, x1:c0.x1, y1:c0.y1, n:1 }, k = 1;
+    if(small(c0)){
+      while(k < cs.length && !cs[k]._cb && small(cs[k]) && cs[k].x0 <= cl.x1 + 0.15*mH){
+        const nx0 = Math.min(cl.x0, cs[k].x0), ny0 = Math.min(cl.y0, cs[k].y0), nx1 = Math.max(cl.x1, cs[k].x1), ny1 = Math.max(cl.y1, cs[k].y1);
+        if((nx1-nx0+1) > 0.9*mH || (ny1-ny0+1) > 0.9*mH) break;
+        cl = { x0:nx0, y0:ny0, x1:nx1, y1:ny1, n:cl.n+1 }; k++;
+      }
+    }
+    if(cl.n < 3){ cl = { x0:c0.x0, y0:c0.y0, x1:c0.x1, y1:c0.y1, n:1 }; k = 1; }
+    const next = cs[k];
+    const h0 = cl.y1-cl.y0+1, w0 = cl.x1-cl.x0+1;
+    const gapOk = !!next && (next.x0 - cl.x1) > mH*0.55;
+    const dashLike = cl.n === 1 && h0 <= mH*0.25 && w0 >= mH*0.3 && w0 <= mH*1.2;
+    const dotLike  = h0 <= mH*0.5 && w0 <= mH*0.5 && h0 >= mH*0.18 && Math.abs(h0-w0) <= 0.45*Math.max(h0,w0);
+    // ký hiệu lớn hơn chấm tròn (vòng "o" Courier, ❖, ◆, ■ ...): tới ~0.9 chiều cao dòng, gần vuông (chữ hoa/số cao hơn nên không lọt vào)
+    const bigGlyph = h0 >= mH*0.22 && w0 >= mH*0.22 && h0 <= mH*0.9 && w0 <= mH*0.9 && Math.abs(h0-w0) <= 0.35*Math.max(h0,w0);
+    if(gapOk && dashLike){ bullet = { ch:'-', x0:cl.x0, x1:cl.x1 }; }
+    else if(gapOk && (dotLike || bigGlyph)){
+      const kind = wxClassifyBulletShape_(A, cl, cl.n);
+      if(kind){ bullet = Object.assign(wxBulletSpec_(kind), { x0:cl.x0, x1:cl.x1 }); geo = true; }
+      else if(dotLike){ bullet = { ch:'•', x0:cl.x0, x1:cl.x1 }; geo = true; }
+    }
   }
-  // bỏ các token đầu là ký hiệu/dấu câu do OCR đọc ra từ gạch đầu dòng (tối đa 3 token)
+  // bỏ các token đầu là ký hiệu/dấu câu do OCR/chữ thật đọc ra từ ký hiệu đầu dòng (tối đa 3 token)
   let i = 0;
   while(i < words.length && i < 3 && (WX_BULLET_RE.test(words[i].text) || /^[.,·:;'"`|]+$/.test(words[i].text))){
-    if(!bullet && WX_BULLET_RE.test(words[i].text)) bullet = { ch: /[•●○▪■□·]/.test(words[i].text) ? '•' : (/^\*+$/.test(words[i].text) ? '*' : '-'), x0: words[i].x0, x1: words[i].x1 };
+    if(WX_BULLET_RE.test(words[i].text)){
+      const sp = wxBulletSpec_(words[i].text);
+      if(!bullet) bullet = Object.assign(sp, { x0: words[i].x0, x1: words[i].x1 });
+      else if(L.native && !/^[-–—−*+]+$/.test(words[i].text)){ bullet.ch = sp.ch; bullet.fam = sp.fam; }   // chữ thật của PDF chính xác hơn đoán hình dạng
+    }
     i++;
+  }
+  // Ký hiệu tìm thấy bằng hình dạng nhưng OCR đọc nó thành chữ ("o", "e", "v", "«"...) nằm đúng chỗ ký hiệu -> bỏ token rác đó
+  if(bullet && geo){
+    while(i < words.length && i < 2){
+      const wd = words[i], cx = (wd.x0 + wd.x1) / 2;
+      if(wd.text.length <= 2 && cx >= bullet.x0 - 0.6*mH && cx <= bullet.x1 + 0.6*mH && !/^\d+[.)]?$/.test(wd.text)) i++; else break;
+    }
   }
   let rest = words.slice(i);
   if(bullet && rest.length && /^[-–—•·]+[^\s-–—•·]/.test(rest[0].text)) rest[0] = Object.assign({}, rest[0], { text: rest[0].text.replace(/^[-–—•·]+/, '') });
@@ -15941,7 +16444,7 @@ function wxSplitBullet(L, A){
   L.words = rest;
   // mép trái của phần chữ: thành phần mực đầu tiên nằm sau ký hiệu
   if(bullet){
-    const after = cs.find(c => c.x0 > bullet.x1 + A.medH*0.2);
+    const after = cs.find(c => c.x0 > bullet.x1 + mH*0.2);
     L.textX0 = after ? after.x0 : (rest.length ? rest[0].x0 : L.x0);
   } else {
     L.textX0 = L.x0;
@@ -16057,6 +16560,11 @@ function wxRunsForSeg(L){
       sz: L.style.sizeSnap,
       fam: L.style.family
     };
+    if(ws[k].symFam){   // ký hiệu font Symbol/Wingdings chưa có chữ Unicode tương đương: giữ mã + font gốc để Word vẽ đúng glyph
+      if(k>0 && cur) cur.t += ' ';
+      runs.push(Object.assign({ t: ws[k].text }, st, { fam: ws[k].symFam }));
+      cur = null; continue;
+    }
     if(ws[k].cb){   // ô tích (Checkbox): run riêng, không gộp với chữ
       if(k>0){ if(cur) cur.t += ' '; }
       runs.push({ cb: ws[k].cb, t:'', b:false, i:false, u:false, color: st.color, sz: st.sz, fam: st.fam });
@@ -16112,7 +16620,7 @@ function wxMakePara(P, frame){
     const r = rows[k];
     if(k > 0) push({ br:true });
     r.segs.forEach((seg, si)=>{
-      if(si === 0 && seg.bullet){ push({ t: seg.bullet.ch, b:false, i:false, u:false, color: seg.style.color||'000000', sz: seg.style.sizeSnap, fam: seg.style.family }); push({ tab:true }); }
+      if(si === 0 && seg.bullet){ push({ t: seg.bullet.ch, b:false, i:false, u:false, color: seg.style.color||'000000', sz: seg.style.sizeSnap, fam: seg.bullet.fam || seg.style.family }); push({ tab:true }); }
       if(si > 0){
         // tab dẫn tới đoạn thứ si: căn phải nếu đoạn sát mép phải, ngược lại tab trái tại vị trí mép trái mực
         const rightAlign = seg.x1 >= frame.R - 0.04*fw;
@@ -16634,7 +17142,7 @@ async function wxApplyNativeText(A, lines){
       try{ const f = page.commonObjs.has(it.fontName) ? page.commonObjs.get(it.fontName) : null; nm = ((f && f.name) || '').replace(/^[A-Z]{6}\+/, ''); }catch(err){}
       const gen = (content.styles && content.styles[it.fontName] && content.styles[it.fontName].fontFamily) || '';
       const known = !!nm;
-      items.push({ text: it.str.normalize('NFC'), x0: m[4], x1: m[4] + (it.width||0)*vp.scale, base: m[5], fs, used:false,
+      items.push({ text: wxNormSymbolText_(it.str.normalize('NFC'), nm + ' ' + gen), symFam: wxSymFamOf_(nm + ' ' + gen), symAscii: /wingdings|webdings/i.test(nm + ' ' + gen), mono: /courier|consolas|mono/i.test(nm + ' ' + gen), x0: m[4], x1: m[4] + (it.width||0)*vp.scale, base: m[5], fs, used:false,
         known, bold: /bold|black|heavy|semibold|demi/i.test(nm), italic: /italic|oblique|slanted|[-,]it\b/i.test(nm),
         serif: /serif/i.test(gen) && !/sans/i.test(gen) ? true : (/sans|arial|helvet|calibri|tahoma|verdana|segoe|roboto/i.test(nm+' '+gen) ? false : null) });
     }
@@ -16660,12 +17168,14 @@ async function wxApplyNativeText(A, lines){
     const nativePreview = its.map(it=>it.text).join(' ');
     if(looksLikeMissingVietnameseDiacritics_(nativePreview)){ remain.push(L); continue; }
     its.forEach(it=>it.used = true);
+    // Bullet cấp 2 của Word = chữ "o" font Courier New đứng riêng đầu dòng -> đánh dấu là ký hiệu vòng tròn rỗng (không phải chữ o)
+    if(its.length > 1 && its[0].text.trim() === 'o' && its[0].mono && (its[1].x0 - its[0].x1) > 0.3*its[0].fs) its[0].text = '\u25CB';
     // danh sách từ (theo chữ thật) kèm khoảng x ước lượng theo tỉ lệ ký tự
     const words0 = [];
     for(const it of its){
       const s = it.text, len = Math.max(1, s.length), wpx = it.x1 - it.x0;
       const re = /\S+/g; let m;
-      while((m = re.exec(s))){ words0.push({ text:m[0], conf:100, x0: it.x0 + wpx*m.index/len, x1: it.x0 + wpx*(m.index+m[0].length)/len, y0:L.y0, y1:L.y1,
+      while((m = re.exec(s))){ words0.push({ symFam: (it.symFam && (/[\uF020-\uF0FF]/.test(m[0]) || (it.symAscii && /^[\x21-\x7E\u00A0-\u00FF]+$/.test(m[0])))) ? it.symFam : undefined, text:m[0], conf:100, x0: it.x0 + wpx*m.index/len, x1: it.x0 + wpx*(m.index+m[0].length)/len, y0:L.y0, y1:L.y1,
         nb: it.bold, ni: it.italic, nsz: it.fs*WX_PX2PT, nknown: it.known, nserif: it.serif, _head: m.index === 0, _tail: m.index+m[0].length === s.length, _fs: it.fs }); }
     }
     // [SỬA LỖI "chữ bị tách rời: N ă ng L ư, 20 2 6, 270 .000"] PDF này chia một từ thành nhiều mảnh chữ (font WinAnsi + font CID cho
@@ -16674,7 +17184,7 @@ async function wxApplyNativeText(A, lines){
     const words = [];
     for(const wd of words0){
       const prev = words[words.length-1];
-      if(prev && prev._tail && wd._head && (wd.x0 - prev.x1) <= Math.max(1.0, 0.1*Math.min(prev._fs, wd._fs))){
+      if(prev && !prev.symFam && !wd.symFam && prev._tail && wd._head && (wd.x0 - prev.x1) <= Math.max(1.0, 0.1*Math.min(prev._fs, wd._fs))){
         prev.text += wd.text; prev.x1 = wd.x1; prev._tail = wd._tail; prev.nb = prev.nb && wd.nb;
       } else words.push(wd);
     }
@@ -17494,7 +18004,7 @@ function renderPane(k){
   L.forEach((p,i)=>{
     const c=h('div','card'), cv=h('canvas'), w=h('div','cv'); c.dataset.id=p.id; c.draggable=true; cv.width=100; cv.height=140; w.appendChild(cv);
     let rot=0; try{rot=getPageRotation_(p);}catch(e){}
-    c.append(w,h('div','n',(i+1)+(rot?`  ⟳${rot}°`:'')));
+    c.append(w,h('div','n',(i+1)+(rot?`  ⟳${fmtAngle_(rot)}°`:'')));
     c.title='Kéo thả để đổi chỗ / di chuyển. Ctrl hoặc Shift để chọn nhiều trang.';
     c.onclick=e=>pick(k,i,e);
     c.ondragstart=e=>dragStart(k,p,c,e);
