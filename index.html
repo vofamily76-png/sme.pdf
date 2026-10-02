@@ -1327,9 +1327,9 @@
         background:transparent;border:none;color:#9aa0a8;font-size:18px;cursor:pointer;line-height:1;">✕</button>
     </div>
     <div style="font-size:12px;color:#9aa0a8;margin-bottom:14px;">
-      Giảm dung lượng file PDF (giữ nguyên mọi chỉnh sửa hiện tại). Mỗi trang sẽ được dựng lại thành
-      ảnh nén — do đó chữ trong file <b>đã nén</b> sẽ không còn bôi đen/copy được như file gốc.
-      Nếu cần giữ chữ chọn được, hãy dùng "Save PDF" thay vì nén.
+      Giảm dung lượng file PDF (giữ nguyên mọi chỉnh sửa hiện tại). <b>Nén tiêu chuẩn</b> giữ chữ dạng vector
+      (không vỡ, không nhòe, vẫn bôi đen/copy được) và chỉ nén các <b>ảnh nhúng</b>; <b>Siêu nén</b> dựng từng trang
+      thành ảnh để file nhỏ nhất — chữ khi đó không còn chọn/copy được.
     </div>
 
     <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px;">
@@ -1338,7 +1338,7 @@
         <input type="radio" name="cprLevel" id="cprLevelStandard" value="standard" checked style="margin-top:2px;">
         <span>
           <b>📦 Nén tiêu chuẩn</b><br>
-          <span style="font-size:11.5px;color:#9aa0a8;">Giảm còn khoảng <b>40%–60%</b> dung lượng file gốc, vẫn giữ chất lượng hiển thị tốt — phù hợp cho hầu hết trường hợp.</span>
+          <span style="font-size:11.5px;color:#9aa0a8;">Giảm khoảng <b>60%–80%</b> dung lượng file gốc bằng cách <b>giữ chữ dạng vector</b> (chữ không vỡ, không nhòe) và chỉ nén ảnh nhúng — phù hợp cho hầu hết trường hợp.</span>
         </span>
       </label>
       <label style="display:flex;align-items:flex-start;gap:9px;font-size:13px;cursor:pointer;
@@ -1346,7 +1346,7 @@
         <input type="radio" name="cprLevel" id="cprLevelExtreme" value="extreme" style="margin-top:2px;">
         <span>
           <b>🗜️ Siêu nén</b><br>
-          <span style="font-size:11.5px;color:#9aa0a8;">Giảm còn khoảng <b>20%–40%</b> dung lượng file gốc, chất lượng ảnh/độ nét giảm rõ rệt hơn — phù hợp khi cần file nhỏ nhất có thể (ví dụ để gửi email).</span>
+          <span style="font-size:11.5px;color:#9aa0a8;">Giảm khoảng <b>60%–80%</b> dung lượng file gốc bằng cách <b>nén từng trang thành ảnh</b> — file nhỏ nhất, dễ gửi email/chat, nhưng chữ sẽ không còn chọn/copy được và độ nét giảm.</span>
         </span>
       </label>
     </div>
@@ -1450,7 +1450,7 @@
       <button class="tbtn" id="btnPageSize" title="Đổi khổ giấy (A4, A3, Letter, Legal…) hoặc kích thước tùy chỉnh cho các trang; hoặc thêm lề trắng quanh nội dung (chừa chỗ ghi chú/đóng gáy)"><span class="ic">📏</span>Page Size</button>
       <button class="tbtn" id="btnOrganizePages" title="Quản lý và sắp xếp trang: kéo thả hình thu nhỏ để đổi chỗ trang; mở thêm File B và kéo trang qua lại giữa hai file (di chuyển / sao chép)"><span class="ic">🗂️</span>Organize Pages</button>
       <div class="sep"></div>
-      <button class="tbtn" id="btnCompress" title="Giảm dung lượng file PDF (chọn mức nén tiêu chuẩn hoặc siêu nén) — file nén ra sẽ dựng lại các trang thành ảnh, chữ trong file nén sẽ không còn bôi đen/copy được như file gốc"><span class="ic">🗜️</span>Compress PDF</button>
+      <button class="tbtn" id="btnCompress" title="Giảm dung lượng file PDF (chọn mức nén tiêu chuẩn hoặc siêu nén) — Tiêu chuẩn: giữ chữ vector, chỉ nén ảnh nhúng; Siêu nén: nén từng trang thành ảnh (nhỏ nhất, chữ không còn chọn được)"><span class="ic">🗜️</span>Compress PDF</button>
     </div>
   </div>
   <div class="sep"></div>
@@ -10984,43 +10984,24 @@ async function printPdf(){
 
 document.getElementById('btnPrint').onclick = printPdf;
 
-// ---------- Compress PDF (nén dung lượng file PDF) ----------
-// Cách nén: KHÔNG có máy chủ riêng để xử lý (mọi thứ chạy ngay trên trình duyệt người dùng), nên
-// cách duy nhất giảm được ĐÁNG KỂ dung lượng PDF ở đây là "dựng lại" (rasterize) từng trang thành
-// một ảnh JPEG ở độ phân giải thấp hơn/chất lượng nén cao hơn, rồi ghép các ảnh đó lại thành một
-// file PDF mới — cách này đặc biệt hiệu quả với PDF chứa nhiều ảnh/PDF quét (scan). Đánh đổi: chữ
-// trong file ĐÃ NÉN sẽ trở thành ảnh (không còn bôi đen/copy được như file gốc) — nếu cần giữ chữ
-// chọn được, người dùng nên dùng "Save PDF" thay vì nén.
-//
-// VẤN ĐỀ ĐÃ SỬA: với các file PDF chủ yếu là VĂN BẢN (chữ vector, gần như không có ảnh), cấu hình
-// nén cố định trước đây (maxSide/quality cao) có thể tạo ra ảnh JPEG nặng hơn cả nội dung chữ vector
-// gốc, khiến file "đã nén" LỚN HƠN file gốc — sai với mục đích của tính năng nén. Để khắc phục, hàm
-// nén bên dưới giờ chạy theo kiểu THÍCH ỨNG (adaptive): sau khi nén thử với cấu hình ban đầu, nó so
-// sánh dung lượng nén được với file gốc; nếu mức giảm chưa đạt khoảng mục tiêu (tiêu chuẩn: giảm 40%-60%,
-// siêu nén: giảm 60%-80% — xem COMPRESS_LEVELS), nó sẽ tự
-// động giảm tiếp chất lượng/độ phân giải và nén lại (tối đa vài lần) cho tới khi đạt mức giảm mong
-// muốn, hoặc dùng phương án tốt nhất tìm được nếu không thể đạt đúng khoảng mục tiêu. Nhờ vậy, mọi
-// loại file (kể cả file toàn chữ) đều được đảm bảo nhỏ hơn đáng kể so với file gốc (đúng khoảng mục tiêu của từng mức nén).
-// VẤN ĐỀ ĐÃ SỬA (lần 2 — lỗi cốt lõi): với PDF chủ yếu là CHỮ VECTOR (chữ dạng văn bản thật, gần
-// như không có ảnh), việc "vẽ lại" (rasterize) cả trang thành ảnh JPEG — dù đã giảm chất lượng/độ
-// phân giải tới mức thấp nhất — vẫn có thể NẶNG HƠN chính nội dung chữ vector gốc (chữ vector nén
-// cực nhỏ, trong khi ảnh JPEG luôn tốn dung lượng vì các cạnh chữ bị mờ/nhiễu khi nén). Thuật toán
-// "thích ứng" trước đây chỉ cố giảm chất lượng dần chứ KHÔNG có phương án dự phòng khi rasterize
-// luôn thua vector gốc — nên vẫn trả về bản rasterize dù nó to hơn, khiến "nén" ra file NẶNG HƠN.
-// Cách sửa: luôn coi bản PDF CHƯA rasterize (chỉ lưu lại qua pdf-lib — bản thân bước này đã tối ưu
-// hoá stream/loại bỏ object thừa nên thường NHỎ HƠN file gốc, xem hàm compressPdfAndDownload) là
-// MỘT ỨNG VIÊN ngay từ đầu trong vòng lặp so sánh; chỉ thay bằng bản rasterize khi nó thực sự nhỏ
-// hơn. Nhờ vậy file "đã nén" được ĐẢM BẢO toán học sẽ không bao giờ nặng hơn bản trước khi nén.
-// targetMin/targetMax là MỨC GIẢM dung lượng so với file gốc (0.40 = giảm 40%).
+// ---------- Compress PDF (nén dung lượng file PDF — GIỮ NGUYÊN CHỮ VECTOR) ----------
+// Cách nén MỚI: không còn "chụp" cả trang (gồm chữ gốc + chữ người dùng gõ) thành ảnh JPEG rồi bọc lại thành
+// PDF — cách đó làm chữ vỡ hạt/viền chấm chấm và mất khả năng chọn/copy. Thay vào đó:
+//   1) Dựng tài liệu hoàn chỉnh bằng buildEditedOutDoc() — chữ vẫn được GHI DẠNG VECTOR (drawText + font nhúng).
+//   2) Mở lại bytes đó bằng pdf-lib, CHỈ tìm các ảnh nhúng và thu nhỏ độ phân giải + nén lại JPEG
+//      (xem recompressImagesKeepVector_). Chữ, đường kẻ, hình vẽ không bị đụng tới.
+//   3) Vòng lặp thích ứng dưới đây chỉnh maxSide (px cạnh dài tối đa của ảnh) / quality (JPEG) để cố gắng đạt
+//      khoảng giảm dung lượng mục tiêu. Tài liệu hầu như không có ảnh (chỉ chữ vector) thì không còn gì để nén
+//      thêm — khi đó giữ nguyên bản vector (đảm bảo không nặng hơn file gốc) thay vì phá chữ thành ảnh.
 // Cách hiểu "giảm còn X% so với file gốc": file sau nén chỉ còn X% dung lượng gốc.
-//   - Nén tiêu chuẩn: file sau nén còn khoảng 40%-60% dung lượng gốc  => giảm 40%-60%
-//   - Siêu nén      : file sau nén còn khoảng 20%-40% dung lượng gốc  => giảm 60%-80%
-//     (đây chính là tỷ lệ 20%-40% mà mức "tiêu chuẩn" cũ đang dùng, nay chuyển sang Siêu nén)
-// maxSide/quality chỉ là cấu hình KHỞI ĐẦU của lượt nén thử đầu tiên; thuật toán thích ứng bên dưới
-// sẽ tự tăng/giảm để bám sát khoảng mục tiêu.
+//   - Nén tiêu chuẩn (vector): giảm 60%-80% khi tài liệu có đủ ảnh nhúng để nén; chữ luôn giữ vector.
+//   - Siêu nén (theo ảnh): dựng từng trang thành JPEG -> giảm 60%-80%, chữ thành ảnh (không chọn/copy được).
+// maxSide/quality là cấu hình KHỞI ĐẦU của lượt nén thử đầu tiên.
 const COMPRESS_LEVELS = {
-  standard: { maxSide: 1100, quality: 0.45, targetMin: 0.40, targetMax: 0.60 },
-  extreme:  { maxSide: 760,  quality: 0.24, targetMin: 0.60, targetMax: 0.80 }
+  // standard: GIỮ VECTOR — chỉ nén ảnh nhúng, chữ không bị chuyển thành ảnh (không vỡ/nhòe).
+  standard: { mode: 'vector', maxSide: 1100, quality: 0.45, targetMin: 0.60, targetMax: 0.80 },
+  // extreme: NÉN THEO ẢNH — dựng từng trang thành ảnh JPEG rồi ghép lại (file nhỏ nhất, để gửi mail/chat; chữ không còn chọn/copy được).
+  extreme:  { mode: 'raster', maxSide: 760,  quality: 0.24, targetMin: 0.60, targetMax: 0.80 }
 };
 
 // Giới hạn an toàn khi thuật toán thích ứng tự điều chỉnh, tránh nén quá tệ (không đọc được) hoặc
@@ -11029,16 +11010,147 @@ const COMPRESS_QUALITY_FLOOR = 0.10;
 const COMPRESS_QUALITY_CEIL  = 0.90;
 const COMPRESS_MAXSIDE_FLOOR = 420;
 const COMPRESS_MAXSIDE_CEIL  = 2200;
-const COMPRESS_MAX_ATTEMPTS  = 7;   // tăng từ 5 -> 7 vì khoảng mục tiêu mới (nhất là Siêu nén 60%-80%) cần nhiều lượt tinh chỉnh hơn
-
-// Lưu ý: chuyển "data:image/jpeg;base64,...." thành Uint8Array để nhúng ảnh JPEG vào PDF (pdf-lib
-// embedJpg) dùng lại đúng hàm dataUrlToBytes_() đã có sẵn ở trên (dùng cho Insert Image) — không
-// định nghĩa lại để tránh 2 hàm cùng tên đè lẫn nhau.
+const COMPRESS_MAX_ATTEMPTS  = 8;   // khoảng mục tiêu cao (60%-80%) cần nhiều lượt tinh chỉnh hơn
 
 function formatBytes_(bytes){
   if(bytes < 1024) return bytes + ' B';
   if(bytes < 1024*1024) return (bytes/1024).toFixed(0) + ' KB';
   return (bytes/(1024*1024)).toFixed(2) + ' MB';
+}
+
+// ===== NÉN GIỮ NGUYÊN VECTOR =====
+// KHÔNG còn dựng lại cả trang thành ảnh. Chữ (cả chữ gốc lẫn chữ người dùng gõ), đường kẻ, hình vẽ và font
+// nhúng được GIỮ NGUYÊN dạng vector nên không bao giờ bị vỡ hạt/viền răng cưa, vẫn bôi đen/copy được.
+// Chỉ các ẢNH NHÚNG (JPEG/ảnh Flate RGB-Gray 8-bit) được thu nhỏ độ phân giải + nén lại JPEG; ảnh nào nén xong
+// không nhỏ hơn rõ rệt thì giữ nguyên ảnh cũ.
+function cprNum_(o){ return (o && typeof o.asNumber === 'function') ? o.asNumber() : NaN; }
+
+// Giải mã bộ lọc dự đoán (PNG predictor >= 10 / TIFF 2) của ảnh Flate 8-bit -> byte điểm ảnh thô, hoặc null.
+function cprUnpredict_(data, predictor, colors, columns, rows){
+  const bpp = colors, rowLen = columns * colors;
+  if(predictor === 1) return data.length >= rowLen*rows ? data.subarray(0, rowLen*rows) : null;
+  if(predictor === 2){
+    if(data.length < rowLen*rows) return null;
+    const out = new Uint8Array(data.subarray(0, rowLen*rows));
+    for(let y=0;y<rows;y++){ const o=y*rowLen; for(let x=bpp;x<rowLen;x++) out[o+x] = (out[o+x] + out[o+x-bpp]) & 255; }
+    return out;
+  }
+  if(predictor < 10) return null;
+  if(data.length < (rowLen+1)*rows) return null;
+  const out = new Uint8Array(rowLen*rows);
+  for(let y=0;y<rows;y++){
+    const ft = data[y*(rowLen+1)], src = y*(rowLen+1)+1, dst = y*rowLen, prv = dst - rowLen;
+    for(let x=0;x<rowLen;x++){
+      const raw = data[src+x];
+      const a = x>=bpp ? out[dst+x-bpp] : 0;
+      const b = y>0 ? out[prv+x] : 0;
+      const c = (x>=bpp && y>0) ? out[prv+x-bpp] : 0;
+      let v;
+      switch(ft){
+        case 0: v = raw; break;
+        case 1: v = raw + a; break;
+        case 2: v = raw + b; break;
+        case 3: v = raw + ((a + b) >> 1); break;
+        case 4: { const p=a+b-c, pa=Math.abs(p-a), pb=Math.abs(p-b), pc=Math.abs(p-c); v = raw + ((pa<=pb && pa<=pc) ? a : (pb<=pc ? b : c)); break; }
+        default: return null;
+      }
+      out[dst+x] = v & 255;
+    }
+  }
+  return out;
+}
+
+// Số kênh màu (1 = xám, 3 = RGB) nếu ảnh đủ đơn giản để tái nén an toàn; ngược lại 0 (bỏ qua, giữ nguyên ảnh).
+function cprImageComps_(ctx, dict){
+  const { PDFName, PDFArray } = PDFLib;
+  const cs = ctx.lookup(dict.get(PDFName.of('ColorSpace')));
+  if(!cs) return 0;
+  if(cs instanceof PDFName){
+    const n = String(cs);
+    return n === '/DeviceRGB' ? 3 : (n === '/DeviceGray' ? 1 : 0);
+  }
+  if(cs instanceof PDFArray && cs.size() >= 2 && String(ctx.lookup(cs.get(0))) === '/ICCBased'){
+    const icc = ctx.lookup(cs.get(1));
+    const n = icc && icc.dict ? cprNum_(ctx.lookup(icc.dict.get(PDFName.of('N')))) : NaN;
+    return (n === 3 || n === 1) ? n : 0;
+  }
+  return 0;   // Indexed / CMYK / Lab / Separation...: không đụng tới
+}
+function cprFilters_(ctx, dict){
+  const { PDFName, PDFArray } = PDFLib;
+  const f = ctx.lookup(dict.get(PDFName.of('Filter')));
+  if(!f) return [];
+  if(f instanceof PDFArray){ const out = []; for(let i=0;i<f.size();i++) out.push(String(ctx.lookup(f.get(i)))); return out; }
+  return [String(f)];
+}
+function cprCanvasToJpegBytes_(canvas, quality){
+  return new Promise((resolve, reject) => {
+    canvas.toBlob(async blob => {
+      if(!blob){ reject(new Error('toBlob thất bại')); return; }
+      resolve(new Uint8Array(await blob.arrayBuffer()));
+    }, 'image/jpeg', quality);
+  });
+}
+
+// Tái nén MỘT ảnh nhúng. Trả true nếu đã thay bằng bản nhỏ hơn.
+async function cprRecompressImage_(doc, ref, stream, cfg){
+  const { PDFName, PDFDict, PDFArray, decodePDFRawStream } = PDFLib;
+  const ctx = doc.context, d = stream.dict, K = k => d.get(PDFName.of(k));
+  const w = cprNum_(ctx.lookup(K('Width'))), h = cprNum_(ctx.lookup(K('Height')));
+  if(!(w > 0 && h > 0)) return false;
+  const im = ctx.lookup(K('ImageMask'));
+  if(im && String(im) === 'true') return false;            // ảnh mặt nạ 1-bit
+  if(K('Mask') || K('Decode')) return false;                // color-key mask / bảng Decode tuỳ biến
+  if(cprNum_(ctx.lookup(K('BitsPerComponent'))) !== 8) return false;
+  const comps = cprImageComps_(ctx, d);
+  if(!comps) return false;
+  const oldLen = stream.contents.length;
+  if(oldLen < 12000 && Math.max(w, h) <= cfg.maxSide) return false;   // ảnh nhỏ: không đáng nén
+
+  const filters = cprFilters_(ctx, d);
+  let bmp = null;
+  if(filters.length === 1 && filters[0] === '/DCTDecode'){
+    bmp = await createImageBitmap(new Blob([stream.contents], { type: 'image/jpeg' }));
+  } else if(filters.length === 0 || (filters.length === 1 && filters[0] === '/FlateDecode')){
+    const data = filters.length ? decodePDFRawStream(stream).decode() : stream.contents;
+    let dp = ctx.lookup(K('DecodeParms'));
+    if(dp instanceof PDFArray) dp = dp.size() ? ctx.lookup(dp.get(0)) : null;
+    let pred = 1, colors = comps, columns = w;
+    if(dp instanceof PDFDict){
+      const g = (k, def) => { const v = cprNum_(ctx.lookup(dp.get(PDFName.of(k)))); return isFinite(v) ? v : def; };
+      pred = g('Predictor', 1); colors = g('Colors', 1); columns = g('Columns', 1);
+      if(g('BitsPerComponent', 8) !== 8) return false;
+    }
+    if(colors !== comps || columns !== w) return false;
+    const raw = cprUnpredict_(data, pred, comps, w, h);
+    if(!raw || raw.length < w*h*comps) return false;
+    const rgba = new Uint8ClampedArray(w*h*4);
+    if(comps === 3){ for(let i=0,j=0,n=w*h;i<n;i++,j+=3){ rgba[i*4]=raw[j]; rgba[i*4+1]=raw[j+1]; rgba[i*4+2]=raw[j+2]; rgba[i*4+3]=255; } }
+    else { for(let i=0,n=w*h;i<n;i++){ const v=raw[i]; rgba[i*4]=v; rgba[i*4+1]=v; rgba[i*4+2]=v; rgba[i*4+3]=255; } }
+    bmp = await createImageBitmap(new ImageData(rgba, w, h));
+  } else {
+    return false;                                           // JPX/CCITT/LZW/... giữ nguyên
+  }
+
+  try{
+    const bw = bmp.width, bh = bmp.height;
+    const ratio = Math.min(1, cfg.maxSide / Math.max(bw, bh));
+    const nw = Math.max(1, Math.round(bw * ratio)), nh = Math.max(1, Math.round(bh * ratio));
+    const canvas = document.createElement('canvas');
+    canvas.width = nw; canvas.height = nh;
+    const c2 = canvas.getContext('2d');
+    c2.fillStyle = '#fff'; c2.fillRect(0, 0, nw, nh);       // JPEG không có nền trong suốt (độ trong suốt do SMask lo)
+    c2.imageSmoothingEnabled = true; c2.imageSmoothingQuality = 'high';
+    c2.drawImage(bmp, 0, 0, nw, nh);
+    const jpg = await cprCanvasToJpegBytes_(canvas, cfg.quality);
+    if(jpg.length >= oldLen * 0.92) return false;           // không nhỏ hơn rõ rệt -> giữ ảnh cũ
+    const dictObj = { Type: 'XObject', Subtype: 'Image', Width: nw, Height: nh, ColorSpace: 'DeviceRGB', BitsPerComponent: 8, Filter: 'DCTDecode' };
+    const sm = K('SMask'); if(sm) dictObj.SMask = sm;       // giữ nguyên kênh trong suốt (độ phân giải riêng)
+    ctx.assign(ref, ctx.stream(jpg, dictObj));
+    return true;
+  } finally {
+    if(bmp && bmp.close) bmp.close();
+  }
 }
 
 // Dựng lại toàn bộ trang của editedDocJs (đối tượng pdf.js) thành ảnh JPEG theo cấu hình cfg, rồi
@@ -11068,6 +11180,26 @@ async function renderCompressedDoc_(editedDocJs, cfg, spinnerLabel, attemptInfo)
     newPage.drawImage(jpegImage, { x: 0, y: 0, width: vp1.width, height: vp1.height });
   }
   return compressedDoc.save();
+}
+
+// Mở lại bytes PDF (đã gồm mọi chỉnh sửa, chữ vẫn là vector), nén lại các ảnh nhúng theo cfg, lưu ra bytes mới.
+async function recompressImagesKeepVector_(srcBytes, cfg, spinnerLabel, attemptInfo){
+  const { PDFName, PDFRawStream } = PDFLib;
+  const doc = await PDFDocument.load(srcBytes, { ignoreEncryption: true });
+  const imgs = [];
+  for(const [ref, obj] of doc.context.enumerateIndirectObjects()){
+    if(!(obj instanceof PDFRawStream)) continue;
+    const st = obj.dict.get(PDFName.of('Subtype'));
+    if(st && String(st) === '/Image') imgs.push([ref, obj]);
+  }
+  let replaced = 0;
+  for(let k=0;k<imgs.length;k++){
+    if(spinnerLabel) spinnerLabel.textContent = ` Đang nén ảnh ${k+1}/${imgs.length}${attemptInfo || ''} (chữ giữ nguyên vector)…`;
+    try{ if(await cprRecompressImage_(doc, imgs[k][0], imgs[k][1], cfg)) replaced++; }
+    catch(err){ console.warn('Bỏ qua 1 ảnh không nén được (giữ nguyên ảnh gốc):', err); }
+  }
+  const bytes = await doc.save();
+  return { bytes, imageCount: imgs.length, replaced };
 }
 
 // NEW: kiểm tra tài liệu hiện tại có ĐÚNG NGUYÊN TRẠNG như lúc vừa mở file lên hay không (chưa hề
@@ -11118,16 +11250,8 @@ async function compressPdfAndDownload(level){
     const rebuiltSize = editedBytes.length; // dùng riêng để hiển thị debug/tham khảo, KHÔNG dùng làm chuẩn "gốc"
     const trueOriginalSize = originalFileRawSize > 0 ? originalFileRawSize : rebuiltSize;
 
-    // Bước 2: vẽ lại từng trang ra canvas (dùng pdf.js) rồi nén thành JPEG, sau đó nhúng ảnh đó vào
-    // một trang PDF mới có ĐÚNG kích thước (point) như trang gốc — giữ nguyên khổ giấy, chỉ đổi nội
-    // dung bên trong thành ảnh đã nén.
-    // LỖI ĐÃ SỬA (nguyên nhân cốt lõi khiến file nén ra 0KB): pdfjsLib.getDocument({data: ...})
-    // CHUYỂN QUYỀN SỞ HỮU (transfer/detach) bộ nhớ ArrayBuffer gốc sang cho PDF.js Worker xử lý —
-    // ngay sau dòng này, editedBytes.length TỰ ĐỘNG BIẾN THÀNH 0 (bị "rút ruột" bộ nhớ), dù biến
-    // vẫn còn tồn tại. Khắc phục: luôn truyền vào getDocument() một BẢN SAO độc lập
-    // (editedBytes.slice()) — bản sao có vùng nhớ riêng nên có bị Worker "rút ruột" cũng không ảnh
-    // hưởng gì tới editedBytes gốc.
-    const editedDocJs = await pdfjsLib.getDocument({ data: editedBytes.slice() }).promise;
+    // Bước 2: KHÔNG dựng lại trang thành ảnh. editedBytes giữ nguyên chữ vector; ở bước 3 chỉ các ảnh nhúng
+    // bên trong được tái nén (recompressImagesKeepVector_).
 
     // Bước 3 (THÍCH ỨNG + CÓ BẢO HIỂM): tập hợp ứng viên ban đầu gồm:
     //  (a) editedBytes — bản ĐÃ LƯU QUA PDF-LIB nhưng CHƯA rasterize (chữ vẫn là vector chọn/copy
@@ -11144,9 +11268,12 @@ async function compressPdfAndDownload(level){
     // thay ứng viên tốt nhất (bestBytes) khi một lượt rasterize cho ra kết quả THỰC SỰ NHỎ HƠN ứng
     // viên hiện có — nhờ vậy, với các PDF chủ yếu là chữ vector (rasterize luôn thua vector gốc dù đã
     // nén cực mạnh), kết quả cuối cùng sẽ tự động rơi về đúng ứng viên (a) hoặc (b) ở trên.
+    const isRaster = (baseCfg.mode === 'raster');   // Siêu nén: dựng trang thành ảnh JPEG; Tiêu chuẩn: giữ vector
+    // pdf.js chiếm quyền bộ nhớ của buffer truyền vào -> luôn đưa BẢN SAO (xem ghi chú lỗi 0KB trước đây).
+    const editedDocJs = isRaster ? await pdfjsLib.getDocument({ data: editedBytes.slice() }).promise : null;
     let cfg = { maxSide: baseCfg.maxSide, quality: baseCfg.quality };
     let bestBytes = editedBytes;                         // ứng viên (a): chưa rasterize, chữ vẫn là vector
-    let usedRasterize = false;                            // đã từng có 1 lượt rasterize thắng chưa
+    let usedImageRecompress = false;                            // đã từng có 1 lượt rasterize thắng chưa
     let usedRawOriginal = false;                           // ứng viên cuối cùng có phải bytes RAW gốc không
 
     if(isDocUnchangedFromOriginalRaw_()){
@@ -11160,19 +11287,27 @@ async function compressPdfAndDownload(level){
     let finalReduction = trueOriginalSize > 0 ? (1 - bestBytes.length / trueOriginalSize) : 0;
 
     // Gom TẤT CẢ các lượt rasterize vào danh sách rồi mới chọn kết quả tốt nhất ở cuối (thay vì chỉ
-    // giữ file nhỏ nhất như trước). Lý do: với khoảng mục tiêu mới (tiêu chuẩn 40%-60%, siêu nén
+    // giữ file nhỏ nhất như trước). Lý do: với khoảng mục tiêu mới (tiêu chuẩn 60%-80%, siêu nén
     // 60%-80%), nếu một lượt nén "quá tay" (giảm vượt targetMax) rồi lượt sau nới lại đúng khoảng, bản
     // "quá tay" vẫn bị giữ lại chỉ vì nó nhỏ hơn -> ảnh mờ hơn mức cần thiết. Cách chọn mới:
     //   1) Ưu tiên bản NẰM TRONG khoảng [targetMin, targetMax] và có dung lượng LỚN NHẤT (= nét nhất).
     //   2) Nếu không có bản nào nằm trong khoảng nhưng có bản giảm VƯỢT targetMax: lấy bản gần targetMax nhất.
     //   3) Nếu tất cả đều chưa đạt targetMin: lấy bản nhỏ nhất (giảm nhiều nhất) tìm được.
     // Sau đó vẫn chỉ thay ứng viên vector/RAW khi bản rasterize được chọn THỰC SỰ nhỏ hơn.
-    const rasterCandidates = [];
+    const imageCandidates = [];
+    let noImages = false;
     for(let attempt=0; attempt<COMPRESS_MAX_ATTEMPTS; attempt++){
       const attemptInfo = COMPRESS_MAX_ATTEMPTS>1 ? ` (lượt ${attempt+1}/${COMPRESS_MAX_ATTEMPTS})` : '';
-      const candidateBytes = await renderCompressedDoc_(editedDocJs, cfg, spinnerLabel, attemptInfo);
+      let candidateBytes;
+      if(isRaster){
+        candidateBytes = await renderCompressedDoc_(editedDocJs, cfg, spinnerLabel, attemptInfo);
+      } else {
+        const imgRes = await recompressImagesKeepVector_(editedBytes, cfg, spinnerLabel, attemptInfo);
+        candidateBytes = imgRes.bytes;
+        if(imgRes.imageCount === 0){ noImages = true; break; }   // không có ảnh nào để nén -> giữ nguyên vector
+      }
       const reduction = trueOriginalSize > 0 ? (1 - candidateBytes.length / trueOriginalSize) : 0;
-      rasterCandidates.push({ bytes: candidateBytes, reduction: reduction });
+      imageCandidates.push({ bytes: candidateBytes, reduction: reduction });
 
       // Đã đạt khoảng mục tiêu mong muốn -> dừng.
       if(reduction >= baseCfg.targetMin && reduction <= baseCfg.targetMax){
@@ -11204,20 +11339,20 @@ async function compressPdfAndDownload(level){
       cfg = nextCfg;
     }
 
-    if(rasterCandidates.length){
-      const inRange = rasterCandidates.filter(c => c.reduction >= baseCfg.targetMin && c.reduction <= baseCfg.targetMax);
-      const over    = rasterCandidates.filter(c => c.reduction >  baseCfg.targetMax);
+    if(imageCandidates.length){
+      const inRange = imageCandidates.filter(c => c.reduction >= baseCfg.targetMin && c.reduction <= baseCfg.targetMax);
+      const over    = imageCandidates.filter(c => c.reduction >  baseCfg.targetMax);
       let chosen;
       if(inRange.length){
         chosen = inRange.reduce((a,b) => (b.bytes.length > a.bytes.length ? b : a));      // nét nhất trong khoảng
       } else if(over.length){
         chosen = over.reduce((a,b) => (b.reduction < a.reduction ? b : a));               // gần targetMax nhất
       } else {
-        chosen = rasterCandidates.reduce((a,b) => (b.bytes.length < a.bytes.length ? b : a)); // nhỏ nhất tìm được
+        chosen = imageCandidates.reduce((a,b) => (b.bytes.length < a.bytes.length ? b : a)); // nhỏ nhất tìm được
       }
       if(chosen.bytes.length < bestBytes.length){
         bestBytes = chosen.bytes;
-        usedRasterize = true;
+        usedImageRecompress = true;
         usedRawOriginal = false;
         finalReduction = chosen.reduction;
       }
@@ -11241,10 +11376,16 @@ async function compressPdfAndDownload(level){
 
     if(usedRawOriginal){
       cprResult.textContent = `Tài liệu chưa có chỉnh sửa nào nên đã giữ nguyên bản gốc (${formatBytes_(trueOriginalSize)}) — không có gì để nén thêm, nhưng file tải xuống ĐẢM BẢO không nặng hơn file gốc.`;
-    } else if(percent > 0 && usedRasterize){
-      cprResult.textContent = `Xong! Dung lượng gốc: ${formatBytes_(trueOriginalSize)} → sau khi nén: ${formatBytes_(compressedSize)} (giảm ${percent}%). Đã tải file xuống.`;
+    } else if(isRaster && percent > 0 && usedImageRecompress){
+      cprResult.textContent = `Xong! Dung lượng gốc: ${formatBytes_(trueOriginalSize)} → sau khi siêu nén: ${formatBytes_(compressedSize)} (giảm ${percent}%). Mỗi trang đã được nén thành ảnh nên chữ không còn chọn/copy được. Đã tải file xuống.`;
+    } else if(isRaster && !isLargerThanOriginal){
+      cprResult.textContent = `Nén theo ảnh không làm file nhỏ hơn (tài liệu chủ yếu là chữ vector, rất nhẹ) nên đã giữ nguyên bản vector (${formatBytes_(compressedSize)}, so với file gốc ${formatBytes_(trueOriginalSize)}) để file không bị nặng hơn.`;
+    } else if(percent > 0 && usedImageRecompress){
+      cprResult.textContent = `Xong! Dung lượng gốc: ${formatBytes_(trueOriginalSize)} → sau khi nén: ${formatBytes_(compressedSize)} (giảm ${percent}%). Chữ vẫn là vector sắc nét, chọn/copy được — chỉ ảnh nhúng được nén. Đã tải file xuống.`;
     } else if(!isLargerThanOriginal){
-      cprResult.textContent = `Tài liệu này chủ yếu là CHỮ VECTOR (chọn/copy được) nên nén thành ảnh không giúp giảm thêm dung lượng — đã tự động giữ nguyên dạng vector (${formatBytes_(compressedSize)}, so với file gốc ${formatBytes_(trueOriginalSize)}) để đảm bảo file tải xuống KHÔNG bị nặng hơn, đồng thời vẫn giữ được chữ chọn/copy được. Nếu muốn giảm dung lượng hơn nữa cho tài liệu dạng này, cân nhắc giảm số trang hoặc ảnh chèn kèm thay vì nén toàn trang.`;
+      cprResult.textContent = noImages
+        ? `Tài liệu này không có ảnh nhúng nào để nén (chỉ gồm chữ/nét vẽ vector) nên đã GIỮ NGUYÊN dạng vector sắc nét, chọn/copy được (${formatBytes_(compressedSize)}, so với file gốc ${formatBytes_(trueOriginalSize)}). Chữ không bị chuyển thành ảnh nên không có gì để nén thêm.`
+        : `Các ảnh trong tài liệu không nén thêm được mà vẫn giữ chất lượng nên đã giữ nguyên (${formatBytes_(compressedSize)}, so với file gốc ${formatBytes_(trueOriginalSize)}). Chữ vẫn là vector sắc nét, chọn/copy được.`;
     } else {
       // Trường hợp hiếm: tài liệu đã có nhiều chỉnh sửa (chữ/ảnh/tô mới) khiến nội dung thực sự tăng
       // lên so với file gốc — không có cách nào giữ được các chỉnh sửa đó mà vẫn nhỏ hơn file gốc rỗng
@@ -15250,8 +15391,8 @@ const WXL = (function(){
 
   // ------------------------------------------------------------------ CHECKBOX ----
   // Ký tự ô tích trong lớp chữ THẬT của PDF (Unicode + Wingdings ánh xạ vào vùng riêng U+F0xx)
-  const CB_UNCH = new Set(['\u2610', '\u25A1', '\u25A2', '\uF0A8', '\uF071', '\uF06F', '\uF0A1']);
-  const CB_CHK  = new Set(['\u2611', '\u2612', '\u2713', '\u2714', '\u2717', '\u2718', '\uF0FE', '\uF0FD', '\uF0FC', '\uF078']);
+  const CB_UNCH = new Set(['\u2610', '\u25A1', '\u25A2', '\u2751', '\uF0A8', '\uF071', '\uF06F', '\uF0A1']);
+  const CB_CHK  = new Set(['\u2611', '\u2612', '\u2713', '\u2714', '\u2717', '\u2718', '\u2327', '\uF0FE', '\uF0FD', '\uF0FC', '\uF078']);
   function glyphKind(text){
     const t = String(text || '').trim();
     if(t.length !== 1) return null;
@@ -16149,21 +16290,63 @@ const WX_BULLET_RE = /^[-–—−•·●○◦▪■□◆◇❖➢➤➔►�
      - ảnh scan: mọi ký hiệu bị quy hết về "•" hoặc "-".
    CÁCH SỬA: quy đổi về ký tự Unicode thật (kèm font có đủ glyph), nhận diện thêm bằng HÌNH DẠNG (vòng tròn rỗng, ❖, ◆, ■ ...),
    còn ký hiệu lạ chưa có bản Unicode thì giữ nguyên mã + font gốc (Symbol/Wingdings) để Word tự vẽ đúng. */
+/* ----- BẢNG QUY ĐỔI KÝ HIỆU (sửa lỗi ☐ ☒ ☑ ✓ ➢ ❖ ... khi xuất Word hiện thành ô vuông / mất) -----
+   Trước đây: (1) chỉ có 10 mã được quy đổi; (2) việc nhận diện font Symbol/Wingdings phụ thuộc hoàn toàn vào TÊN FONT trong
+   PDF — PDF xuất từ Google Docs/Chrome/Skia... thường đổi tên font nên mã vùng riêng U+F0xx lọt thẳng sang Word bằng font
+   Times New Roman => ô vuông trống. Nay: bảng đầy đủ hơn, mã F0xx luôn được xử lý (mặc định coi là Wingdings khi không rõ font),
+   mã còn lại không có chữ Unicode tương đương được ghi bằng <w:sym> (Word tự vẽ đúng glyph của font Wingdings/Symbol). */
 const WX_PUA_SYM = { 0xF0B7:'\u2022', 0xF09F:'\u2022', 0xF0A7:'\u25AA', 0xF076:'\u2756', 0xF06C:'\u25CF', 0xF06E:'\u25A0',
   0xF075:'\u25C6', 0xF077:'\u2B25', 0xF0D8:'\u27A2', 0xF0E8:'\u2794' };
-const WX_DING_ASCII = { v:'\u2756', l:'\u25CF', n:'\u25A0', u:'\u25C6', w:'\u2B25', '\u00A7':'\u25AA', '\u00D8':'\u27A2', '\u00E8':'\u2794' };
-function wxSymFamOf_(fontName){
+// Wingdings: mã thấp (byte) -> Unicode. (0xA1 cố ý KHÔNG có: đang được nhận diện riêng là ô tích rỗng.)
+const WX_WING = { 0x6C:'\u25CF', 0x6D:'\u274D', 0x6E:'\u25A0', 0x6F:'\u25A1', 0x71:'\u2751', 0x72:'\u2752', 0x73:'\u2B27', 0x74:'\u29EB',
+  0x75:'\u25C6', 0x76:'\u2756', 0x77:'\u2B25', 0x78:'\u2327', 0x9F:'\u2022', 0xA7:'\u25AA', 0xA8:'\u2610', 0xD8:'\u27A2', 0xE8:'\u2794',
+  0xFB:'\u2717', 0xFC:'\u2713', 0xFD:'\u2612', 0xFE:'\u2611' };
+// Symbol: chữ Hy Lạp + toán học thường gặp (chỉ áp dụng cho mã vùng riêng F0xx của font Symbol)
+const WX_SYMB = (function(){
+  const up = 'ΑΒΧΔΕΦΓΗΙϑΚΛΜΝΟΠΘΡΣΤΥςΩΞΨΖ', lo = 'αβχδεφγηιϕκλμνοπθρστυϖωξψζ', m = {};
+  for(let i=0;i<26;i++){ m[0x41+i] = up[i]; m[0x61+i] = lo[i]; }
+  Object.assign(m, { 0xB7:'\u2022', 0xB1:'\u00B1', 0xB3:'\u2265', 0xA3:'\u2264', 0xB9:'\u2260', 0xBB:'\u2248', 0xA5:'\u221E', 0xB4:'\u00D7',
+    0xB8:'\u00F7', 0xB0:'\u00B0', 0xAE:'\u2192', 0xAC:'\u2190', 0xAD:'\u2191', 0xAF:'\u2193', 0xDE:'\u21D2', 0xDC:'\u21D0', 0xDB:'\u21D4',
+    0xD6:'\u221A', 0xE5:'\u2211', 0xD5:'\u220F', 0xF2:'\u222B', 0xB6:'\u2202', 0xD1:'\u2207', 0xCE:'\u2208', 0xC8:'\u222A', 0xC7:'\u2229',
+    0xA2:'\u2032', 0xB2:'\u2033' });
+  return m;
+})();
+// Wingdings khi pdf.js trả ký tự Latin-1 thay vì mã vùng riêng (ví dụ "¨" = ☐, "ü" = ✓, "þ" = ☑, "§" = ▪, "Ø" = ➢, "v" = ❖)
+const WX_DING_ASCII = (function(){ const m = {}; for(const k in WX_WING){ const c = +k; if(c >= 0x20 && c <= 0xFF) m[String.fromCharCode(c)] = WX_WING[k]; } return m; })();
+// Loại font ký hiệu: 'symbol' | 'webdings' | 'wing23' (Wingdings 2/3) | 'wing' (Wingdings, ZapfDingbats) | null (không rõ)
+function wxFontKind_(fontName){
   const n = String(fontName || '');
-  if(/webdings/i.test(n)) return 'Webdings';
-  if(/wingdings|dingbats/i.test(n)) return 'Wingdings';
-  if(/symbol/i.test(n)) return 'Symbol';
+  if(/webdings/i.test(n)) return 'webdings';
+  if(/wingdings\s*[23]/i.test(n)) return 'wing23';
+  if(/wingdings|dingbats/i.test(n)) return 'wing';
+  if(/(^|[^a-z])symbol(mt)?($|[^a-z])/i.test(n) && !/segoe|opensymbol|apple/i.test(n)) return 'symbol';
+  return null;
+}
+function wxSymFamOf_(fontName){
+  const n = String(fontName || ''), k = wxFontKind_(n);
+  if(k === 'webdings') return 'Webdings';
+  if(k === 'wing23') return /wingdings\s*3/i.test(n) ? 'Wingdings 3' : 'Wingdings 2';
+  if(k === 'wing') return 'Wingdings';
+  if(k === 'symbol') return 'Symbol';
   return null;
 }
 function wxNormSymbolText_(str, fontName){
-  const ding = /wingdings|dingbats|webdings/i.test(String(fontName || ''));
-  if(ding && str.length === 1 && WX_DING_ASCII[str]) return WX_DING_ASCII[str];
+  const kind = wxFontKind_(fontName);
+  const chars = Array.from(String(str));
   let out = '';
-  for(const ch of str){ const cp = ch.codePointAt(0); out += ((cp >= 0xF020 && cp <= 0xF0FF && WX_PUA_SYM[cp]) || ch); }
+  for(const ch of chars){
+    const cp = ch.codePointAt(0);
+    if(cp >= 0xF020 && cp <= 0xF0FF){                        // mã "vùng riêng" của font Symbol/Wingdings
+      const lo = cp & 0xFF;
+      const m = (kind === 'symbol' ? WX_SYMB[lo] : null) || WX_PUA_SYM[cp] ||
+                ((kind === null || kind === 'wing') ? WX_WING[lo] : null);
+      out += m || ch;                                        // không có bản Unicode -> giữ mã, ghi bằng <w:sym>
+    } else if(cp >= 0xE000 && cp <= 0xF8FF){                 // vùng riêng khác (font tuỳ biến): tránh ô vuông trống trong Word
+      out += (chars.length === 1 ? '\u2022' : '');
+    } else if(kind === 'wing' && cp >= 0x20 && cp <= 0xFF && WX_WING[cp]){
+      out += WX_WING[cp];                                    // font Wingdings nhưng ký tự trả về dạng Latin-1
+    } else out += ch;
+  }
   return out;
 }
 // Ký hiệu -> { ch, fam } sẽ ghi vào Word. fam = font có đủ glyph (không đặt = dùng font chữ của dòng).
@@ -16609,7 +16792,7 @@ function wxRunsForSeg(L){
     };
     if(ws[k].symFam){   // ký hiệu font Symbol/Wingdings chưa có chữ Unicode tương đương: giữ mã + font gốc để Word vẽ đúng glyph
       if(k>0 && cur) cur.t += ' ';
-      runs.push(Object.assign({ t: ws[k].text }, st, { fam: ws[k].symFam }));
+      runs.push(Object.assign({ t: ws[k].text }, st, { fam: ws[k].symFam, sym: true }));
       cur = null; continue;
     }
     if(ws[k].cb){   // ô tích (Checkbox): run riêng, không gộp với chữ
@@ -17222,7 +17405,7 @@ async function wxApplyNativeText(A, lines){
     for(const it of its){
       const s = it.text, len = Math.max(1, s.length), wpx = it.x1 - it.x0;
       const re = /\S+/g; let m;
-      while((m = re.exec(s))){ words0.push({ symFam: (it.symFam && (/[\uF020-\uF0FF]/.test(m[0]) || (it.symAscii && /^[\x21-\x7E\u00A0-\u00FF]+$/.test(m[0])))) ? it.symFam : undefined, text:m[0], conf:100, x0: it.x0 + wpx*m.index/len, x1: it.x0 + wpx*(m.index+m[0].length)/len, y0:L.y0, y1:L.y1,
+      while((m = re.exec(s))){ words0.push({ symFam: /[\uF020-\uF0FF]/.test(m[0]) ? (it.symFam || 'Wingdings') : ((it.symFam && it.symAscii && /^[\x21-\x7E\u00A0-\u00FF]+$/.test(m[0])) ? it.symFam : undefined), text:m[0], conf:100, x0: it.x0 + wpx*m.index/len, x1: it.x0 + wpx*(m.index+m[0].length)/len, y0:L.y0, y1:L.y1,
         nb: it.bold, ni: it.italic, nsz: it.fs*WX_PX2PT, nknown: it.known, nserif: it.serif, _head: m.index === 0, _tail: m.index+m[0].length === s.length, _fs: it.fs }); }
     }
     // [SỬA LỖI "chữ bị tách rời: N ă ng L ư, 20 2 6, 270 .000"] PDF này chia một từ thành nhiều mảnh chữ (font WinAnsi + font CID cho
@@ -17331,8 +17514,29 @@ function wxRunXml(r){
     return '<w:r>'+rp+'<w:fldChar w:fldCharType="begin"/></w:r><w:r>'+rp+'<w:instrText xml:space="preserve"> '+r.field+' </w:instrText></w:r>'+
       '<w:r>'+rp+'<w:fldChar w:fldCharType="separate"/></w:r><w:r>'+rp+'<w:t>'+wxEsc(r.t||'1')+'</w:t></w:r><w:r>'+rp+'<w:fldChar w:fldCharType="end"/></w:r>';
   }
+  // [SỬA LỖI KÝ HIỆU] Run ký hiệu font Symbol/Wingdings chưa có chữ Unicode: dùng <w:sym> để Word tự vẽ đúng glyph của font gốc
+  if(r.sym){
+    const font = r.fam || 'Wingdings', rp = wxRPr(r, font);
+    let x = '';
+    for(const ch of String(r.t == null ? '' : r.t)){
+      const cp = ch.codePointAt(0);
+      const hex = (cp >= 0xF020 && cp <= 0xF0FF) ? cp : ((cp >= 0x21 && cp <= 0xFF) ? 0xF000 + cp : 0);
+      if(hex) x += '<w:r>'+rp+'<w:sym w:font="'+wxEsc(font)+'" w:char="'+hex.toString(16).toUpperCase().padStart(4,'0')+'"/></w:r>';
+      else x += '<w:r>'+rp+'<w:t xml:space="preserve">'+wxEsc(ch)+'</w:t></w:r>';
+    }
+    return x;
+  }
+  // [SỬA LỖI KÝ HIỆU] Ký tự ký hiệu Unicode (☐ ☒ ☑ ✓ ➢ ❖ ■ ◆ → ...) KHÔNG có trong Times New Roman nên Word hiện ô vuông:
+  // tách riêng thành run font "Segoe UI Symbol" (có đủ glyph; Word tự thay font tương đương trên Mac/Linux).
+  const txt = String(r.t == null ? '' : r.t);
+  if(WX_SYMCHAR_RE.test(txt)){
+    return txt.split(WX_SYMSPLIT_RE).filter(seg => seg !== '').map(seg =>
+      '<w:r>'+(WX_SYMCHAR_RE.test(seg) ? wxRPr(r, 'Segoe UI Symbol') : wxRPr(r))+'<w:t xml:space="preserve">'+wxEsc(seg)+'</w:t></w:r>').join('');
+  }
   return '<w:r>'+wxRPr(r)+'<w:t xml:space="preserve">'+wxEsc(r.t)+'</w:t></w:r>';
 }
+const WX_SYMCHAR_RE = /[\u2190-\u21FF\u2300-\u23FF\u25A0-\u25FF\u2600-\u27BF\u29EB\u2B00-\u2BFF]/;
+const WX_SYMSPLIT_RE = /([\u2190-\u21FF\u2300-\u23FF\u25A0-\u25FF\u2600-\u27BF\u29EB\u2B00-\u2BFF]+)/;
 function wxParaXml(p, opts){
   opts = opts || {};
   let ppr = '';
