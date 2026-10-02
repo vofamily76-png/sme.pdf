@@ -1660,6 +1660,7 @@
   <div class="sep"></div>
 
   <button class="tbtn" id="btnUndo" title="Hoàn tác"><span class="ic">↩️</span>Undo</button>
+  <button class="tbtn" id="btnRedo" title="Làm lại (Ctrl+Y): phục hồi thao tác vừa bị Undo. Chỉ dùng được sau khi đã Undo" disabled style="opacity:.45;cursor:default"><span class="ic">↪️</span>Redo</button>
   <button class="tbtn" id="btnClearPage" title="Xóa hết chỉnh sửa trên trang (không xóa trang)"><span class="ic">🧹</span>Delete edit</button>
   <div class="sep"></div>
 
@@ -3663,6 +3664,7 @@ async function closeCurrentPdf_(){
   originalFileRawBuf = null;
   originalFileRawSize = 0;
   undoStack = {};
+  redoStack = {};
   cropOps_ = {};
   regionSelections = {};
   selectedEditIndex = -1;
@@ -8365,8 +8367,10 @@ async function bulkEditRegion(mode){
 
 // ---------- Undo / Xóa chỉnh sửa ----------
 let undoStack = {};
+let redoStack = {};      // ngăn Redo theo từng trang (xem khối Redo bên dưới)
 function pushUndo(idx){
   const id = pages[idx].id;
+  redoStack[id] = [];       // thao tác MỚI -> không còn gì để Redo
   if(!undoStack[id]) undoStack[id]=[];
   undoStack[id].push(JSON.stringify(pages[idx].edits));
   if(undoStack[id].length>50) undoStack[id].shift();
@@ -8383,6 +8387,7 @@ function cropRecordUndo_(changes){      // changes: [{id, prev}] — prev = crop
   const ids = new Set(changes.map(c => c.id));
   if(cur()) ids.add(cur().id);
   const marker = JSON.stringify({ __cropOp: opId });
+  ids.forEach(id => { redoStack[id] = []; });
   ids.forEach(id => {
     if(!undoStack[id]) undoStack[id] = [];
     undoStack[id].push(marker);
@@ -8396,11 +8401,14 @@ async function undoCropOp_(opId){
   for(const ch of op.changes){
     const p = pages.find(pp => pp.id === ch.id);
     if(!p) continue;                      // trang đã bị xoá
+    ch.next = p.crop ? Object.assign({}, p.crop) : null;   // crop hiện tại, để Redo áp lại
     if(ch.prev) p.crop = Object.assign({}, ch.prev); else delete p.crop;
   }
   cropDraft_ = null; cropDraftPageId_ = null; cropDrag_ = null;
   await cropRefreshAll_();
   try{ redrawOverlay(); }catch(e){}
+  { const rid = new Set(op.changes.map(c => c.id)); if(cur()) rid.add(cur().id);
+    const rm = JSON.stringify({ __redoCrop: opId }); rid.forEach(id => redoPush_(id, rm)); }
   showToast_('Đã hoàn tác crop.');
   return true;
 }
@@ -8414,6 +8422,8 @@ document.getElementById('btnUndo').onclick = async ()=>{
     let data = null;
     try{ data = JSON.parse(st.pop()); }catch(err){ continue; }
     if(Array.isArray(data)){
+      redoPush_(id, JSON.stringify(cur().edits));   // để Redo phục hồi lại thao tác vừa hoàn tác
+      updateRedoState_();
       cur().edits = data;
       selectedEditIndex = -1;
       pendingTextColor = null;
@@ -8427,6 +8437,85 @@ document.getElementById('btnUndo').onclick = async ()=>{
     }
   }
 };
+// ---------- Redo / Làm lại ----------
+// Redo phục hồi thao tác vừa bị Undo. Mỗi lần Undo, trạng thái chỉnh sửa TRƯỚC khi hoàn tác được cất vào ngăn redoStack
+// của trang (cùng cơ chế snapshot như undoStack). Redo lấy lại snapshot đó (và cất trạng thái hiện tại về ngăn Undo để
+// có thể Undo tiếp). Bất kỳ thao tác chỉnh sửa MỚI nào (pushUndo/crop mới) sẽ xoá ngăn Redo của trang -> Redo chỉ dùng
+// được sau khi đã Undo ít nhất 1 lần và chưa có thao tác mới (giống Word/Photoshop).
+function redoPush_(id, s){
+  if(!redoStack[id]) redoStack[id] = [];
+  redoStack[id].push(s);
+  if(redoStack[id].length > 50) redoStack[id].shift();
+}
+function redoHasValid_(id){
+  const st = redoStack[id];
+  if(!st || !st.length) return false;
+  for(let i = st.length - 1; i >= 0; i--){
+    const s = st[i];
+    if(s.charAt(0) === '[') return true;                       // snapshot chỉnh sửa
+    try{ const d = JSON.parse(s); if(d && d.__redoCrop && cropOps_[d.__redoCrop] && cropOps_[d.__redoCrop].undone) return true; }catch(err){}
+  }
+  return false;
+}
+function updateRedoState_(){
+  const b = document.getElementById('btnRedo'); if(!b) return;
+  const on = !!(pages.length && cur() && redoHasValid_(cur().id));
+  if(b.disabled === on){ b.disabled = !on; b.style.opacity = on ? '' : '0.45'; b.style.cursor = on ? '' : 'default'; }
+}
+async function redoCropOp_(opId){
+  const op = cropOps_[opId];
+  if(!op || !op.undone) return false;       // thao tác đã được làm lại từ ngăn của trang khác
+  op.undone = false;
+  for(const ch of op.changes){
+    const p = pages.find(pp => pp.id === ch.id);
+    if(!p) continue;
+    if(ch.next) p.crop = Object.assign({}, ch.next); else delete p.crop;
+  }
+  cropDraft_ = null; cropDraftPageId_ = null; cropDrag_ = null;
+  await cropRefreshAll_();
+  try{ redrawOverlay(); }catch(e){}
+  const ids = new Set(op.changes.map(c => c.id)); if(cur()) ids.add(cur().id);
+  const marker = JSON.stringify({ __cropOp: opId });          // trả dấu mốc về ngăn Undo để Undo lại được
+  ids.forEach(id => { if(!undoStack[id]) undoStack[id] = []; if(!undoStack[id].includes(marker)) undoStack[id].push(marker); });
+  showToast_('Đã làm lại crop.');
+  return true;
+}
+document.getElementById('btnRedo').onclick = async ()=>{
+  flushPendingEdit();
+  if(!pages.length || !cur()) return;
+  const id = cur().id, st = redoStack[id];
+  while(st && st.length){
+    let data = null;
+    try{ data = JSON.parse(st.pop()); }catch(err){ continue; }
+    if(Array.isArray(data)){
+      if(!undoStack[id]) undoStack[id] = [];
+      undoStack[id].push(JSON.stringify(cur().edits));          // trạng thái hiện tại -> để Undo lại được
+      if(undoStack[id].length > 50) undoStack[id].shift();
+      cur().edits = data;
+      selectedEditIndex = -1;
+      pendingTextColor = null;
+      pendingTextTarget = null;
+      redrawOverlay();
+      updateRedoState_();
+      return;
+    }
+    if(data && data.__redoCrop){
+      if(await redoCropOp_(data.__redoCrop)){ updateRedoState_(); return; }
+    }
+  }
+  updateRedoState_();
+};
+setInterval(updateRedoState_, 300);          // cập nhật trạng thái nút khi đổi trang / có thao tác mới
+document.addEventListener('keydown', function(e){
+  if(e.defaultPrevented || !(e.ctrlKey || e.metaKey)) return;
+  if(document.getElementById('orgRoot') || document.getElementById('dcRoot')) return;   // hộp thoại Organize/Compare có phím riêng
+  const ae = document.activeElement;
+  if(ae && (ae.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName))) return; // đang gõ chữ: để trình duyệt tự Undo/Redo
+  const k = (e.key || '').toLowerCase();
+  if(k === 'y' || (k === 'z' && e.shiftKey)){ e.preventDefault(); document.getElementById('btnRedo').click(); }
+  else if(k === 'z'){ e.preventDefault(); document.getElementById('btnUndo').click(); }
+});
+
 document.getElementById('btnClearPage').onclick = ()=>{
   if(!pages.length) return;
   if(confirm('Xóa toàn bộ chỉnh sửa (không xóa trang) trên trang này?')){
