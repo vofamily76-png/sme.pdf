@@ -241,6 +241,29 @@
     position:absolute;top:-20px;left:0;font-size:11px;color:var(--text-dim);user-select:none;
   }
   .pageSlot canvas.pageStatic{display:block;cursor:pointer;}
+  /* ===== Thanh tìm kiếm (Find) ===== */
+  /* Thanh Find nằm cố định phía trên vùng xem và ĐẨY các trang xuống (xem #canvasArea.finding) nên không che nội dung trang. */
+  #findBar{display:none;position:absolute;top:0;left:0;right:0;height:72px;z-index:46;box-sizing:border-box;
+    flex-direction:column;justify-content:center;overflow:hidden;padding:0 10px;background:var(--bg-toolbar-2);
+    border-bottom:1px solid var(--border);color:var(--text-light);font-size:12px;}
+  #findBar.show{display:flex;}
+  #findBar .frow{display:flex;align-items:center;gap:8px;flex-wrap:nowrap;height:35px;min-width:0;}
+  #findBar input[type=text]{flex:0 1 260px;min-width:120px;height:26px;box-sizing:border-box;background:#1c1e22;color:var(--text-light);
+    border:1px solid var(--border);border-radius:5px;padding:2px 8px;font-size:12.5px;outline:none;}
+  #findBar input[type=text]:focus{border-color:var(--accent);}
+  #findBar label{display:flex;align-items:center;gap:3px;cursor:pointer;user-select:none;white-space:nowrap;flex-shrink:0;}
+  #findBar .fbtn{flex-shrink:0;background:transparent;border:1px solid var(--border);color:var(--text-light);border-radius:5px;
+    padding:2px 10px;height:26px;cursor:pointer;font-size:12px;white-space:nowrap;}
+  #findBar .fbtn:hover{background:rgba(255,255,255,.12);}
+  #findBar .fbtn.primary{background:var(--accent);border-color:var(--accent);color:#fff;}
+  #findBar .fbtn.primary:hover{filter:brightness(1.12);}
+  #findBar .fhint{flex-shrink:0;color:var(--text-dim);font-size:11px;}
+  #findCount{flex-shrink:0;min-width:56px;text-align:center;color:var(--text-dim);white-space:nowrap;}
+  #findCount.none{color:#ff8a80;}
+  #findStatus{display:none;flex:1 1 0;min-width:0;font-size:11px;color:var(--text-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  #canvasArea.finding #pagesScroll{top:72px;}
+  #canvasArea.finding.cropping #pagesScroll{top:106px;}
+  #canvasArea.finding #cropBar{top:72px;}
   #pageWrap{position:absolute;top:0;left:0;background:#fff;}
   #pdfCanvas{display:block;}
   #overlayCanvas{position:absolute;top:0;left:0;cursor:default;}
@@ -1505,6 +1528,7 @@
       <button class="tbtn" id="btnDocCompare" title="So sánh hai file PDF (bản gốc và bản đã chỉnh sửa): tự động dò và đánh dấu điểm khác biệt về văn bản, định dạng, hình ảnh, bố cục; xuất PDF báo cáo"><span class="ic">🆚</span>Document Compare</button>
     </div>
   </div>
+  <button class="tbtn" id="btnFind" title="Find — tìm từ/cụm từ trong toàn bộ tài liệu và tô sáng kết quả (Ctrl+F)"><span class="ic">🔍</span>Find</button>
   <div class="sep"></div>
 
   <button class="tbtn" data-tool="select" id="toolSelect"><span class="ic">🖱️</span>Select</button>
@@ -1654,6 +1678,26 @@
   </div>
 
   <div id="canvasArea">
+    <div id="findBar" role="search">
+      <div class="frow">
+        <input type="text" id="findInput" placeholder="Tìm trong tài liệu…" autocomplete="off" spellcheck="false">
+        <span id="findCount" title="Kết quả hiện tại / tổng số">0/0</span>
+        <button type="button" class="fbtn" id="findPrev" title="Kết quả trước (Shift+Enter)">▲</button>
+        <button type="button" class="fbtn" id="findNext" title="Kết quả sau (Enter)">▼</button>
+        <label title="Phân biệt chữ HOA/thường"><input type="checkbox" id="findCase">Aa</label>
+        <label title="Chỉ tìm nguyên từ"><input type="checkbox" id="findWord">Nguyên từ</label>
+        <label title="Bỏ qua dấu tiếng Việt (gõ nguyen vẫn tìm ra Nguyễn)"><input type="checkbox" id="findAccent">Bỏ qua dấu</label>
+        <label title="Tự động OCR các trang scan/ảnh (không có chữ thật) để tìm kiếm được chữ trong ảnh"><input type="checkbox" id="findAutoOcr" checked>Auto OCR</label>
+        <div id="findStatus"></div>
+        <button type="button" class="fbtn" id="findClose" title="Đóng (Esc)">✕</button>
+      </div>
+      <div class="frow">
+        <input type="text" id="findReplaceInput" placeholder="Thay bằng…" autocomplete="off" spellcheck="false">
+        <button type="button" class="fbtn" id="findReplaceBtn" title="Replace — thay kết quả đang chọn rồi sang kết quả kế tiếp, để bạn kiểm tra ngữ cảnh từng chỗ (Enter trong ô Thay bằng)">Replace</button>
+        <button type="button" class="fbtn primary" id="findReplaceAllBtn" title="Replace All — thay đồng loạt TẤT CẢ kết quả trong tài liệu (Ctrl+Enter trong ô Thay bằng)">Replace All</button>
+        <span class="fhint">Ctrl+H</span>
+      </div>
+    </div>
     <div id="dropHint">
       <span class="big">📄</span>
       Chưa có file PDF nào được mở.<br>
@@ -2858,7 +2902,28 @@ function safeDrawText(page, text, opts, fallbackFont){
 // tự cách trình duyệt mô phỏng "faux bold" khi thiếu font Bold thật) — cho nét chữ dày lên rõ rệt mà
 // không cần font riêng. "In nghiêng" thì dùng thẳng xSkew có sẵn của pdf-lib (đặt trong opts.xSkew
 // từ nơi gọi), không cần giả lập gì thêm.
+// [SỬA LỖI CHỮ BỊ "NGHIÊNG/LEO DỐC" KHI FIND-REPLACE / REPLACE ALL / EDIT TEXT CÓ IN NGHIÊNG]
+// Lỗi cũ: chữ nghiêng được vẽ bằng tuỳ chọn xSkew của pdf-lib. Nhưng xSkew của pdf-lib làm NGHIÊNG TRỤC X
+// (đường cơ sở dốc lên: ma trận chữ [cos, sin+tan(xSkew), ...]) chứ KHÔNG làm nghiêng nét chữ. Vì mỗi TỪ được vẽ
+// riêng (để canh khoảng cách từ), mỗi từ "leo dốc" ~12° rồi từ kế tiếp lại tụt về đường cơ sở => dòng chữ nhấp nhô,
+// từ dài cao hơn từ ngắn như ảnh lỗi. Cách sửa: các nơi gọi vẫn truyền opts.xSkew (= góc nghiêng chữ), nhưng ở đây
+// ta chuyển thành phép CẮT XÉN (shear) THẬT dọc theo đường cơ sở: p' = p + tan(góc) * (độ cao so với đường cơ sở) * (hướng
+// đường cơ sở), neo tại điểm bắt đầu của đoạn chữ, đúng với mọi góc xoay trang (0/90/180/270) nhờ dùng ma trận cm.
 function drawStyledText(page, text, opts, fallbackFont, bold){
+  const sk = opts && (opts.xSkew || opts.ySkew);
+  if(!sk){ drawStyledTextRaw_(page, text, opts, fallbackFont, bold); return; }
+  const o = { ...opts }; delete o.xSkew; delete o.ySkew;
+  const deg = v => !v ? 0 : (v.type === 'radians' ? v.angle*180/Math.PI : v.angle);
+  const tn = Math.tan(deg(sk)*Math.PI/180);
+  const r = deg(opts.rotate)*Math.PI/180, ux = Math.cos(r), uy = Math.sin(r), vx = -uy, vy = ux;
+  const ax = o.x || 0, ay = o.y || 0;
+  const a = 1 + tn*ux*vx, c = tn*ux*vy, b = tn*uy*vx, d = 1 + tn*uy*vy;
+  const e = ax - (a*ax + c*ay), f = ay - (b*ax + d*ay);
+  page.pushOperators(PDFLib.pushGraphicsState(), PDFLib.concatTransformationMatrix(a, b, c, d, e, f));
+  try{ drawStyledTextRaw_(page, text, o, fallbackFont, bold); }
+  finally{ page.pushOperators(PDFLib.popGraphicsState()); }
+}
+function drawStyledTextRaw_(page, text, opts, fallbackFont, bold){
   safeDrawText(page, text, opts, fallbackFont);
   if(bold){
     const offset = Math.max(0.35, (opts.size||12) * 0.03);
@@ -5320,6 +5385,7 @@ async function renderStaticPreview(idx){
   }
   const ctx = c.getContext('2d');
   for(const e of p.edits) drawEdit(ctx, e, scale);
+  try{ findDrawHighlights_(ctx, p, scale); }catch(err){ /* tô sáng kết quả Find (chỉ hiển thị, không ghi vào PDF) */ }
   // Xoay ảnh xem trước tĩnh này theo đúng góc xoay đã đặt cho trang (nếu có) — chỉ ảnh hưởng hiển
   // thị, KHÔNG đụng gì tới toạ độ edits vừa vẽ ở trên (đã vẽ xong trước khi xoay raster).
   // Crop: chỉ giữ vùng crop của trang (cắt TRƯỚC khi xoay, vì crop tính theo hệ toạ độ chưa xoay).
@@ -5441,6 +5507,918 @@ function eraseDrawStrokesAt(px, py){
   }
 }
 
+
+// ============================================================================================
+// ====================== TÌM KIẾM (FIND) — Ctrl+F / nút "Find" trên thanh công cụ ======================
+// Đọc lớp văn bản (text layer) của từng trang qua pdf.js (getTextContent) để lấy TOẠ ĐỘ từng đoạn chữ,
+// tìm từ khoá trong toàn bộ tài liệu rồi tô sáng mọi kết quả (vàng) + kết quả đang xem (cam).
+// - Trang scan/ảnh không có chữ thật: dùng kết quả OCR (nếu đã chạy OCR) để vẫn tìm được.
+// - Chữ do người dùng thêm/sửa trong app (Add text, Edit Text) cũng được tìm, tô sáng nguyên khung chữ.
+// - Tô sáng chỉ nằm trên lớp hiển thị (overlayCanvas + bản xem trước tĩnh) -> KHÔNG bị ghi vào file PDF khi Save/Print.
+// Toạ độ kết quả lưu theo hệ "scale = 1" (cùng hệ với edits), nên đúng ở mọi mức zoom.
+// ============================================================================================
+var FIND_MAX_MATCHES = 5000;
+var findState = { query:'', optsKey:'', matches:[], byPage:new Map(), cur:-1, token:0, noTextPages:0, capped:false, scan:[], busyTok:0 };
+var findTextCache = new WeakMap();   // đối tượng trang -> { text, segs } (chữ gốc của PDF + vị trí từng đoạn)
+var findMeasureCtx_ = null;
+var findDebounce_ = null;
+
+// ============================================================================================
+// ========== AUTO OCR CHO FIND — tự động OCR các trang scan/ảnh để TÌM KIẾM được chữ ==========
+// Trước đây Find chỉ tìm trong lớp chữ thật của PDF; file scan (chỉ là ảnh) báo "chưa có chữ (hãy chạy OCR)".
+// Bây giờ: khi mở thanh Find hoặc khi tìm, phần mềm tự phát hiện trang scan (không có chữ thật, chưa OCR) và
+// OCR NGẦM lần lượt từng trang (Tesseract 'vie', dùng chung worker với Edit Text). Kết quả hiện NGAY khi trang
+// nào OCR xong (không phải đợi hết file); chữ tìm được trên trang scan được tô vàng đúng vị trí dòng OCR.
+// Kết quả OCR lưu vào chính trang (p.ocrWords/p.ocrLines) nên Edit Text / Replace / Select text dùng lại, không OCR lại.
+// Tắt/bật bằng ô "Auto OCR" trên thanh Find (nhớ lựa chọn).
+// ============================================================================================
+var findOcrJob_ = null, findOcrFailed_ = new WeakSet(), findOcrChain_ = Promise.resolve();
+var findOcrInfo_ = { total:0, done:0, cur:0 };
+function findAutoOcrOn_(){ const el = document.getElementById('findAutoOcr'); return !el || el.checked; }
+function findBarOpen_(){ const b = document.getElementById('findBar'); return !!(b && b.classList.contains('show')); }
+
+// OCR 1 trang, IM LẶNG (không spinner/alert như runOcrForPage) và xếp hàng để không chạy song song trên 1 worker.
+function findOcrPage_(p){
+  if(p.ocrWords) return Promise.resolve(p);
+  const job = findOcrChain_.then(async function(){
+    if(p.ocrWords) return p;                           // Edit Text đã OCR xong trang này trong lúc chờ
+    const idx = pages.indexOf(p);
+    if(idx < 0) throw new Error('Trang đã bị xóa');
+    const tmp = await renderPageToCanvas(idx, 3);      // cùng hệ số 3x như runOcrForPage
+    const worker = await getWorker();
+    const res = await worker.recognize(tmp);
+    if(p.ocrWords) return p;
+    const data = res.data;
+    p.ocrText = data.text;
+    p.ocrWords = (data.words || []).map(function(w){
+      return { text: w.text, x0: w.bbox.x0/3, y0: w.bbox.y0/3, x1: w.bbox.x1/3, y1: w.bbox.y1/3 };
+    });
+    p.ocrLines = computePageLines(p.ocrWords);
+    return p;
+  });
+  findOcrChain_ = job.catch(function(){});
+  return job;
+}
+// [SỬA LỖI "Auto OCR không chạy" với file scan có sẵn lớp chữ ẩn SAI] Nhiều file scan (máy scan/ứng dụng cũ)
+// đã nhúng sẵn 1 lớp chữ ẩn do OCR kém (mất dấu, lẫn số: "C6ng ty", "kh6ch hirng", "Quf"...). Bản trước coi trang "có chữ" là
+// trang chữ thật -> bỏ qua OCR, nên tìm "Quý khách hàng" không ra. Giờ phân loại từng trang:
+//   'noText'   : không có chữ nào                                  -> OCR
+//   'badLayer' : là ẢNH SCAN (ảnh phủ ≥55% trang) + lớp chữ ẩn kém chất lượng -> OCR, rồi tìm trên chữ OCR (bỏ lớp chữ sai)
+//   'none'     : PDF chữ thật / lớp chữ tốt                        -> không OCR
+var findScanKindCache_ = new WeakMap(), findScanReady_ = [];
+function findLayerLooksGood_(text){
+  const letters = (text.match(/[A-Za-zÀ-ỹ]/g) || []).length;
+  if(letters < 20) return false;
+  const toks = text.split(/[^A-Za-zÀ-ỹ0-9]+/).filter(function(w){ return w.length >= 2; });
+  let mixed = 0, stop = 0;
+  const SW = /^(the|and|of|to|in|is|for|that|with|on|as|by|are|this|be|or|from|not|have|you)$/i;
+  for(const w of toks){
+    if(SW.test(w)) stop++;
+    if(/\d/.test(w) && /[A-Za-zÀ-ỹ]/.test(w) && !/^\d+[xX×]\d+$/.test(w) && !/^[mM][23]$/.test(w) && !/^\d+(st|nd|rd|th|kg|cm|mm|ml|m|g|k|h)$/i.test(w)) mixed++;
+  }
+  const n = Math.max(1, toks.length), mixedRatio = mixed / n;
+  const dia = countVietnameseDiacritics_(text) / letters;
+  if(mixedRatio < 0.03 && dia >= 0.05) return true;            // tiếng Việt có dấu đầy đủ
+  return mixedRatio < 0.01 && stop / n >= 0.04;                 // tiếng Anh sạch
+}
+async function findPageIsImage_(p){
+  try{
+    const page = await p.doc.getPage(p.srcPage), vp = page.getViewport({ scale: 1 }), OPS = pdfjsLib.OPS, U = pdfjsLib.Util;
+    const ol = await page.getOperatorList(), st = [];
+    let m = [1,0,0,1,0,0], area = 0;
+    for(let k = 0; k < ol.fnArray.length; k++){
+      const fn = ol.fnArray[k], a = ol.argsArray[k];
+      if(fn === OPS.save) st.push(m);
+      else if(fn === OPS.restore) m = st.pop() || m;
+      else if(fn === OPS.transform) m = U.transform(m, a);
+      else if(fn === OPS.paintImageXObject || fn === OPS.paintInlineImageXObject || fn === OPS.paintImageMaskXObject || fn === OPS.paintJpegXObject){
+        const q = U.transform(vp.transform, m);
+        area += Math.hypot(q[0], q[1]) * Math.hypot(q[2], q[3]);
+      }
+    }
+    return area >= 0.55 * vp.width * vp.height;
+  }catch(err){ return false; }
+}
+async function findScanKind_(p){
+  if(findScanKindCache_.has(p)) return findScanKindCache_.get(p);
+  let kind = 'none';
+  if(p && p.type === 'pdf' && p.doc){
+    const info = await findGetPageText_(p), txt = info.text || '';
+    if(!txt.trim()) kind = 'noText';
+    else if(!findLayerLooksGood_(txt) && await findPageIsImage_(p)) kind = 'badLayer';
+  }
+  findScanKindCache_.set(p, kind);
+  return kind;
+}
+// Các trang cần OCR (đồng thời gom các trang 'badLayer' đã được OCR từ trước vào findScanReady_ để tìm lại trên chữ OCR).
+async function findScanPagesTodo_(){
+  const out = []; let n = 0;
+  findScanReady_ = [];
+  for(const p of pages.slice()){
+    if(++n % 4 === 0) await new Promise(function(r){ setTimeout(r, 0); });
+    if(!p || p.type !== 'pdf' || findOcrFailed_.has(p)) continue;
+    const kind = await findScanKind_(p);
+    if(kind === 'none') continue;
+    if(p.ocrWords){ if(kind === 'badLayer') findScanReady_.push(p); continue; }
+    out.push(p);
+  }
+  return out;
+}
+// Gộp kết quả tìm của 1 trang vừa OCR xong vào danh sách kết quả hiện tại (giữ thứ tự trang & kết quả đang chọn).
+async function findMergePage_(p){
+  if(findState.busyTok || !findState.query || !findState.query.trim() || pages.indexOf(p) < 0) return;
+  const tok = findState.token, q = findState.query, ok = findState.optsKey;
+  let re, opts;
+  try{ opts = JSON.parse(ok); re = findBuildRegex_(findNormalize_(q.trim(), opts).s, opts); }catch(err){ return; }
+  const res = await findPageMatches_(p, re, opts);
+  if(tok !== findState.token || findState.busyTok || q !== findState.query || ok !== findState.optsKey) return;   // đã có lượt tìm mới
+  const curM = findState.matches[findState.cur], hadAny = findState.matches.length > 0;
+  let ms = findState.matches.filter(function(m){ return m.p !== p; });
+  res.list.forEach(function(it){ ms.push({ p: p, rects: it.rects, edit: it.edit, occ: it.occ }); });
+  const order = new Map(pages.map(function(pg, i){ return [pg, i]; }));
+  ms = ms.map(function(m, i){ return [m, i]; })
+         .sort(function(a, b){ return (order.get(a[0].p) - order.get(b[0].p)) || (a[1] - b[1]); })
+         .map(function(x){ return x[0]; });
+  if(ms.length > FIND_MAX_MATCHES){ ms = ms.slice(0, FIND_MAX_MATCHES); findState.capped = true; }
+  const byPage = new Map();
+  ms.forEach(function(m, k){ if(!byPage.has(m.p)) byPage.set(m.p, []); byPage.get(m.p).push(k); });
+  findState.matches = ms; findState.byPage = byPage;
+  findState.cur = curM ? ms.indexOf(curM) : -1;
+  if(findState.cur < 0 && ms.length){
+    const s = ms.findIndex(function(m){ return pages.indexOf(m.p) >= currentIndex; });
+    findState.cur = s < 0 ? 0 : s;
+  }
+  findUpdateUi_();
+  if(!hadAny && ms.length) await findGoto_(findState.cur, true);     // trước đó "Không có" -> nhảy tới kết quả đầu tiên vừa tìm thấy
+  else findRepaint_(new Set([p]));
+}
+// Vòng lặp OCR nền. Chỉ có 1 vòng chạy tại 1 thời điểm; trả về Promise (Replace All chờ nó xong).
+function findOcrRun_(){
+  if(findOcrJob_) return findOcrJob_;
+  if(!findAutoOcrOn_() || !pages.length) return Promise.resolve();
+  findOcrJob_ = (async function(){
+    try{
+      for(let round = 0; round < 3; round++){
+        const todo = await findScanPagesTodo_();
+        { const rd = findScanReady_.splice(0); for(const rp of rd){ if(!findAutoOcrOn_()) break; await findMergePage_(rp); } }
+        if(!todo.length) break;
+        findOcrInfo_ = { total: todo.length, done: 0, cur: 0 };
+        findUpdateUi_();
+        let okCount = 0;
+        for(const p of todo){
+          if(!findAutoOcrOn_() || !findBarOpen_()) return;
+          const idx = pages.indexOf(p);
+          if(idx < 0){ findOcrInfo_.done++; continue; }
+          findOcrInfo_.cur = idx + 1; findUpdateUi_();
+          try{ await findOcrPage_(p); okCount++; }
+          catch(err){
+            console.warn('Find: OCR lỗi ở trang', idx + 1, err);
+            if(!okCount){ todo.forEach(function(x){ findOcrFailed_.add(x); }); return; }   // lỗi ngay từ đầu (mạng/tessdata) -> dừng, không thử lại từng trang
+            findOcrFailed_.add(p); findOcrInfo_.done++; continue;
+          }
+          findOcrInfo_.done++;
+          await findMergePage_(p);
+          findUpdateUi_();
+        }
+      }
+    }finally{
+      findOcrInfo_ = { total:0, done:0, cur:0 };
+      findOcrJob_ = null;
+      findUpdateUi_();
+    }
+  })();
+  return findOcrJob_;
+}
+// Sau mỗi lượt tìm: gộp các trang scan đã OCR xong trong lúc lượt tìm chạy, rồi (tiếp tục) OCR phần còn lại.
+function findOcrAfterFind_(){
+  (async function(){
+    try{ for(const p of (findState.scan || [])) if(p.ocrWords) await findMergePage_(p); }catch(err){}
+    findOcrRun_();
+  })();
+}
+// Dòng ghi chú tiến độ / lỗi OCR hiển thị trong thanh Find.
+function findOcrNote_(){
+  if(findOcrJob_ && findOcrInfo_.total){
+    return 'Trang scan: đang tự động OCR để tìm chữ (' + Math.min(findOcrInfo_.done + 1, findOcrInfo_.total) + '/' + findOcrInfo_.total +
+      ', trang ' + findOcrInfo_.cur + ')…' + (findOcrInfo_.done ? '' : ' Lần đầu cần tải mô hình tiếng Việt nên có thể mất vài chục giây.');
+  }
+  const sc = new Set(findState.scan || []);
+  let failed = 0, pending = 0;
+  for(const p of pages){
+    if(!p || p.type !== 'pdf' || p.ocrWords) continue;
+    const kd = findScanKindCache_.get(p);
+    if(findOcrFailed_.has(p)) failed++; else if(sc.has(p) || kd === 'noText' || kd === 'badLayer') pending++;
+  }
+  const out = [];
+  if(failed) out.push(failed + ' trang scan OCR không được (kiểm tra kết nối mạng để tải mô hình OCR, rồi mở lại thanh Find).');
+  if(!findAutoOcrOn_() && pending) out.push(pending + ' trang scan chưa có chữ — bật “Auto OCR” để tìm được.');
+  return out.join(' ');
+}
+
+
+function findMeasure_(str){
+  if(!findMeasureCtx_){
+    findMeasureCtx_ = document.createElement('canvas').getContext('2d');
+    findMeasureCtx_.font = '100px Arial, "Helvetica Neue", sans-serif';
+  }
+  return findMeasureCtx_.measureText(str).width;
+}
+function findMulMatrix_(m, n){
+  return [
+    m[0]*n[0] + m[2]*n[1], m[1]*n[0] + m[3]*n[1],
+    m[0]*n[2] + m[2]*n[3], m[1]*n[2] + m[3]*n[3],
+    m[0]*n[4] + m[2]*n[5] + m[4], m[1]*n[4] + m[3]*n[5] + m[5]
+  ];
+}
+
+// Chuẩn hoá chuỗi để so khớp: gộp dấu tổ hợp (NFC/NFKC), bỏ phân biệt hoa-thường / dấu tuỳ tuỳ chọn.
+// Trả về chuỗi mới + bảng ánh xạ từng ký tự mới -> vị trí [đầu, cuối) trong chuỗi gốc (để tô sáng đúng chỗ).
+function findNormalize_(str, opts){
+  const out = [], map = [], mapEnd = [];
+  const n = str.length;
+  let i = 0;
+  while(i < n){
+    let j = i + 1;
+    while(j < n && /[\u0300-\u036f]/.test(str[j])) j++;      // dấu tổ hợp dính vào ký tự đứng trước
+    let t = str.slice(i, j);
+    if(opts.ignoreAccent){
+      t = t.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D');
+    } else {
+      t = t.normalize('NFKC');
+    }
+    if(!opts.matchCase) t = t.toLowerCase();
+    t = t.replace(/[\u00A0\u2000-\u200B\u202F\u3000]/g, ' ');
+    for(let k = 0; k < t.length; k++){ out.push(t[k]); map.push(i); mapEnd.push(j); }
+    i = j;
+  }
+  return { s: out.join(''), map: map, mapEnd: mapEnd };
+}
+function findBuildRegex_(qn, opts){
+  let src = qn.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+');
+  if(opts.wholeWord) src = '(?<![\\p{L}\\p{N}_])(?:' + src + ')(?![\\p{L}\\p{N}_])';
+  return new RegExp(src, 'gu');
+}
+
+// Lấy chữ + vị trí từng đoạn chữ của một trang PDF (có cache theo đối tượng trang).
+async function findGetPageText_(p){
+  if(findTextCache.has(p)) return findTextCache.get(p);
+  const info = { text:'', segs:[] };
+  if(p && p.type === 'pdf' && p.doc){
+    try{
+      const page = await p.doc.getPage(p.srcPage);
+      const vp = page.getViewport({ scale: 1 });
+      const tc = await page.getTextContent();
+      let text = '', prev = null;
+      for(const it of tc.items){
+        if(typeof it.str !== 'string') continue;
+        if(!it.str){ if(it.hasEOL && text && !text.endsWith('\n')) text += '\n'; continue; }
+        const tx = findMulMatrix_(vp.transform, it.transform);
+        const fh = Math.hypot(tx[2], tx[3]) || Math.abs(it.height) || 10;
+        const lu = Math.hypot(tx[0], tx[1]) || fh;
+        const seg = {
+          start: 0, str: it.str, sx: tx[4], sy: tx[5],
+          ux: tx[0]/lu, uy: tx[1]/lu, vx: tx[2]/fh, vy: tx[3]/fh,
+          fh: fh, w: (it.width || 0) * vp.scale
+        };
+        if(prev && !text.endsWith('\n')){
+          const ex = prev.sx + prev.ux*prev.w, ey = prev.sy + prev.uy*prev.w;
+          const dx = seg.sx - ex, dy = seg.sy - ey;
+          const perp = dx*prev.vx + dy*prev.vy, along = dx*prev.ux + dy*prev.uy;
+          if(Math.abs(perp) > 0.5*prev.fh) text += '\n';                                       // sang dòng khác
+          else if(along > 0.15*prev.fh && !/\s$/.test(text) && !/^\s/.test(seg.str)) text += ' '; // khoảng trống giữa 2 từ
+        }
+        seg.start = text.length;
+        text += seg.str;
+        info.segs.push(seg);
+        prev = seg;
+        if(it.hasEOL) text += '\n';
+      }
+      info.text = text;
+    }catch(err){
+      console.warn('Find: không đọc được chữ của trang', err);
+    }
+  }
+  findTextCache.set(p, info);
+  return info;
+}
+
+// Chuyển khoảng ký tự [a,b) của chuỗi trang thành các hình chữ nhật (toạ độ scale=1) bao đúng phần chữ đó.
+function findRectsForRange_(segs, a, b){
+  const rects = [];
+  for(const sg of segs){
+    const s0 = sg.start, s1 = sg.start + sg.str.length;
+    if(s1 <= a) continue;
+    if(s0 >= b) break;
+    const lo = Math.max(a, s0) - s0, hi = Math.min(b, s1) - s0;
+    if(hi <= lo) continue;
+    let t0 = 0, t1 = sg.w;
+    if(!(lo === 0 && hi === sg.str.length)){
+      const mw = findMeasure_(sg.str);
+      const f = mw > 0 ? sg.w / mw : 0;
+      t0 = findMeasure_(sg.str.slice(0, lo)) * f;
+      t1 = findMeasure_(sg.str.slice(0, hi)) * f;
+    }
+    if(t1 - t0 < 0.3) continue;
+    const asc = sg.fh * 0.9, desc = sg.fh * 0.22;
+    const pts = [[t0,-desc],[t1,-desc],[t1,asc],[t0,asc]].map(function(q){
+      return [ sg.sx + sg.ux*q[0] + sg.vx*q[1], sg.sy + sg.uy*q[0] + sg.vy*q[1] ];
+    });
+    const xs = pts.map(function(q){return q[0];}), ys = pts.map(function(q){return q[1];});
+    const r = { x: Math.min.apply(null, xs), y: Math.min.apply(null, ys) };
+    r.w = Math.max.apply(null, xs) - r.x; r.h = Math.max.apply(null, ys) - r.y;
+    const last = rects[rects.length - 1];
+    if(last && Math.abs(last.y - r.y) < 1.5 && Math.abs(last.h - r.h) < 2 && r.x - (last.x + last.w) < 2 && r.x >= last.x){
+      last.w = Math.max(last.w, r.x + r.w - last.x);   // gộp các đoạn liền kề cùng dòng thành 1 khung
+    } else rects.push(r);
+  }
+  return rects;
+}
+
+function findCoveredByEdit_(r, covers){
+  const cx = r.x + r.w/2, cy = r.y + r.h/2;
+  for(const e of covers){
+    const c = (typeof e.coverX === 'number') ? { x:e.coverX, y:e.coverY, w:e.coverW, h:e.coverH } : e;   // khung NỀN CHE thật (nếu có)
+    if(c.w && c.h && cx >= c.x && cx <= c.x + c.w && cy >= c.y && cy <= c.y + c.h) return true;
+  }
+  return false;
+}
+
+function findScanText_(text, segs, re, opts, covers, out){
+  if(!text) return;
+  const nz = findNormalize_(text, opts);
+  re.lastIndex = 0;
+  let m, guard = 0;
+  while((m = re.exec(nz.s)) !== null){
+    if(m[0].length === 0){ re.lastIndex++; continue; }
+    const a = nz.map[m.index], b = nz.mapEnd[m.index + m[0].length - 1];
+    const rects = findRectsForRange_(segs, a, b);
+    if(rects.length && !findCoveredByEdit_(rects[0], covers)) out.push({ rects: rects });
+    if(++guard > 20000) break;
+  }
+}
+
+// Tìm trong MỘT trang: chữ PDF thật (hoặc dòng OCR nếu là trang scan) + chữ người dùng đã thêm/sửa trong app.
+async function findPageMatches_(p, re, opts){
+  const out = [];
+  const edits = (p && p.edits) ? p.edits : [];
+  const covers = edits.filter(function(e){ return e && (e.type === 'textfix' || e.type === 'ocrfix' || e.type === 'whiteout'); });
+  const info = await findGetPageText_(p);
+  let text = info.text, segs = info.segs;
+  let hadText = !!(text && text.trim());
+  const _kind = findScanKindCache_.get(p);
+  const _useOcr = !!(_kind === 'badLayer' && p.ocrLines && p.ocrLines.length);   // scan có lớp chữ ẩn sai -> tìm trên chữ OCR
+  if(!hadText || _useOcr){
+    // Trang scan/ảnh: dùng dòng OCR đã có sẵn (không tự chạy OCR vì rất nặng)
+    let lines = [];
+    try{ lines = (typeof editTextLinesFor === 'function') ? (editTextLinesFor(p) || []) : []; }catch(err){ lines = []; }
+    text = ''; segs = [];
+    for(const ln of lines){
+      if(!ln || !ln.text) continue;
+      const h = Math.max(1, ln.y1 - ln.y0), fh = h / 1.12;
+      segs.push({ start: text.length, str: ln.text, sx: ln.x0, sy: ln.y1 - 0.22*fh, ux:1, uy:0, vx:0, vy:-1, fh: fh, w: Math.max(1, ln.x1 - ln.x0) });
+      text += ln.text + '\n';
+    }
+    hadText = !!text.trim();
+  }
+  findScanText_(text, segs, re, opts, covers, out);
+  // Chữ thêm/sửa trong app: tô sáng nguyên khung chữ
+  for(const e of edits){
+    if(!e || !e.text || !(e.type === 'text' || e.type === 'textfix' || e.type === 'ocrfix')) continue;
+    hadText = true;
+    const nz = findNormalize_(String(e.text), opts);
+    re.lastIndex = 0;
+    let m, guard = 0, occ = 0;
+    while((m = re.exec(nz.s)) !== null){
+      if(m[0].length === 0){ re.lastIndex++; continue; }
+      out.push({ rects: [{ x: e.x, y: e.y, w: e.w || 20, h: e.h || 14 }], edit: e, occ: occ++ });   // edit/occ: để Replace biết đúng chỗ cần thay
+      if(++guard > 200) break;
+    }
+  }
+  out.sort(function(a, b){
+    const ra = a.rects[0], rb = b.rects[0];
+    return Math.abs(ra.y - rb.y) > 4 ? ra.y - rb.y : ra.x - rb.x;   // theo thứ tự đọc: trên->dưới, trái->phải
+  });
+  return { list: out, hadText: hadText };
+}
+
+// ----- Vẽ tô sáng (gọi từ redrawOverlay cho trang đang sống và từ renderStaticPreview cho các trang khác) -----
+function findDrawHighlights_(ctx, p, sc){
+  if(!findState || !findState.matches.length || !p) return;
+  const list = findState.byPage.get(p);
+  if(!list) return;
+  ctx.save();
+  for(const mi of list){
+    const m = findState.matches[mi];
+    const isCur = (mi === findState.cur);
+    ctx.fillStyle = isCur ? 'rgba(255,128,0,0.50)' : 'rgba(255,230,0,0.42)';
+    for(const r of m.rects) ctx.fillRect(r.x*sc - 1, r.y*sc - 1, r.w*sc + 2, r.h*sc + 2);
+    if(isCur){
+      ctx.strokeStyle = '#e65100'; ctx.lineWidth = 2;
+      for(const r of m.rects) ctx.strokeRect(r.x*sc - 1, r.y*sc - 1, r.w*sc + 2, r.h*sc + 2);
+    }
+  }
+  ctx.restore();
+}
+
+// Vẽ lại các trang bị ảnh hưởng (trang sống -> overlay, trang khác -> bản xem trước tĩnh).
+async function findRepaint_(pageSet){
+  for(const p of pageSet){
+    const idx = pages.indexOf(p);
+    if(idx < 0) continue;
+    try{
+      if(idx === currentIndex) redrawOverlay();
+      else await renderStaticPreview(idx);
+    }catch(err){ console.warn('Find: không vẽ lại được trang', idx+1, err); }
+  }
+}
+
+function findOpts_(){
+  return {
+    matchCase: document.getElementById('findCase').checked,
+    wholeWord: document.getElementById('findWord').checked,
+    ignoreAccent: document.getElementById('findAccent').checked
+  };
+}
+function findUpdateUi_(statusMsg){
+  const cnt = document.getElementById('findCount');
+  const st = document.getElementById('findStatus');
+  const n = findState.matches.length;
+  const hasQ = !!document.getElementById('findInput').value.trim();
+  cnt.classList.remove('none');
+  if(!hasQ) cnt.textContent = '0/0';
+  else if(!n){ cnt.textContent = 'Không có'; cnt.classList.add('none'); }
+  else cnt.textContent = (findState.cur + 1) + '/' + n + (findState.capped ? '+' : '');
+  let msg = statusMsg || '';
+  if(!msg && hasQ){
+    if(n){
+      const pg = findState.byPage.size;
+      msg = 'Tìm thấy ' + n + (findState.capped ? '+' : '') + ' kết quả trong ' + pg + ' trang.';
+    }
+    
+  }
+  if(!statusMsg){ const ocrNote = findOcrNote_(); if(ocrNote) msg += (msg ? ' ' : '') + ocrNote; }
+  st.textContent = msg;
+  st.style.display = msg ? 'block' : 'none';
+}
+
+async function runFind_(o){
+  const myTok = ++findState.token; findState.busyTok = myTok;
+  const input = document.getElementById('findInput');
+  const q = input.value;
+  const opts = findOpts_();
+  const oldPages = new Set(findState.matches.map(function(m){ return m.p; }));
+  findState.query = q;
+  findState.optsKey = JSON.stringify(opts);
+  const clearAll = function(){
+    findState.matches = []; findState.byPage = new Map(); findState.cur = -1; findState.noTextPages = 0; findState.capped = false; findState.scan = []; findState.busyTok = 0;
+  };
+  if(!q.trim() || !pages.length){
+    clearAll(); findUpdateUi_(); findRepaint_(oldPages);
+    return;
+  }
+  findUpdateUi_('Đang tìm…');
+  let re;
+  try{ re = findBuildRegex_(findNormalize_(q.trim(), opts).s, opts); }
+  catch(err){ clearAll(); findUpdateUi_('Từ khoá không hợp lệ.'); findRepaint_(oldPages); return; }
+
+  const snapshot = pages.slice(); const scanPages = [];
+  const matches = [];
+  let noText = 0, capped = false;
+  for(let i = 0; i < snapshot.length; i++){
+    if(myTok !== findState.token) return;          // người dùng đã gõ từ khoá mới -> bỏ lượt tìm cũ
+    const p = snapshot[i];
+    const res = await findPageMatches_(p, re, opts);
+    if(!res.hadText && p.type === 'pdf'){ noText++; scanPages.push(p); }
+    for(const it of res.list){
+      matches.push({ p: p, rects: it.rects, edit: it.edit, occ: it.occ });
+      if(matches.length >= FIND_MAX_MATCHES){ capped = true; break; }
+    }
+    if(capped) break;
+    if(i % 3 === 2){
+      findUpdateUi_('Đang tìm… trang ' + (i+1) + '/' + snapshot.length + ' (' + matches.length + ' kết quả)');
+      await new Promise(function(r){ setTimeout(r, 0); });
+    }
+  }
+  if(myTok !== findState.token) return;
+
+  const byPage = new Map();
+  matches.forEach(function(m, k){
+    if(!byPage.has(m.p)) byPage.set(m.p, []);
+    byPage.get(m.p).push(k);
+  });
+  findState.matches = matches; findState.byPage = byPage; findState.noTextPages = noText; findState.capped = capped; findState.scan = scanPages; findState.busyTok = 0;
+  // Chọn kết quả đầu tiên từ trang đang xem trở đi (nếu không có thì quay về kết quả đầu tiên)
+  let start = matches.findIndex(function(m){ return pages.indexOf(m.p) >= currentIndex; });
+  if(start < 0) start = 0;
+  if(o && typeof o.startIndex === 'number') start = (o.startIndex >= 0 && o.startIndex < matches.length) ? o.startIndex : 0;   // sau Replace: nhảy tới kết quả kế tiếp
+  findState.cur = matches.length ? start : -1;
+  findUpdateUi_();
+  const touched = new Set(oldPages);
+  matches.forEach(function(m){ touched.add(m.p); });
+  if(matches.length) await findGoto_(findState.cur, true);
+  findRepaint_(touched);
+  findOcrAfterFind_();
+}
+
+// Nhảy tới kết quả thứ k: chuyển sang đúng trang, cuộn tới vị trí chữ và đổi màu kết quả đang xem.
+async function findGoto_(k, keepIndex){
+  const n = findState.matches.length;
+  if(!n) return;
+  k = ((k % n) + n) % n;
+  const prevM = findState.matches[findState.cur];
+  findState.cur = k;
+  const m = findState.matches[k];
+  const idx = pages.indexOf(m.p);
+  if(idx < 0) return;
+  findUpdateUi_();
+  if(idx !== currentIndex) await renderPage(idx, { scrollIntoView: true });
+  else redrawOverlay();
+  // Cuộn mịn để khung kết quả nằm giữa-trên vùng nhìn (chỉ khi trang không xoay/crop để toạ độ còn đúng)
+  try{
+    const slot = pageSlots[idx];
+    if(slot && !getPageRotation_(m.p) && !m.p.crop){
+      const r = m.rects[0];
+      const sr = slot.el.getBoundingClientRect();
+      const pr = pagesScroll.getBoundingClientRect();
+      const dy = (sr.top + r.y*scale) - (pr.top + pr.height*0.35);
+      pagesScroll.scrollTop += dy;
+      const xl = sr.left + r.x*scale;
+      if(xl < pr.left + 20 || xl > pr.right - 80) pagesScroll.scrollLeft += xl - (pr.left + pr.width*0.3);
+    }
+  }catch(err){}
+  const touched = new Set([m.p]);
+  if(prevM) touched.add(prevM.p);
+  findRepaint_(touched);
+}
+function findStep_(d){
+  if(!findState.matches.length) return;
+  findGoto_(findState.cur + d);
+}
+
+function findOpen_(){
+  if(!pages.length){ alert('Hãy mở một file PDF trước khi tìm kiếm.'); return; }
+  const bar = document.getElementById('findBar');
+  const input = document.getElementById('findInput');
+  // Dữ liệu cũ thuộc file khác -> bỏ
+  if(findState.matches.length && !pages.includes(findState.matches[0].p)){
+    findState.matches = []; findState.byPage = new Map(); findState.cur = -1;
+  }
+  // Nếu đang bôi đen chữ (công cụ Select text to copy) -> điền sẵn vào ô tìm
+  try{
+    const sel = window.getSelection();
+    if(sel && !sel.isCollapsed && sel.rangeCount && textLayer.contains(sel.getRangeAt(0).commonAncestorContainer)){
+      const t = sel.toString().replace(/\s+/g, ' ').trim();
+      if(t && t.length <= 120) input.value = t;
+    }
+  }catch(err){}
+  bar.classList.add('show');
+  document.getElementById('canvasArea').classList.add('finding');
+  document.getElementById('btnFind').classList.add('active');
+  input.focus(); input.select();
+  findOcrFailed_ = new WeakSet(); findOcrRun_();
+  if(input.value.trim() && (!findState.matches.length || findState.query !== input.value)) runFind_();
+  else findUpdateUi_();
+}
+function findClose_(){
+  const old = new Set(findState.matches.map(function(m){ return m.p; }));
+  findState.token++;                       // huỷ lượt tìm đang chạy dở (nếu có)
+  findState.matches = []; findState.byPage = new Map(); findState.cur = -1; findState.query = '';
+  document.getElementById('findBar').classList.remove('show');
+  document.getElementById('canvasArea').classList.remove('finding');
+  document.getElementById('btnFind').classList.remove('active');
+  findRepaint_(old);                       // xoá tô sáng trên mọi trang
+}
+
+(function setupFind_(){
+  const input = document.getElementById('findInput');
+  if(!input) return;
+  document.getElementById('btnFind').addEventListener('click', function(){
+    if(document.getElementById('findBar').classList.contains('show')) findClose_(); else findOpen_();
+  });
+  document.getElementById('findClose').addEventListener('click', findClose_);
+  document.getElementById('findNext').addEventListener('click', function(){ findStep_(1); });
+  document.getElementById('findPrev').addEventListener('click', function(){ findStep_(-1); });
+  input.addEventListener('input', function(){
+    clearTimeout(findDebounce_);
+    findDebounce_ = setTimeout(runFind_, 250);
+  });
+  ['findCase','findWord','findAccent'].forEach(function(id){
+    document.getElementById(id).addEventListener('change', runFind_);
+  });
+  (function(){
+    const ao = document.getElementById('findAutoOcr'); if(!ao) return;
+    try{ if(localStorage.getItem('findAutoOcr') === '0') ao.checked = false; }catch(err){}
+    ao.addEventListener('change', function(){
+      try{ localStorage.setItem('findAutoOcr', ao.checked ? '1' : '0'); }catch(err){}
+      findOcrFailed_ = new WeakSet();
+      if(ao.checked && findBarOpen_()) findOcrRun_(); else findUpdateUi_();
+    });
+  })();
+  input.addEventListener('keydown', async function(e){
+    e.stopPropagation();   // không để phím gõ trong ô tìm kích hoạt phím tắt công cụ khác của app
+    if(e.key === 'Enter'){
+      e.preventDefault();
+      const changed = (input.value !== findState.query) || (JSON.stringify(findOpts_()) !== findState.optsKey);
+      if(changed){ clearTimeout(findDebounce_); await runFind_(); }
+      else findStep_(e.shiftKey ? -1 : 1);
+    } else if(e.key === 'Escape'){
+      e.preventDefault(); findClose_();
+    }
+  });
+  // Ctrl/Cmd+F mở thanh tìm kiếm; F3 / Shift+F3 nhảy kết quả sau/trước khi thanh đang mở
+  document.addEventListener('keydown', function(e){
+    const bar = document.getElementById('findBar');
+    if((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && String(e.key).toLowerCase() === 'f'){
+      if(!pages.length) return;            // chưa mở file: giữ hành vi mặc định của trình duyệt
+      e.preventDefault(); findOpen_();
+    } else if(e.key === 'F3' && bar.classList.contains('show')){
+      e.preventDefault(); findStep_(e.shiftKey ? -1 : 1);
+    }
+  }, true);
+})();
+
+
+// ============================================================================================
+// ========== THAY THẾ (FIND REPLACE / REPLACE ALL) — nằm ngay trong thanh Find ==========
+// - Replace: thay đúng kết quả đang chọn rồi tự nhảy sang kết quả kế tiếp -> người dùng xem được ngữ cảnh từng
+//   chỗ trước khi quyết định (bấm ▼ để bỏ qua một chỗ không muốn thay).
+// - Replace All: thay đồng loạt mọi kết quả trong toàn bộ tài liệu chỉ với một cú bấm (có hỏi xác nhận).
+// Việc ghi chữ mới DÙNG LẠI đúng cơ chế của "Edit Text" (khối chữ 'textfix' + nền che + font gốc của dòng),
+// nên: giữ nguyên font/cỡ chữ, xuất PDF đúng như khi sửa tay, và Undo (Ctrl+Z) hoàn tác được theo từng trang.
+// Giới hạn: cụm từ bị ngắt xuống dòng khác (nằm trên 2 dòng) không thay được — sẽ được báo là "bỏ qua".
+// ============================================================================================
+
+// Các khoảng [a,b) khớp từ khoá trong chuỗi gốc (tôn trọng Aa / Nguyên từ / Bỏ qua dấu).
+function findRangesIn_(text, re, opts){
+  const nz = findNormalize_(String(text), opts);
+  re.lastIndex = 0;
+  const out = [];
+  let m, guard = 0;
+  while((m = re.exec(nz.s)) !== null){
+    if(m[0].length === 0){ re.lastIndex++; continue; }
+    out.push([ nz.map[m.index], nz.mapEnd[m.index + m[0].length - 1] ]);
+    if(++guard > 5000) break;
+  }
+  return out;
+}
+function findApplyRanges_(text, ranges, rep){
+  let out = '', last = 0;
+  for(const r of ranges){
+    if(r[0] < last) continue;
+    out += text.slice(last, r[0]) + rep;      // chuỗi thay thế được chèn NGUYÊN VĂN (không hiểu $1, $& ...)
+    last = r[1];
+  }
+  return out + text.slice(last);
+}
+function findGetRegex_(){
+  const opts = findOpts_();
+  const q = document.getElementById('findInput').value.trim();
+  return { re: findBuildRegex_(findNormalize_(q, opts).s, opts), opts: opts };
+}
+function findLineForRect_(lines, r){
+  const cx = r.x + r.w/2, cy = r.y + r.h/2;
+  let best = null, bestA = Infinity;
+  for(const l of lines){
+    if(cx >= l.x0 - 1 && cx <= l.x1 + 1 && cy >= l.y0 - 2 && cy <= l.y1 + 2){
+      const a = Math.max(1, (l.x1 - l.x0) * (l.y1 - l.y0));
+      if(a < bestA){ bestA = a; best = l; }
+    }
+  }
+  return best;
+}
+// Màu chữ gốc của dòng: lấy màu "mực" đậm nhất khác màu nền trong vùng dòng (để chữ thay thế giữ đúng màu).
+function findSampleInkColor_(line, bgHex){
+  try{
+    const sx = Math.max(0, Math.round(line.x0*scale)), sy = Math.max(0, Math.round(line.y0*scale));
+    const sw = Math.max(1, Math.min(Math.round((line.x1-line.x0)*scale), pdfCanvas.width - sx));
+    const sh = Math.max(1, Math.min(Math.round((line.y1-line.y0)*scale), pdfCanvas.height - sy));
+    const d = pdfCanvas.getContext('2d').getImageData(sx, sy, sw, sh).data;
+    const bg = [1,3,5].map(function(i){ return parseInt(bgHex.substr(i,2), 16) || 0; });
+    const total = sw*sh, step = Math.max(1, Math.floor(total/4000));
+    for(const minDist of [200, 100]){
+      const buckets = new Map();
+      for(let px = 0; px < total; px += step){
+        const i = px*4, r = d[i], g = d[i+1], b = d[i+2];
+        if(Math.abs(r-bg[0]) + Math.abs(g-bg[1]) + Math.abs(b-bg[2]) < minDist) continue;
+        const key = (r>>5)+','+(g>>5)+','+(b>>5);
+        const e = buckets.get(key) || { n:0, r:0, g:0, b:0 };
+        e.n++; e.r += r; e.g += g; e.b += b; buckets.set(key, e);
+      }
+      let best = null;
+      buckets.forEach(function(e){ if(!best || e.n > best.n) best = e; });
+      if(best && best.n >= 3){
+        return '#' + [best.r, best.g, best.b].map(function(v){ return Math.round(v/best.n).toString(16).padStart(2,'0'); }).join('');
+      }
+    }
+  }catch(err){}
+  return (typeof currentFontColor === 'string' && currentFontColor) ? currentFontColor : '#000000';
+}
+
+// Thay chữ trong MỘT khối chữ đã có (Add text / Edit Text). Trả về true nếu có thay đổi.
+function findReplaceInEdit_(p, ed, ranges, rep){
+  const newText = normalizeEditText(findApplyRanges_(ed.text, ranges, rep));
+  if(newText === ed.text) return false;
+  const i = p.edits.indexOf(ed);
+  if(!newText.trim()){                       // thay bằng rỗng -> khối chữ không còn gì: bỏ khối đó
+    if(i >= 0){
+      p.edits.splice(i, 1);
+      if(selectedEditIndex === i) selectedEditIndex = -1; else if(selectedEditIndex > i) selectedEditIndex--;
+    }
+    return true;
+  }
+  const oldBox = { x:ed.x, y:ed.y, w:ed.w, h:ed.h };
+  ed.text = newText;
+  if(ed.colorRuns) delete ed.colorRuns;      // mốc tô màu từng đoạn không còn đúng với chữ mới
+  if(!ed.manualBox){
+    const auto = computeAutoBoxSize(newText, ed.fontFamily || 'Arial', ed.fontSize || 12, ed.x, ed.bold, ed.italic, null);
+    if(ed.bg) ensureCoverRect(ed);
+    const minCover = computeMinCoverSize(ed);
+    ed.w = Math.max(minCover.w, auto.w);
+    ed.h = Math.max(minCover.h, auto.h);
+    if(typeof keepRotatedAnchor_ === 'function') keepRotatedAnchor_(ed, oldBox);
+  }
+  removeOverlappingTextEdits(p, ed.x, ed.y, ed.x+ed.w, ed.y+ed.h, ed);
+  return true;
+}
+
+// Thay chữ trong MỘT DÒNG chữ gốc của PDF (hoặc dòng OCR): tạo khối sửa như khi người dùng bấm sửa dòng đó bằng Edit Text.
+// BẮT BUỘC trang p đang là trang "sống" (pdfCanvas đang chứa đúng trang này) vì cần lấy mẫu màu nền/màu chữ.
+function findApplyLineText_(p, lines, line, newText){
+  newText = normalizeEditText(newText);
+  const srcFont = inferLineFontForEdit_(p, line);
+  const fontSize = srcFont.size || line.fontSize || 12;
+  const padY = Math.max(3, fontSize*0.35), padX = Math.max(2, fontSize*0.1);
+  const cvL = clampCoverToNeighbors_(lines, line, line.y0 - padY, line.y1 + padY);
+  const cx0 = line.x0 - padX, cy0 = cvL.top, cw = (line.x1 - line.x0) + padX*2, ch = cvL.bottom - cvL.top;
+  const bgColor = sampleBackgroundColor(cx0, cy0, cw, ch);
+  if(!newText.trim()){                       // dòng bị xoá trắng -> chỉ che nền (giống Edit Text khi xoá hết chữ của dòng)
+    removeOverlappingTextEdits(p, cx0, cy0, cx0+cw, cy0+ch);
+    p.edits.push({ type:'whiteout', x:cx0, y:cy0, w:cw, h:ch, color:'#ffffff', bgColor: bgColor });
+    return;
+  }
+  const color = findSampleInkColor_(line, bgColor);
+  const tx0 = line.x0 - 2;
+  const ty0 = line.y0 + (((line.y1 - line.y0) - fontSize*1.15) / 2);
+  const auto = computeAutoBoxSize(newText, srcFont.family, fontSize, tx0, srcFont.bold, srcFont.italic);
+  removeOverlappingTextEdits(p, Math.min(cx0,tx0), Math.min(cy0,ty0), Math.max(cx0+cw, tx0+auto.w), Math.max(cy0+ch, ty0+auto.h));
+  p.edits.push({
+    type: line.itemIdxs ? 'textfix' : 'ocrfix', x: tx0, y: ty0, w: auto.w, h: auto.h,
+    coverX: cx0, coverY: cy0, coverW: cw, coverH: ch,
+    text: newText, fontSize: fontSize, fontFamily: srcFont.family, color: color,
+    bold: srcFont.bold, italic: srcFont.italic, underline: false, align: 'left', bg: true, bgColor: bgColor,
+    srcX0: line.x0, srcY0: line.y0, srcX1: line.x1, srcY1: line.y1,
+    origLineW: line.x1 - line.x0,
+    nativeItemIdxs: line.itemIdxs || null
+  });
+}
+
+function findStale_(){
+  const input = document.getElementById('findInput');
+  return input.value !== findState.query || JSON.stringify(findOpts_()) !== findState.optsKey;
+}
+function findToast_(msg){ if(typeof showToast_ === 'function') showToast_(msg); }
+
+// ---- Replace: thay kết quả đang chọn rồi sang kết quả kế tiếp ----
+async function findReplaceOne_(){
+  if(!pages.length) return;
+  if(!requirePermission_('editText')) return;
+  if(!document.getElementById('findInput').value.trim()){ document.getElementById('findInput').focus(); return; }
+  if(findStale_() || !findState.matches.length){ clearTimeout(findDebounce_); await runFind_(); return; }   // chưa có kết quả mới nhất -> tìm trước để người dùng xem
+  const rep = document.getElementById('findReplaceInput').value;
+  const k = findState.cur, m = findState.matches[k];
+  if(!m) return;
+  const idx = pages.indexOf(m.p);
+  if(idx < 0){ await runFind_(); return; }
+  const p = m.p;
+  if(idx !== currentIndex) await renderPage(idx, { scrollIntoView: true });
+  const rg = findGetRegex_();
+  let done = false;
+  if(m.edit){
+    if(p.edits.indexOf(m.edit) < 0){ await runFind_(); return; }        // dữ liệu đã đổi (vd. vừa Undo) -> tìm lại
+    const r = findRangesIn_(m.edit.text, rg.re, rg.opts)[m.occ];
+    if(r){ pushUndo(idx); done = findReplaceInEdit_(p, m.edit, [r], rep); }
+  } else {
+    await ensureEditTextReady(idx);
+    const lines = editTextLinesFor(p) || [];
+    const line = findLineForRect_(lines, m.rects[0]);
+    if(line && !findOverlappingTextEdit(p.edits, line.x0, line.y0, line.x1, line.y1)){
+      const ranges = findRangesIn_(line.text, rg.re, rg.opts);
+      const mates = findState.matches.filter(function(o){
+        if(o.p !== p || o.edit) return false;
+        const c = o.rects[0], cx = c.x + c.w/2, cy = c.y + c.h/2;
+        return cx >= line.x0 - 1 && cx <= line.x1 + 1 && cy >= line.y0 - 2 && cy <= line.y1 + 2;
+      }).sort(function(a, b){ return a.rects[0].x - b.rects[0].x; });
+      let r = null;
+      if(ranges.length && ranges.length === mates.length) r = ranges[mates.indexOf(m)];
+      else if(ranges.length){                    // số kết quả không khớp -> chọn vị trí gần nhất theo toạ độ
+        let bd = Infinity; const len = Math.max(1, line.text.length);
+        for(const rr of ranges){
+          const d = Math.abs(line.x0 + (rr[0]/len)*(line.x1-line.x0) - m.rects[0].x);
+          if(d < bd){ bd = d; r = rr; }
+        }
+      }
+      if(r){
+        pushUndo(idx);
+        findApplyLineText_(p, lines, line, findApplyRanges_(line.text, [r], rep));
+        done = true;
+      }
+    }
+  }
+  if(!done){
+    findUpdateUi_('Không thay được kết quả này (cụm từ nằm trên nhiều dòng). Bấm ▼ để sang kết quả khác hoặc dùng Edit Text.');
+    return;
+  }
+  redrawOverlay();
+  // Kết quả kế tiếp: các kết quả trước đó giữ nguyên chỉ số; nếu chữ thay thế tự chứa từ khoá thì bỏ qua cả phần đó.
+  const selfHits = findRangesIn_(rep, rg.re, rg.opts).length;
+  await runFind_({ startIndex: k + selfHits });
+  findToast_('✅ Đã thay thế 1 kết quả.');
+}
+
+// ---- Replace All: thay đồng loạt toàn bộ tài liệu ----
+async function findReplaceAll_(){
+  if(!pages.length) return;
+  if(!requirePermission_('editText')) return;
+  const input = document.getElementById('findInput');
+  if(!input.value.trim()){ input.focus(); return; }
+  if(findStale_() || !findState.matches.length){ clearTimeout(findDebounce_); await runFind_(); }
+  if(findOcrJob_){ findUpdateUi_('Đang chờ OCR các trang scan hoàn tất rồi mới thay thế…'); try{ await findOcrJob_; }catch(err){} }
+  const total = findState.matches.length;
+  if(!total){ findToast_('Không có kết quả nào để thay thế.'); return; }
+  const rep = document.getElementById('findReplaceInput').value;
+  const q = input.value.trim();
+  const nPages = findState.byPage.size;
+  const ok = window.confirm('Thay thế TẤT CẢ ' + total + (findState.capped ? '+' : '') + ' kết quả của "' + q + '" bằng "' + rep + '" trong ' + nPages + ' trang?\n\n(Có thể hoàn tác bằng Undo trên từng trang.)');
+  if(!ok) return;
+
+  const rg = findGetRegex_();
+  const targets = Array.from(findState.byPage.keys());
+  const oldPages = new Set(targets);
+  findState.token++;                                   // dừng mọi lượt tìm đang chạy dở
+  let replaced = 0, changedPages = 0;
+  for(let t = 0; t < targets.length; t++){
+    const p = targets[t];
+    let idx = pages.indexOf(p);
+    if(idx < 0) continue;
+    findUpdateUi_('Đang thay thế… trang ' + (idx+1) + ' (' + (t+1) + '/' + targets.length + ')');
+    await new Promise(function(r){ setTimeout(r, 0); });
+    let pushed = false, pageCount = 0;
+    const push = function(){ if(!pushed){ pushUndo(pages.indexOf(p)); pushed = true; } };
+    // 1) Khối chữ đã thêm/sửa trong app
+    for(const ed of (p.edits || []).slice()){
+      if(!(ed.type === 'text' || ed.type === 'textfix' || ed.type === 'ocrfix') || !ed.text) continue;
+      const ranges = findRangesIn_(ed.text, rg.re, rg.opts);
+      if(!ranges.length) continue;
+      push();
+      if(findReplaceInEdit_(p, ed, ranges, rep)) pageCount += ranges.length;
+    }
+    // 2) Chữ gốc của PDF / OCR: thay theo từng dòng (cần trang "sống" để lấy mẫu màu nền)
+    if(p.type === 'pdf' && (findState.byPage.get(p) || []).some(function(mi){ return !findState.matches[mi].edit; })){
+      idx = pages.indexOf(p);
+      if(idx !== currentIndex) await renderPage(idx, { scrollIntoView: false });
+      await ensureEditTextReady(idx);
+      const lines = editTextLinesFor(p) || [];
+      for(const line of lines){
+        if(!line || !line.text) continue;
+        if(findOverlappingTextEdit(p.edits, line.x0, line.y0, line.x1, line.y1)) continue;   // dòng này đã có khối sửa -> đã xử lý ở bước 1
+        const ranges = findRangesIn_(line.text, rg.re, rg.opts);
+        if(!ranges.length) continue;
+        push();
+        findApplyLineText_(p, lines, line, findApplyRanges_(line.text, ranges, rep));
+        pageCount += ranges.length;
+      }
+    }
+    if(pageCount){ replaced += pageCount; changedPages++; }
+  }
+  if(pages[currentIndex]) redrawOverlay();
+  // Tìm lại để cập nhật tô sáng (các chỗ chưa thay được, ví dụ cụm từ nằm trên 2 dòng, vẫn còn được tô sáng)
+  await runFind_();
+  const left = findState.matches.length;
+  let msg = '✅ Đã thay thế ' + replaced + ' kết quả trong ' + changedPages + ' trang.';
+  if(left) msg += ' Còn ' + left + ' kết quả chưa thay được (cụm từ nằm trên nhiều dòng / bị che) — hãy dùng Replace hoặc Edit Text.';
+  findUpdateUi_(msg);
+  findToast_(left ? ('Đã thay thế ' + replaced + ' kết quả (còn ' + left + ' chưa thay được).') : ('✅ Đã thay thế ' + replaced + ' kết quả.'));
+  oldPages.forEach(function(p){ if(pages.indexOf(p) >= 0 && pages.indexOf(p) !== currentIndex) renderStaticPreview(pages.indexOf(p)).catch(function(){}); });
+}
+
+(function setupFindReplace_(){
+  const rin = document.getElementById('findReplaceInput');
+  if(!rin) return;
+  document.getElementById('findReplaceBtn').addEventListener('click', function(){ findReplaceOne_(); });
+  document.getElementById('findReplaceAllBtn').addEventListener('click', function(){ findReplaceAll_(); });
+  rin.addEventListener('keydown', function(e){
+    e.stopPropagation();
+    if(e.key === 'Enter'){ e.preventDefault(); if(e.ctrlKey || e.metaKey) findReplaceAll_(); else findReplaceOne_(); }
+    else if(e.key === 'Escape'){ e.preventDefault(); findClose_(); }
+  });
+  // Ctrl+H: mở thanh Find và nhảy thẳng tới ô "Thay bằng"
+  document.addEventListener('keydown', function(e){
+    if((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && String(e.key).toLowerCase() === 'h' && pages.length){
+      e.preventDefault(); findOpen_(); rin.focus(); rin.select();
+    }
+  }, true);
+})();
+
 function redrawOverlay(){
   // 1) VẼ CHỈNH SỬA TRỰC TIẾP LÊN FILE GỐC (pdfCanvas): xuất phát lại từ bản "sạch" (baseCanvas)
   // rồi vẽ đè toàn bộ whiteout/chữ/highlight/nét vẽ của trang lên chính pdfCanvas — không còn một
@@ -5455,6 +6433,7 @@ function redrawOverlay(){
   // 2) overlayCanvas giờ CHỈ còn vẽ các thành phần giao diện tạm thời — không thuộc nội dung tài
   // liệu — như khung đang chọn, khung gợi ý dòng chữ có thể sửa, khung đang kéo chọn dở...
   octx.clearRect(0,0,overlayCanvas.width, overlayCanvas.height);
+  try{ findDrawHighlights_(octx, cur(), scale); }catch(err){ /* tô sáng kết quả Find: lỗi không được làm hỏng vẽ chính */ }
   const edits = cur().edits;
   if(selectedEditIndex>=0 && edits[selectedEditIndex]) drawSelectionBox(edits[selectedEditIndex]);
   const region = getCurrentRegion();
@@ -9883,6 +10862,7 @@ function boxesOverlapMostly(a, b){
 function editTextLinesFor(p){
   const nativeLines = (p.nativeLines || []);
   const ocrLines = (p.ocrLines || []);
+  if(ocrLines.length && findScanKindCache_.get(p) === 'badLayer') return ocrLines;   // lớp chữ ẩn của bản scan bị sai -> dùng chữ OCR
   if(!nativeLines.length) return ocrLines;
   if(!ocrLines.length) return nativeLines;
   // Với TỪNG dòng chữ gốc: nếu dòng đó mất dấu tiếng Việt bất thường (xem
