@@ -140,6 +140,11 @@
   .menu-dropdown.open{display:flex;}
   .menu-dropdown .tbtn{width:100%;justify-content:flex-start;}
   .menu-dropdown .sep{width:auto;height:1px;align-self:stretch;margin:4px 2px;}
+  /* [MỚI] Menu con lồng bên trong 1 menu khác (VD "Opacity"/"Rotate object" lồng trong menu "Tool")
+     — kéo giãn full chiều rộng để nút mở menu con thẳng hàng với các mục khác trong menu cha; bảng
+     điều khiển (opacity-panel) của menu con vẫn định vị tuyệt đối RIÊNG theo .menu-wrap của chính
+     nó (position:relative) nên không bị ảnh hưởng bởi width:100% này. */
+  .menu-dropdown .menu-wrap{width:100%;}
 
   /* ===== THÊM TÍNH NĂNG: nút Opacity (độ mờ đục của CHỮ và HÌNH ẢNH) =====
      Dùng lại đúng cơ chế menu thả xuống (.menu-wrap/.menu-dropdown + setupToolbarMenu_) của các menu
@@ -293,6 +298,18 @@
   .psAnchor button{width:22px;height:22px;border:1px solid #454a52;border-radius:4px;background:#1c1e22;cursor:pointer;padding:0;}
   .psAnchor button.on{background:#2196f3;border-color:#64b5f6;}
   #overlayCanvas.tool-addtext,#overlayCanvas.tool-ocr,#overlayCanvas.tool-edittext{cursor:text;}
+  /* ===== [MỚI] Hand tool: kéo để cuộn/di chuyển góc nhìn, giống mọi phần mềm đọc PDF khác =====
+     Áp class lên CẢ #pagesScroll (toàn vùng cuộn nhiều trang, kể cả các trang KHÔNG phải trang
+     đang sống/overlayCanvas) lẫn #overlayCanvas (trang đang sống) để con trỏ "bàn tay" hiện đúng
+     ở bất kỳ đâu trên tài liệu, không chỉ riêng trang đang chỉnh sửa. */
+  #overlayCanvas.tool-hand{cursor:grab;}
+  #pagesScroll.hand-mode{cursor:grab;}
+  #pagesScroll.hand-mode.panning,#overlayCanvas.tool-hand.panning{cursor:grabbing;}
+  /* Hand tool không dùng để chỉnh sửa gì -> vô hiệu các tương tác click/kéo-chọn của các lớp con
+     bên trong mỗi trang (chữ, ảnh...) để một cú kéo luôn được hiểu là "kéo để cuộn trang", không
+     bị con/ảnh/chữ bên trong "cướp" sự kiện chuột giữa chừng. */
+  #pagesScroll.hand-mode .pageSlot,#pagesScroll.hand-mode canvas.pageStatic{cursor:grab;}
+  #pagesScroll.hand-mode.panning .pageSlot,#pagesScroll.hand-mode.panning canvas.pageStatic{cursor:grabbing;}
   #dropHint{
     position:absolute;inset:0;color:var(--text-dim);text-align:center;font-size:14px;line-height:1.8;
     display:flex;flex-direction:column;align-items:center;justify-content:center;
@@ -1388,6 +1405,192 @@
   </div>
 </div>
 
+<!-- ===================== MODAL: WATERMARK (chèn chữ / hình ảnh mờ — bảo vệ bản quyền & chống sao chép) ===================== -->
+<style>
+  #watermarkModal{ position:fixed;inset:0;z-index:1150;display:none;background:rgba(0,0,0,.55);
+    align-items:center;justify-content:center;font-family:'Segoe UI',Roboto,Arial,sans-serif;color:#eceff1; }
+  #watermarkModal .wm-box{ background:#25282e;border:1px solid #454a52;border-radius:10px;padding:20px 22px;
+    width:900px;max-width:96vw;max-height:92vh;overflow:auto;box-shadow:0 10px 40px rgba(0,0,0,.5); }
+  #watermarkModal .wm-cols{ display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start; }
+  #watermarkModal .wm-left{ flex:1 1 400px;min-width:300px;display:flex;flex-direction:column;gap:12px; }
+  #watermarkModal .wm-right{ flex:1 1 300px;min-width:260px;position:sticky;top:0; }
+  #watermarkModal .wm-sec{ border:1px solid #3d424a;border-radius:8px;padding:10px 12px;display:flex;flex-direction:column;gap:9px; }
+  #watermarkModal .wm-sec-title{ font-size:11px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:#9aa0a8; }
+  #watermarkModal .wm-row{ display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:12.5px; }
+  #watermarkModal .wm-row > label.wm-lbl{ width:78px;flex-shrink:0;color:#c3c8ce; }
+  #watermarkModal label.wm-chk{ display:inline-flex;align-items:center;gap:6px;cursor:pointer;font-size:12.5px; }
+  #watermarkModal input[type=text],#watermarkModal input[type=number],#watermarkModal select,#watermarkModal textarea{
+    background:#1c1e22;border:1px solid #454a52;color:#eceff1;border-radius:5px;padding:6px 8px;font-size:12.5px;
+    font-family:inherit;box-sizing:border-box; }
+  #watermarkModal textarea{ width:100%;min-height:54px;resize:vertical; }
+  #watermarkModal input[type=number]{ width:64px; }
+  #watermarkModal input[type=range]{ flex:1;min-width:110px;accent-color:#e2402c; }
+  #watermarkModal input[type=color]{ width:38px;height:28px;padding:0;border:1px solid #454a52;border-radius:5px;background:none;cursor:pointer; }
+  #watermarkModal .wm-seg{ display:inline-flex;border:1px solid #454a52;border-radius:6px;overflow:hidden; }
+  #watermarkModal .wm-seg label{ padding:6px 14px;cursor:pointer;font-size:12.5px;background:transparent;user-select:none; }
+  #watermarkModal .wm-seg input{ display:none; }
+  #watermarkModal .wm-seg input:checked + span{ color:#fff; }
+  #watermarkModal .wm-seg label:has(input:checked){ background:var(--accent,#e2402c);color:#fff; }
+  #watermarkModal .wm-pos{ display:grid;grid-template-columns:repeat(3,26px);gap:4px; }
+  #watermarkModal .wm-pos button{ width:26px;height:26px;border:1px solid #454a52;border-radius:4px;background:#1c1e22;cursor:pointer;padding:0; }
+  #watermarkModal .wm-pos button:hover{ border-color:#7a8594; }
+  #watermarkModal .wm-pos button.on{ background:#e2402c;border-color:#e2402c; }
+  #watermarkModal .wm-pos.off{ opacity:.35;pointer-events:none; }
+  #watermarkModal .wm-hint{ font-size:11.5px;color:#9aa0a8;line-height:1.45; }
+  #watermarkModal .wm-pbox{ background:#1c1e22;border:1px solid #3d424a;border-radius:8px;padding:10px;text-align:center; }
+  #watermarkModal #wmPreviewCanvas{ max-width:100%;max-height:60vh;height:auto;background:#fff;box-shadow:0 2px 10px rgba(0,0,0,.5); }
+  #watermarkModal .wm-foot{ position:sticky;bottom:-20px;z-index:2;background:#25282e;border-top:1px solid #3d424a;margin:8px -22px -20px;padding:10px 22px 14px; }
+  #watermarkModal .wm-btn{ padding:10px 14px;border-radius:6px;font-weight:600;font-size:13px;cursor:pointer; }
+  #btnWatermark.wm-on{ background:var(--tool-active);border-color:#6a7fa0; }
+  #btnWatermark .wm-dot{ display:none;width:7px;height:7px;border-radius:50%;background:#4caf50;margin-left:-2px; }
+  #btnWatermark.wm-on .wm-dot{ display:inline-block; }
+</style>
+<div id="watermarkModal">
+  <div class="wm-box">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+      <div style="font-weight:600;font-size:15px;">💧 Watermark</div>
+      <button type="button" id="wmCloseBtn" style="background:transparent;border:none;color:#9aa0a8;font-size:18px;cursor:pointer;line-height:1;">✕</button>
+    </div>
+    <div class="wm-hint" style="margin-bottom:12px;">
+      Chèn <b>chữ</b> hoặc <b>hình ảnh</b> mờ <b>phía trên</b> hoặc <b>phía dưới</b> nội dung để đánh dấu bản quyền / tài liệu mật.
+      Watermark được ghi vào file khi bấm <b>Save PDF</b>, <b>Print</b>, <b>Compress PDF</b> hoặc <b>Extract Pages</b>
+      (không làm thay đổi các trang đang chỉnh sửa trên màn hình).
+    </div>
+
+    <div class="wm-cols">
+      <div class="wm-left">
+
+        <div class="wm-sec">
+          <div class="wm-sec-title">Nội dung</div>
+          <div class="wm-seg" style="align-self:flex-start;">
+            <label><input type="radio" name="wmType" id="wmTypeText" value="text" checked><span>🔤 Chữ</span></label>
+            <label><input type="radio" name="wmType" id="wmTypeImage" value="image"><span>🖼️ Hình ảnh</span></label>
+          </div>
+
+          <div id="wmTextWrap" style="display:flex;flex-direction:column;gap:9px;">
+            <textarea id="wmText" placeholder="Nhập nội dung watermark (có thể nhiều dòng)…">BẢN QUYỀN</textarea>
+            <div class="wm-row">
+              <label class="wm-lbl" for="wmFont">Font</label>
+              <select id="wmFont">
+                <option value="">Mặc định (Noto Sans)</option>
+                <option value="Arial">Arial</option>
+                <option value="'Times New Roman',serif">Times New Roman</option>
+                <option value="'Courier New',monospace">Courier New</option>
+                <option value="Calibri,sans-serif">Calibri</option>
+              </select>
+              <label class="wm-chk"><input type="checkbox" id="wmBold" checked> <b>B</b></label>
+              <label class="wm-chk"><input type="checkbox" id="wmItalic"> <i>I</i></label>
+              <input type="color" id="wmColor" value="#8a8a8a" title="Màu chữ">
+            </div>
+            <div class="wm-row">
+              <label class="wm-lbl" for="wmSize">Cỡ chữ (pt)</label>
+              <input type="range" id="wmSize" min="12" max="240" value="72">
+              <input type="number" id="wmSizeNum" min="6" max="400" value="72">
+            </div>
+          </div>
+
+          <div id="wmImageWrap" style="display:none;flex-direction:column;gap:9px;">
+            <div class="wm-row">
+              <input type="file" id="wmImageInput" accept="image/*" style="display:none;">
+              <button type="button" id="wmImagePick" class="wm-btn" style="padding:7px 12px;border:1px solid #454a52;background:transparent;color:#eceff1;">📂 Chọn hình ảnh…</button>
+              <span id="wmImageInfo" class="wm-hint">Chưa chọn hình (PNG trong suốt cho kết quả đẹp nhất).</span>
+            </div>
+            <div class="wm-row">
+              <label class="wm-lbl" for="wmImageScale">Kích thước</label>
+              <input type="range" id="wmImageScale" min="5" max="100" value="40">
+              <input type="number" id="wmImageScaleNum" min="3" max="100" value="40"><span class="wm-hint">% bề ngang trang</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="wm-sec">
+          <div class="wm-sec-title">Hiển thị</div>
+          <div class="wm-row">
+            <label class="wm-lbl" for="wmOpacity">Độ mờ đục</label>
+            <input type="range" id="wmOpacity" min="1" max="100" value="30">
+            <input type="number" id="wmOpacityNum" min="1" max="100" value="30"><span class="wm-hint">%</span>
+          </div>
+          <div class="wm-row">
+            <label class="wm-lbl" for="wmRotation">Góc xoay</label>
+            <input type="range" id="wmRotation" min="-180" max="180" value="45">
+            <input type="number" id="wmRotationNum" min="-180" max="180" value="45"><span class="wm-hint">độ</span>
+          </div>
+          <div class="wm-row">
+            <label class="wm-lbl">Vị trí</label>
+            <div class="wm-pos" id="wmPosGrid">
+              <button type="button" data-pos="tl" title="Trên-trái"></button>
+              <button type="button" data-pos="tc" title="Trên-giữa"></button>
+              <button type="button" data-pos="tr" title="Trên-phải"></button>
+              <button type="button" data-pos="ml" title="Giữa-trái"></button>
+              <button type="button" data-pos="mc" title="Chính giữa" class="on"></button>
+              <button type="button" data-pos="mr" title="Giữa-phải"></button>
+              <button type="button" data-pos="bl" title="Dưới-trái"></button>
+              <button type="button" data-pos="bc" title="Dưới-giữa"></button>
+              <button type="button" data-pos="br" title="Dưới-phải"></button>
+            </div>
+            <label class="wm-chk" style="margin-left:6px;" title="Lặp watermark kín cả trang — khó cắt bỏ/che hơn, phù hợp chống sao chép"><input type="checkbox" id="wmTile"> Lặp kín trang</label>
+          </div>
+          <div class="wm-row" id="wmMarginRow">
+            <label class="wm-lbl" for="wmMargin">Cách lề</label>
+            <input type="range" id="wmMargin" min="0" max="150" value="36">
+            <input type="number" id="wmMarginNum" min="0" max="300" value="36"><span class="wm-hint">pt</span>
+          </div>
+          <div class="wm-row" id="wmTileGapRow" style="display:none;">
+            <label class="wm-lbl" for="wmTileGap">Khoảng cách</label>
+            <input type="range" id="wmTileGap" min="0" max="200" value="40">
+            <input type="number" id="wmTileGapNum" min="0" max="300" value="40"><span class="wm-hint">pt</span>
+          </div>
+          <div class="wm-row">
+            <label class="wm-lbl">Lớp</label>
+            <div class="wm-seg">
+              <label><input type="radio" name="wmLayer" id="wmLayerAbove" value="above" checked><span>⬆️ Phía trên nội dung</span></label>
+              <label><input type="radio" name="wmLayer" id="wmLayerBelow" value="below"><span>⬇️ Phía dưới nội dung</span></label>
+            </div>
+          </div>
+          <div class="wm-hint" id="wmLayerHint">Phía dưới: watermark nằm sau chữ/hình của trang; sẽ bị che ở những vùng trang có nền màu đặc hoặc ảnh phủ kín.</div>
+        </div>
+
+        <div class="wm-sec">
+          <div class="wm-sec-title">Áp dụng cho trang</div>
+          <div class="wm-row">
+            <label class="wm-chk"><input type="radio" name="wmRange" id="wmRangeAll" value="all" checked> Tất cả các trang</label>
+            <label class="wm-chk"><input type="radio" name="wmRange" id="wmRangeCustom" value="range"> Chỉ định:</label>
+            <input type="text" id="wmRangeText" placeholder="vd: 1-3, 5, 8-" style="width:110px;">
+            <button type="button" id="wmRangeCurrent" class="wm-btn" style="padding:5px 9px;font-size:12px;border:1px solid #454a52;background:transparent;color:#eceff1;">Trang hiện tại</button>
+          </div>
+        </div>
+
+        <div class="wm-sec">
+          <div class="wm-sec-title">Chống sao chép</div>
+          <label class="wm-chk" style="align-items:flex-start;">
+            <input type="checkbox" id="wmFlatten" style="margin-top:2px;">
+            <span><b>Làm phẳng trang thành ảnh khi xuất</b><br>
+              <span class="wm-hint">Watermark được “in chết” vào ảnh trang (khoảng 160 dpi): không thể bôi đen/copy chữ và không thể xoá watermark bằng công cụ chỉnh sửa PDF.
+              Đổi lại file nặng hơn, mất liên kết/mục lục và chữ không tìm kiếm được.</span></span>
+          </label>
+        </div>
+      </div>
+
+      <div class="wm-right">
+        <div class="wm-pbox">
+          <canvas id="wmPreviewCanvas" width="10" height="10"></canvas>
+          <div class="wm-hint" id="wmPreviewNote" style="margin-top:8px;">Xem trước trên trang hiện tại.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="wm-foot">
+    <div id="wmError" style="min-height:18px;color:#ff8a80;font-size:12px;margin:0 0 6px;"></div>
+    <div style="display:flex;gap:8px;">
+      <button type="button" id="wmRemoveBtn" class="wm-btn" style="display:none;border:1px solid #8a3a30;background:transparent;color:#ff8a80;">🗑️ Xoá watermark</button>
+      <span style="flex:1"></span>
+      <button type="button" id="wmCancelBtn" class="wm-btn" style="min-width:90px;border:1px solid #454a52;background:transparent;color:#eceff1;">Huỷ</button>
+      <button type="button" id="wmApplyBtn" class="wm-btn" style="min-width:150px;border:none;background:#e2402c;color:#fff;">💧 Áp dụng</button>
+    </div>
+    </div>
+  </div>
+</div>
+
 <!-- ===================== MODAL: ABOUT (thông tin bản quyền / phiên bản) ===================== -->
 <div id="aboutModal" style="
   position:fixed;inset:0;z-index:1200;display:none;
@@ -1476,6 +1679,9 @@
       <button class="tbtn" id="btnCompress" title="Giảm dung lượng file PDF (chọn mức nén tiêu chuẩn hoặc siêu nén) — Tiêu chuẩn: giữ chữ vector, chỉ nén ảnh nhúng; Siêu nén: nén từng trang thành ảnh (nhỏ nhất, chữ không còn chọn được)"><span class="ic">🗜️</span>Compress PDF</button>
     </div>
   </div>
+  <!-- ===== Nút "Watermark" — chèn chữ/hình ảnh mờ phía trên hoặc dưới nội dung (bảo vệ bản quyền &
+       chống sao chép). Xem khối "WATERMARK" trong phần script. Sáng lên + chấm xanh khi đang bật. ===== -->
+  <button class="tbtn" id="btnWatermark" title="Chèn watermark (chữ hoặc hình ảnh mờ) phía trên/dưới nội dung để bảo vệ bản quyền & chống sao chép"><span class="ic">💧</span>Watermark<span class="wm-dot"></span></button>
   <div class="sep"></div>
 
   <!-- ===== Menu "Edit" — gom Add text / Edit Document (OCR-PDF scan) / OCR text extract / Edit Text
@@ -1513,7 +1719,7 @@
        nên toàn bộ code JS gắn sự kiện (kể cả logic chọn công cụ theo data-tool) phía dưới không cần
        sửa gì thêm — vẫn hoạt động y hệt dù nút nằm trong menu thay vì ngoài thanh công cụ. -->
   <div class="menu-wrap" id="toolMenuWrap">
-    <button class="tbtn" id="btnToolMenu" title="Các công cụ: chèn ảnh, copy/paste ảnh, chọn vùng, chụp ảnh vùng đã chọn, gộp nhiều file PDF"><span class="ic">🧰</span>Tool ▾</button>
+    <button class="tbtn" id="btnToolMenu" title="Các công cụ: chèn ảnh, copy/paste ảnh, chọn vùng, chụp ảnh vùng đã chọn, gộp nhiều file PDF, Opacity (độ mờ đục), Rotate object (xoay đối tượng)"><span class="ic">🧰</span>Tool ▾</button>
     <div class="menu-dropdown" id="toolMenuDropdown">
       <button class="tbtn" id="btnInsertImage" data-perm="insertImage" style="display:none" title="Chèn ảnh (PNG/JPG) — sau khi chọn ảnh, bạn CHỌN TRANG cần chèn (một hoặc nhiều trang), chỉnh vị trí/kích thước rồi bấm Chèn; ảnh chèn xong có thể kéo để di chuyển, kéo 4 góc để đổi kích thước"><span class="ic">🖼️</span>Insert Image</button>
       <input type="file" id="insertImageInput" accept="image/png,image/jpeg,image/jpg,image/webp,image/gif,image/bmp" style="display:none">
@@ -1526,11 +1732,73 @@
       <div class="sep"></div>
       <button class="tbtn" id="btnCombineFiles" title="Gộp nhiều file PDF lại thành một file duy nhất, có thể sắp xếp lại thứ tự các file trước khi gộp"><span class="ic">🧩</span>Combine Files</button>
       <button class="tbtn" id="btnDocCompare" title="So sánh hai file PDF (bản gốc và bản đã chỉnh sửa): tự động dò và đánh dấu điểm khác biệt về văn bản, định dạng, hình ảnh, bố cục; xuất PDF báo cáo"><span class="ic">🆚</span>Document Compare</button>
+      <div class="sep"></div>
+
+      <!-- ===== [CHUYỂN VÀO MENU "TOOL"] nút Opacity — điều chỉnh ĐỘ MỜ ĐỤC (0% = trong suốt hoàn
+           toàn, 100% = đặc) của CHỮ và HÌNH ẢNH. Cách dùng: dùng công cụ Select bấm chọn 1 khối chữ
+           hoặc 1 ảnh đã chèn rồi kéo thanh trượt (hoặc gõ số/bấm nút chọn nhanh). Khi KHÔNG chọn gì,
+           giá trị này là độ mờ đục mặc định cho chữ gõ mới (giống cách B/I/U/canh chữ hoạt động).
+           Xem opacitySupported_/applyOpacityPct_/refreshOpacityControl ở phần script bên dưới.
+           TRƯỚC ĐÂY là 1 nút đứng riêng ngoài thanh công cụ chính — nay lồng vào đây (menu con bên
+           trong menu "Tool") cho gọn thanh công cụ. Thuộc tính [data-submenu-toggle] + tham số
+           opts.parentWrapId truyền vào setupToolbarMenu_() (xem phần script bên dưới) để bấm mở menu
+           con này KHÔNG làm tự đóng mất menu "Tool" đang chứa nó. -->
+      <div class="menu-wrap" id="opacityMenuWrap">
+        <button class="tbtn" id="btnOpacityMenu" data-submenu-toggle="1" title="Opacity — chỉnh độ mờ đục của chữ / hình ảnh đang chọn (công cụ Select). Khi không chọn gì: áp dụng cho chữ gõ mới"><span class="opacity-ic"></span>Opacity <span id="opacityBadge">100%</span></button>
+        <div class="menu-dropdown opacity-panel" id="opacityMenuDropdown">
+          <div class="op-head">
+            <span class="op-title">Độ mờ đục (Opacity)</span>
+            <span class="op-swatch" title="Xem trước"><i id="opacitySwatchFill"></i></span>
+          </div>
+          <div class="op-target" id="opacityTargetLabel"></div>
+          <div class="op-row">
+            <input type="range" id="opacityRange" min="0" max="100" step="1" value="100" title="Kéo để chỉnh độ mờ đục">
+            <input type="number" id="opacityNumber" min="0" max="100" step="1" value="100" title="Gõ độ mờ đục (0–100)">
+            <span class="op-unit">%</span>
+          </div>
+          <div class="op-presets" id="opacityPresets">
+            <button type="button" data-op="100">100%</button>
+            <button type="button" data-op="75">75%</button>
+            <button type="button" data-op="50">50%</button>
+            <button type="button" data-op="25">25%</button>
+            <button type="button" data-op="10">10%</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== [CHUYỂN VÀO MENU "TOOL"] nút Rotate object — XOAY đối tượng đã chọn (CHỮ và HÌNH
+           ẢNH). Cách dùng: dùng công cụ Select bấm chọn 1 khối chữ hoặc 1 ảnh, rồi (a) mở menu này
+           để kéo thanh trượt / gõ số độ / bấm nút chọn nhanh, hoặc (b) kéo tay cầm tròn phía trên
+           khung chọn (giữ Shift để xoay theo bước 15°). Góc lưu ở ed.rotation (độ, chiều kim đồng
+           hồ). Xem editRotation_/drawEdit (hiển thị) và drawEditOnPdfPage (xuất PDF). TRƯỚC ĐÂY là
+           1 nút đứng riêng ngoài thanh công cụ chính — nay lồng vào đây (menu con bên trong menu
+           "Tool") cho gọn thanh công cụ, cùng cơ chế [data-submenu-toggle] như Opacity ở trên. -->
+      <div class="menu-wrap" id="rotateMenuWrap">
+        <button class="tbtn" id="btnRotateMenu" data-submenu-toggle="1" title="Rotate object — xoay chữ / hình ảnh đang chọn (công cụ Select). Hoặc kéo tay cầm tròn phía trên khung chọn (giữ Shift = bước 15°)"><span class="rot-ic">⟳</span>Rotate object <span id="rotateBadge">0°</span></button>
+        <div class="menu-dropdown opacity-panel" id="rotateMenuDropdown">
+          <div class="op-head">
+            <span class="op-title">Xoay đối tượng (Rotate object)</span>
+          </div>
+          <div class="op-target" id="rotateTargetLabel"></div>
+          <div class="op-row">
+            <input type="range" id="rotateRange" min="-180" max="180" step="1" value="0" title="Kéo để xoay (độ, chiều kim đồng hồ là dương)">
+            <input type="number" id="rotateNumber" min="-180" max="180" step="1" value="0" title="Gõ góc xoay (-180 đến 180)">
+            <span class="op-unit">°</span>
+          </div>
+          <div class="op-presets" id="rotatePresets">
+            <button type="button" data-rel="-90" title="Xoay ngược chiều kim đồng hồ 90°">⟲ 90°</button>
+            <button type="button" data-rel="90" title="Xoay thuận chiều kim đồng hồ 90°">⟳ 90°</button>
+            <button type="button" data-rel="180" title="Xoay 180°">180°</button>
+            <button type="button" data-abs="0" title="Đưa về thẳng (0°)">Reset</button>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
   <button class="tbtn" id="btnFind" title="Find — tìm từ/cụm từ trong toàn bộ tài liệu và tô sáng kết quả (Ctrl+F)"><span class="ic">🔍</span>Find</button>
   <div class="sep"></div>
 
+  <button class="tbtn" data-tool="hand" id="toolHand" title="Hand — kéo chuột ở bất kỳ đâu trên trang để cuộn/di chuyển góc nhìn tài liệu, không chỉnh sửa gì (giống công cụ Hand của các phần mềm đọc PDF khác). Mẹo: giữ phím Cách (Space) để tạm dùng Hand dù đang ở công cụ khác."><span class="ic">✋</span>Hand</button>
   <button class="tbtn" data-tool="select" id="toolSelect"><span class="ic">🖱️</span>Select</button>
   <button class="tbtn" data-tool="textselect" id="toolTextSelect" title="Bôi đen văn bản trong PDF để copy (Ctrl+C). Có thể là chữ PDF thật hoặc chữ OCR từ ảnh/scan. Sau khi bôi đen, bấm nút 'Đánh dấu' nổi lên để tô sáng đúng đoạn đã chọn."><span class="ic">🔤</span>Select text to copy</button>
   <button class="tbtn" id="btnClearRegion" title="Bỏ chọn vùng hiện tại"><span class="ic">✕</span>Deselect</button>
@@ -1604,63 +1872,9 @@
   <button class="tbtn" id="btnAlignJustify" title="Canh đều 2 bên (áp dụng cho chữ đang chọn hoặc chữ sắp gõ tiếp theo) — dòng cuối cùng của đoạn vẫn canh trái như quy ước thông thường"><span class="align-ic al-justify"><span></span><span></span><span></span></span></button>
   <div class="sep"></div>
 
-  <!-- ===== THÊM TÍNH NĂNG: nút Opacity — điều chỉnh ĐỘ MỜ ĐỤC (0% = trong suốt hoàn toàn, 100% = đặc) của
-       CHỮ và HÌNH ẢNH. Cách dùng: dùng công cụ Select bấm chọn 1 khối chữ hoặc 1 ảnh đã chèn rồi kéo thanh
-       trượt (hoặc gõ số/bấm nút chọn nhanh). Khi KHÔNG chọn gì, giá trị này là độ mờ đục mặc định cho chữ
-       gõ mới (giống cách B/I/U/canh chữ hoạt động). Xem opacitySupported_/applyOpacityPct_/
-       refreshOpacityControl ở phần script bên dưới. -->
-  <div class="menu-wrap" id="opacityMenuWrap">
-    <button class="tbtn" id="btnOpacityMenu" title="Opacity — chỉnh độ mờ đục của chữ / hình ảnh đang chọn (công cụ Select). Khi không chọn gì: áp dụng cho chữ gõ mới"><span class="opacity-ic"></span>Opacity <span id="opacityBadge">100%</span></button>
-    <div class="menu-dropdown opacity-panel" id="opacityMenuDropdown">
-      <div class="op-head">
-        <span class="op-title">Độ mờ đục (Opacity)</span>
-        <span class="op-swatch" title="Xem trước"><i id="opacitySwatchFill"></i></span>
-      </div>
-      <div class="op-target" id="opacityTargetLabel"></div>
-      <div class="op-row">
-        <input type="range" id="opacityRange" min="0" max="100" step="1" value="100" title="Kéo để chỉnh độ mờ đục">
-        <input type="number" id="opacityNumber" min="0" max="100" step="1" value="100" title="Gõ độ mờ đục (0–100)">
-        <span class="op-unit">%</span>
-      </div>
-      <div class="op-presets" id="opacityPresets">
-        <button type="button" data-op="100">100%</button>
-        <button type="button" data-op="75">75%</button>
-        <button type="button" data-op="50">50%</button>
-        <button type="button" data-op="25">25%</button>
-        <button type="button" data-op="10">10%</button>
-      </div>
-    </div>
-  </div>
-  <div class="sep"></div>
-
-  <!-- ===== THÊM TÍNH NĂNG: nút Rotate object — XOAY đối tượng đã chọn (CHỮ và HÌNH ẢNH). Cách dùng: dùng công cụ
-       Select bấm chọn 1 khối chữ hoặc 1 ảnh, rồi (a) mở menu này để kéo thanh trượt / gõ số độ / bấm nút chọn nhanh,
-       hoặc (b) kéo tay cầm tròn phía trên khung chọn (giữ Shift để xoay theo bước 15°). Góc lưu ở ed.rotation
-       (độ, chiều kim đồng hồ). Xem editRotation_/drawEdit (hiển thị) và drawEditOnPdfPage (xuất PDF). -->
-  <div class="menu-wrap" id="rotateMenuWrap">
-    <button class="tbtn" id="btnRotateMenu" title="Rotate object — xoay chữ / hình ảnh đang chọn (công cụ Select). Hoặc kéo tay cầm tròn phía trên khung chọn (giữ Shift = bước 15°)"><span class="rot-ic">⟳</span>Rotate object <span id="rotateBadge">0°</span></button>
-    <div class="menu-dropdown opacity-panel" id="rotateMenuDropdown">
-      <div class="op-head">
-        <span class="op-title">Xoay đối tượng (Rotate object)</span>
-      </div>
-      <div class="op-target" id="rotateTargetLabel"></div>
-      <div class="op-row">
-        <input type="range" id="rotateRange" min="-180" max="180" step="1" value="0" title="Kéo để xoay (độ, chiều kim đồng hồ là dương)">
-        <input type="number" id="rotateNumber" min="-180" max="180" step="1" value="0" title="Gõ góc xoay (-180 đến 180)">
-        <span class="op-unit">°</span>
-      </div>
-      <div class="op-presets" id="rotatePresets">
-        <button type="button" data-rel="-90" title="Xoay ngược chiều kim đồng hồ 90°">⟲ 90°</button>
-        <button type="button" data-rel="90" title="Xoay thuận chiều kim đồng hồ 90°">⟳ 90°</button>
-        <button type="button" data-rel="180" title="Xoay 180°">180°</button>
-        <button type="button" data-abs="0" title="Đưa về thẳng (0°)">Reset</button>
-      </div>
-    </div>
-  </div>
-  <div class="sep"></div>
-
   <button class="tbtn" id="btnUndo" title="Hoàn tác"><span class="ic">↩️</span>Undo</button>
   <button class="tbtn" id="btnRedo" title="Làm lại (Ctrl+Y): phục hồi thao tác vừa bị Undo. Chỉ dùng được sau khi đã Undo" disabled style="opacity:.45;cursor:default"><span class="ic">↪️</span>Redo</button>
+  <button class="tbtn" id="btnLayers" title="Layers / Z-order: xem và đổi thứ tự lớp (trên–dưới) của các đối tượng trên trang. Phím tắt: Ctrl+] / Ctrl+[ (Shift = trên cùng / dưới cùng)"><span class="ic">📑</span>Layers</button>
   <button class="tbtn" id="btnClearPage" title="Xóa hết chỉnh sửa trên trang (không xóa trang)"><span class="ic">🧹</span>Delete edit</button>
   <div class="sep"></div>
 
@@ -3703,25 +3917,46 @@ document.getElementById('btnClosePdf').onclick = closeCurrentPdf_;
 // trong đều tự làm việc của chúng — mở modal hoặc chọn công cụ — không cần menu còn mở nữa), và mở
 // menu này thì tự đóng các menu thả xuống KHÁC đang mở (không để 2 menu cùng mở chồng lên nhau).
 const allToolbarMenus_ = [];
-function setupToolbarMenu_(wrapId, btnId, dropdownId){
+// [MỚI - MENU CON LỒNG BÊN TRONG MENU CHA] Tham số thứ 4 "opts.parentWrapId" (tuỳ chọn) dùng khi
+// menu này là MENU CON được đặt LỒNG BÊN TRONG dropdown của một menu khác (VD "Opacity"/"Rotate
+// object" lồng trong menu "Tool" — xem #toolMenuDropdown). Có 2 vấn đề cần xử lý riêng cho trường
+// hợp lồng menu mà cơ chế menu phẳng (không lồng) trước đây chưa cần tới:
+//  1) Khi mở menu con, hành vi mặc định "đóng hết mọi menu khác trước" (allToolbarMenus_.forEach)
+//     sẽ VÔ TÌNH đóng luôn chính MENU CHA đang chứa nó (dropdown cha bị gỡ class 'open' -> ẩn đi
+//     -> menu con lồng bên trong cũng biến mất theo dù vừa mới mở) -> cần LOẠI TRỪ đúng menu cha
+//     (nhận diện qua closeFn.keepOpenWrapId_) ra khỏi lượt "đóng hết" này.
+//  2) Nút bấm mở menu con (btnOpacityMenu/btnRotateMenu) vẫn mang class ".tbtn" như mọi mục khác
+//     trong menu cha, nên sẽ bị chính listener "bấm .tbtn bên trong dropdown thì tự đóng dropdown"
+//     (xem dropdown.addEventListener('click',...,true) bên dưới) của MENU CHA đóng mất ngay khi
+//     vừa bấm để MỞ menu con -> đánh dấu riêng bằng thuộc tính [data-submenu-toggle] để listener
+//     đó biết loại trừ, không đóng menu cha trong trường hợp này.
+function setupToolbarMenu_(wrapId, btnId, dropdownId, opts){
   const wrap = document.getElementById(wrapId);
   const menuBtn = document.getElementById(btnId);
   const dropdown = document.getElementById(dropdownId);
   if(!wrap || !menuBtn || !dropdown) return;
+  opts = opts || {};
 
   function closeThisMenu(){ dropdown.classList.remove('open'); }
+  closeThisMenu.keepOpenWrapId_ = wrapId;
   allToolbarMenus_.push(closeThisMenu);
 
   menuBtn.addEventListener('click', (e)=>{
     e.stopPropagation();
     const willOpen = !dropdown.classList.contains('open');
-    allToolbarMenus_.forEach(closeFn => closeFn()); // đóng hết các menu khác trước
+    // Đóng hết các menu khác trước — trừ chính menu CHA đang chứa menu này (nếu có khai báo
+    // opts.parentWrapId), để mở menu con lồng bên trong không tự đóng mất menu cha của nó.
+    allToolbarMenus_.forEach(closeFn => {
+      if(opts.parentWrapId && closeFn.keepOpenWrapId_ === opts.parentWrapId) return;
+      closeFn();
+    });
     if(willOpen) dropdown.classList.add('open');
   });
   document.addEventListener('click', (e)=>{
     if(!wrap.contains(e.target)) closeThisMenu();
   });
   dropdown.addEventListener('click', (e)=>{
+    if(e.target.closest('[data-submenu-toggle]')) return; // nút mở MENU CON lồng bên trong -> không tự đóng menu này
     if(e.target.closest('.tbtn')) closeThisMenu();
   }, true);
 }
@@ -6429,7 +6664,7 @@ function redrawOverlay(){
     pctx.clearRect(0,0,pdfCanvas.width, pdfCanvas.height);
     pctx.drawImage(baseCanvas, 0, 0);
     const edits = cur().edits;
-    for(const e of edits) drawEdit(pctx, e, scale);
+    for(const e of edits){ if(e.hidden) continue; drawEdit(pctx, e, scale); }   // đối tượng bị ẩn (Layers) không vẽ
   }
 
   // 2) overlayCanvas giờ CHỈ còn vẽ các thành phần giao diện tạm thời — không thuộc nội dung tài
@@ -6663,6 +6898,7 @@ function cursorForHandle(name){
 function hitTestEdits(px, py){
   const edits = cur().edits;
   for(let i=edits.length-1;i>=0;i--){
+    if(edits[i].hidden) continue;           // đối tượng bị ẩn (Layers) không chọn được
     const b = getEditBounds(edits[i]);
     const sx=b.x*scale, sy=b.y*scale, sw=b.w*scale, sh=b.h*scale;
     let qx = px, qy = py;
@@ -7077,6 +7313,7 @@ async function updateZoom(){
 
 // ---------- Chọn công cụ ----------
 const toolLabels = {
+  hand:'Hand — kéo chuột ở bất kỳ đâu trên trang để cuộn/di chuyển góc nhìn tài liệu (không chỉnh sửa gì). Mẹo: giữ phím Cách (Space) để tạm dùng Hand dù đang ở công cụ khác, thả ra để quay về công cụ cũ.',
   select:'Select — nhấn để chọn, kéo để di chuyển, kéo 8 ô vuông xanh ở viền để chỉnh khung chữ (khung sẽ được LƯU LẠI đúng kích thước vừa canh, không tự to ra nữa; phím F để trả về khung tự động), đúp chuột để sửa chữ, phím Delete để xóa',
   textselect:'Select text to copy — bôi đen (kéo chuột) qua chữ trong PDF, bấm "📋 Copy chữ" (hoặc Ctrl+C) rồi vào Tool ▸ Paste (hoặc Ctrl+V) để dán chữ đó lên trang; bấm nút "🖍️ Marker" nổi lên cạnh vùng vừa bôi đen để tô sáng đúng đoạn chữ đó.',
   crop:'Crop — kéo khung quanh vùng muốn GIỮ LẠI (kéo cạnh/góc để chỉnh, kéo trong khung để dời), rồi bấm Áp dụng hoặc Enter. Phần ngoài khung sẽ bị ẩn khi lưu PDF.',
@@ -7153,6 +7390,10 @@ document.querySelectorAll('.tbtn[data-tool]').forEach(btn=>{
       selectedEditIndex = -1;
       hoverLine = null;
       overlayCanvas.className = 'tool-' + activeTool;
+      // [MỚI] Hand tool: bật/tắt con trỏ "bàn tay" cho CẢ vùng cuộn nhiều trang (#pagesScroll),
+      // không chỉ riêng overlayCanvas của trang đang sống — xem khối "Hand tool: kéo để cuộn" bên
+      // dưới (sau phần khởi tạo paintCursorEl_) để xem toàn bộ phần xử lý kéo-để-cuộn.
+      pagesScroll.classList.toggle('hand-mode', tool === 'hand');
       refreshPaintSizeUi_(); // Paint: hiện/ẩn cụm chỉnh kích thước nét theo công cụ đang chọn
       try{ redrawOverlay(); }catch(err){ console.warn('Không vẽ lại được lớp overlay:', err); }
       // Chuẩn bị sẵn dữ liệu vị trí từng dòng chữ ngay khi chọn công cụ, để việc "trỏ chuột vào đâu highlight
@@ -7187,6 +7428,67 @@ document.querySelectorAll('.tbtn[data-tool]').forEach(btn=>{
   };
 });
 document.getElementById('toolSelect').classList.add('active');
+
+// ================== [MỚI] HAND TOOL: kéo để cuộn/di chuyển góc nhìn tài liệu ==================
+// Công cụ điều hướng cơ bản nhất (giống mọi phần mềm đọc PDF khác: Acrobat, Chrome PDF viewer...):
+// bấm giữ chuột ở BẤT KỲ ĐÂU trên tài liệu (trang đang sống hay các trang tĩnh khác) rồi kéo để
+// cuộn dọc/ngang toàn vùng xem (#pagesScroll) — KHÔNG chỉnh sửa/chọn bất cứ nội dung gì trên trang,
+// khác hẳn công cụ "Select". Gắn listener NGAY TRÊN #pagesScroll (phần tử cha chứa mọi trang, xem
+// khai báo "pagesScroll" ở trên) thay vì chỉ trên overlayCanvas, để kéo-cuộn hoạt động đều trên cả
+// trang đang chỉnh sửa (có overlayCanvas phủ lên) lẫn mọi trang khác (chỉ có canvas.pageStatic) —
+// chuột xuống ở đâu trong #pagesScroll cũng bắt được nhờ sự kiện mousedown nổi bọt (bubbling) lên
+// tới đây (overlayCanvas vẫn gọi preventDefault() ở nhánh xử lý riêng của nó nhưng KHÔNG chặn nổi
+// bọt, xem đầu hàm overlayCanvas.addEventListener('mousedown', ...) phía trên).
+let handPanning_ = false;
+let handPanStart_ = null; // {clientX, clientY, scrollLeft, scrollTop}
+pagesScroll.addEventListener('mousedown', (e)=>{
+  if(activeTool !== 'hand' || !pages.length) return;
+  // Bỏ qua cú bấm vào các nút/điều khiển nổi trên trang (VD nút "Đánh dấu" nổi lên khi chọn chữ,
+  // tay cầm resize...) để không vô tình "nuốt" mất thao tác bấm nút đó thành kéo-cuộn.
+  if(e.target.closest('button, input, select, textarea, a')) return;
+  e.preventDefault();
+  handPanning_ = true;
+  handPanStart_ = { clientX: e.clientX, clientY: e.clientY, scrollLeft: pagesScroll.scrollLeft, scrollTop: pagesScroll.scrollTop };
+  pagesScroll.classList.add('panning');
+});
+document.addEventListener('mousemove', (e)=>{
+  if(!handPanning_ || !handPanStart_) return;
+  e.preventDefault();
+  pagesScroll.scrollLeft = handPanStart_.scrollLeft - (e.clientX - handPanStart_.clientX);
+  pagesScroll.scrollTop = handPanStart_.scrollTop - (e.clientY - handPanStart_.clientY);
+});
+function endHandPan_(){
+  if(!handPanning_) return;
+  handPanning_ = false;
+  handPanStart_ = null;
+  pagesScroll.classList.remove('panning');
+}
+document.addEventListener('mouseup', endHandPan_);
+window.addEventListener('blur', endHandPan_);
+
+// [MỚI] Giữ phím Cách (Space) để TẠM dùng Hand tool dù đang ở công cụ khác — thả phím ra tự quay
+// lại đúng công cụ trước đó (y hệt Acrobat/Photoshop...). Bỏ qua khi đang gõ chữ vào một ô nhập
+// liệu (textarea/input/contenteditable) để không phá hành vi gõ dấu cách bình thường của người
+// dùng trong các ô đó.
+let spaceHandPrevTool_ = null;
+document.addEventListener('keydown', (e)=>{
+  if(e.code !== 'Space' || e.repeat) return;
+  const tgt = e.target;
+  const typing = tgt && (tgt.tagName==='TEXTAREA' || tgt.tagName==='INPUT' || tgt.isContentEditable);
+  if(typing || !pages.length || activeTool === 'hand') return;
+  spaceHandPrevTool_ = activeTool;
+  e.preventDefault();
+  const handBtn = document.getElementById('toolHand');
+  if(handBtn) handBtn.click();
+});
+document.addEventListener('keyup', (e)=>{
+  if(e.code !== 'Space' || spaceHandPrevTool_ === null) return;
+  e.preventDefault();
+  const prevBtn = document.querySelector('.tbtn[data-tool="'+spaceHandPrevTool_+'"]');
+  spaceHandPrevTool_ = null;
+  endHandPan_();
+  if(prevBtn) prevBtn.click();
+});
 document.getElementById('colorSwatch').oninput = (e)=>{ currentColor = e.target.value; refreshPaintSizeUi_(); };
 
 // ================== PAINT: chỉnh kích thước nét vẽ ==================
@@ -7599,7 +7901,9 @@ function newTextOpacityProps_(){
   const btn = document.getElementById('btnOpacityMenu');
   const dd = document.getElementById('opacityMenuDropdown');
   if(!rangeEl || !numEl || !btn || !dd) return;
-  setupToolbarMenu_('opacityMenuWrap', 'btnOpacityMenu', 'opacityMenuDropdown');
+  // [MỚI] "Opacity" nay lồng bên trong menu "Tool" (xem #toolMenuDropdown) -> khai báo
+  // parentWrapId để mở menu Opacity không tự đóng mất menu Tool đang chứa nó.
+  setupToolbarMenu_('opacityMenuWrap', 'btnOpacityMenu', 'opacityMenuDropdown', {parentWrapId:'toolMenuWrap'});
   // Mở menu: đồng bộ giá trị mới nhất, và nếu bảng bị tràn ra mép phải cửa sổ thì canh sang mép phải nút.
   btn.addEventListener('click', ()=>{
     refreshOpacityControl();
@@ -7703,7 +8007,9 @@ function applyRotationDeg_(raw, relative){
   const btn = document.getElementById('btnRotateMenu');
   const dd = document.getElementById('rotateMenuDropdown');
   if(!rangeEl || !numEl || !btn || !dd) return;
-  setupToolbarMenu_('rotateMenuWrap', 'btnRotateMenu', 'rotateMenuDropdown');
+  // [MỚI] "Rotate object" nay lồng bên trong menu "Tool" (xem #toolMenuDropdown) -> khai báo
+  // parentWrapId để mở menu Rotate object không tự đóng mất menu Tool đang chứa nó.
+  setupToolbarMenu_('rotateMenuWrap', 'btnRotateMenu', 'rotateMenuDropdown', {parentWrapId:'toolMenuWrap'});
   btn.addEventListener('click', ()=>{
     refreshRotateControl();
     requestAnimationFrame(()=>{
@@ -11813,7 +12119,7 @@ async function buildEditedOutDoc(indexes, spinnerLabel){
         // NativeTextEngine chỉ thay glyph chữ trong content stream gốc, giữ nguyên đúng 1 màu chữ có
         // sẵn của PDF gốc, không thể tô riêng từng phần; những dòng này cần rơi về cách "che nền + vẽ
         // chữ mới đè lên" (drawEditOnPdfPage, đã hỗ trợ colorRuns ở trên) mới hiện đúng nhiều màu.
-        const nativeEdits = p.edits.filter(ed => ed.type==='textfix' && ed.nativeItemIdxs && ed.nativeItemIdxs.length && !ed.bold && !ed.italic && !ed.underline && !(ed.colorRuns && ed.colorRuns.length) && !(editOpacity_(ed) < 1) && !editRotation_(ed));
+        const nativeEdits = p.edits.filter(ed => !ed.hidden && ed.type==='textfix' && ed.nativeItemIdxs && ed.nativeItemIdxs.length && !ed.bold && !ed.italic && !ed.underline && !(ed.colorRuns && ed.colorRuns.length) && !(editOpacity_(ed) < 1) && !editRotation_(ed));
         if(nativeEdits.length){
           nativeStats.eligible += nativeEdits.length;
           const pdfjsPage = await p.doc.getPage(p.srcPage);
@@ -11841,6 +12147,7 @@ async function buildEditedOutDoc(indexes, spinnerLabel){
     // thuộc góc xoay thêm mà người dùng chọn qua "Rotate pages" — hai việc hoàn toàn độc lập nhau).
     const rotInfo = getPageRotationTransform_(pageObj);
     for(const ed of p.edits){
+      if(ed.hidden) continue;                //  đối tượng bị ẩn (Layers) không xuất ra PDF
       if(ed._nativeApplied) continue; // đã sửa thật trực tiếp trên content stream, không vẽ đè nữa
       const { font: edFont, fauxBold } = await resolveFontForEdit(ed);
       await drawEditOnPdfPage(pageObj, ed, rotInfo, edFont, fallbackFont, outDoc, imageEmbedCache, fauxBold, resolveFontForEdit);
@@ -11911,7 +12218,8 @@ async function exportPdfAs(filename, pageIndexes){
     // Nếu có truyền pageIndexes (dùng khi "Tách trang" chỉ chọn 1 số trang), chỉ ghép đúng những
     // trang đó theo đúng thứ tự đã chọn; mặc định (Save PDF bình thường) ghép TOÀN BỘ tài liệu.
     const indexes = (pageIndexes && pageIndexes.length) ? pageIndexes : pages.map((_,i)=>i);
-    const outDoc = await buildEditedOutDoc(indexes, spinnerLabel);
+    // Có thể chèn WATERMARK (nếu đang bật) — xem buildEditedOutDocWM_().
+    const outDoc = await buildEditedOutDocWM_(indexes, spinnerLabel);
     const bytes = await saveOutDocWithVietWidthFix(outDoc);
     const blob = new Blob([bytes], {type:'application/pdf'});
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
@@ -11919,6 +12227,7 @@ async function exportPdfAs(filename, pageIndexes){
     // Báo cho người dùng biết rõ lần lưu này có bao nhiêu dòng được SỬA THẬT trực tiếp trên
     // văn bản gốc (không qua whiteout+vẽ đè) và bao nhiêu dòng phải tự động dùng cách che+vẽ đè.
     showNativeEditToast(outDoc.__nativeEditStats);
+    wmReportExport_(outDoc);   // báo kết quả chèn watermark (nếu đang bật)
   }catch(err){
     console.error('Lỗi khi lưu PDF:', err);
     alert('Lỗi khi xuất PDF: '+err.message+'\n\nGợi ý: nếu vừa tải lại trang trình duyệt, dữ liệu file gốc trong bộ nhớ có thể đã mất — hãy mở lại file PDF rồi thực hiện chỉnh sửa lại.');
@@ -11952,7 +12261,8 @@ async function printPdf(){
     // Bước 1: ghép toàn bộ trang + mọi chỉnh sửa hiện có thành 1 file PDF hoàn chỉnh trong bộ nhớ
     // (giống hệt "Save PDF"), để bản in luôn khớp 100% nội dung đang chỉnh sửa trên màn hình.
     const indexes = pages.map((_,i)=>i);
-    const outDoc = await buildEditedOutDoc(indexes, spinnerLabel);
+    // Watermark (nếu đang bật) cũng được chèn vào bản in; bỏ bước "làm phẳng" vì in vốn đã rasterize trang.
+    const outDoc = await buildEditedOutDocWM_(indexes, spinnerLabel, { noFlatten:true });
     const bytes = await saveOutDocWithVietWidthFix(outDoc);
 
     // Bước 2: dùng pdf.js vẽ lại từng trang ra canvas ở độ phân giải đủ nét để in (~200dpi), rồi
@@ -12277,6 +12587,7 @@ async function recompressImagesKeepVector_(srcBytes, cfg, spinnerLabel, attemptI
 // file gốc (originalFileRawBuf) làm một "ứng viên" trong Compress PDF hay không — chỉ khi tài liệu
 // còn nguyên trạng thì bytes RAW mới chính xác tương đương nội dung đang hiển thị trong editor.
 function isDocUnchangedFromOriginalRaw_(){
+  if(typeof wmIsActive_ === 'function' && wmIsActive_()) return false;   // có watermark -> không được dùng file gốc chưa đóng dấu
   if(!originalFileRawBuf || !originalFileRawSize || !pages.length) return false;
   for(let i=0;i<pages.length;i++){
     const p = pages[i];
@@ -12302,7 +12613,7 @@ async function compressPdfAndDownload(level){
     // nhớ (giống hệt "Save PDF") để làm đầu vào cho bước nén — đảm bảo file nén ra vẫn giữ đúng
     // mọi chỉnh sửa người dùng đã thực hiện, không chỉ nén mỗi bản gốc chưa sửa.
     spinnerLabel.textContent = ' Đang chuẩn bị tài liệu để nén…';
-    const editedOutDoc = await buildEditedOutDoc(pages.map((_,i)=>i), spinnerLabel);
+    const editedOutDoc = await buildEditedOutDocWM_(pages.map((_,i)=>i), spinnerLabel);   // kèm watermark nếu đang bật
     const editedBytes = await saveOutDocWithVietWidthFix(editedOutDoc);
 
     // LỖI CỐT LÕI ĐÃ SỬA (nguyên nhân khiến "file đã nén" LỚN HƠN file gốc): trước đây biến
@@ -12504,6 +12815,572 @@ document.getElementById('cprConfirmBtn').addEventListener('click', async () => {
   const level = checked ? checked.value : 'standard';
   await compressPdfAndDownload(level);
 });
+
+// ============================================================================
+// WATERMARK — chèn chữ / hình ảnh mờ (trên hoặc dưới nội dung) để bảo vệ bản quyền & chống sao chép
+// ----------------------------------------------------------------------------
+// Cách hoạt động:
+//   • Cấu hình (wmConfig_) lưu trong bộ nhớ; null = đang tắt. Nút "Watermark" trên thanh công cụ sáng lên
+//     (có chấm xanh) khi đang bật.
+//   • KHÔNG sửa các trang đang chỉnh sửa trên màn hình. Watermark chỉ được ghi vào BẢN XUẤT:
+//     buildEditedOutDocWM_() = buildEditedOutDoc() + chèn watermark vào từng trang được chọn.
+//     Dùng cho Save PDF / Extract Pages (exportPdfAs), Print và Compress PDF.
+//     (Đổi khổ trang / Export Word, PowerPoint, Excel KHÔNG dùng hàm này nên không bị dính watermark.)
+//   • Khối watermark (chữ hoặc ảnh) luôn được dựng thành MỘT ảnh PNG/JPEG rồi nhúng 1 lần cho cả file,
+//     các lần lặp (chế độ "Lặp kín trang") dùng lại cùng ảnh nên file không phình to. Chữ được vẽ bằng
+//     canvas với đúng font đã nhúng sẵn của ứng dụng -> hiển thị tiếng Việt đúng dấu, xem trước = kết quả.
+//   • Phần hình học (vị trí/xoay/CropBox/Rotate của trang) và việc đặt lớp TRÊN/DƯỚI nằm ở khối WM-PURE
+//     (wmPlacements_, wmApplyToPage_, wmDrawLayer_) ngay bên dưới.
+// ============================================================================
+const WM_DEFAULTS_ = {
+  type:'text', text:'BẢN QUYỀN', fontFamily:'', bold:true, italic:false, color:'#8a8a8a', size:72,
+  imageDataUrl:null, imageRatio:1, imageName:'', imageScale:40,
+  opacity:30, rotation:45, position:'mc', tile:false, tileGap:40, margin:36,
+  layer:'above', range:'all', rangeText:'', flatten:false
+};
+let wmConfig_ = null;          // cấu hình đang bật (null = tắt)
+let wmImageState_ = null;      // ảnh watermark đã nạp trong modal: {dataUrl, ratio, name}
+let wmFormPos_ = 'mc';
+let wmPreviewToken_ = 0;
+let wmPreviewBase_ = null;     // {idx, canvas, scale} — ảnh trang hiện tại dùng cho xem trước
+const wmBlockCache_ = { key:null, val:null };
+
+function wmIsActive_(){ return !!wmConfig_; }
+
+// <<WM-PURE
+// ---------- Phân tích chuỗi trang: "1-3, 5, 8-" -> Set các số trang (1-based) ----------
+function wmParsePageRange_(text, total){
+  const set = new Set();
+  String(text || '').split(/[,;\s]+/).forEach(part => {
+    if(!part) return;
+    const m = part.match(/^(\d*)-(\d*)$/);
+    if(m){
+      let a = m[1] ? +m[1] : 1;
+      let b = m[2] ? +m[2] : total;
+      if(a > b){ const t = a; a = b; b = t; }
+      for(let n = Math.max(1, a); n <= Math.min(total, b); n++) set.add(n);
+    } else if(/^\d+$/.test(part)){
+      const n = +part;
+      if(n >= 1 && n <= total) set.add(n);
+    }
+  });
+  return set;
+}
+
+// ---------- Hình học đặt watermark (hệ toạ độ HIỂN THỊ: gốc ở góc DƯỚI-TRÁI, đơn vị point) ----------
+// bw/bh: kích thước khối watermark (point, chưa xoay); VW/VH: khổ trang đang hiển thị.
+// Trả về danh sách {cx, cy, k}: tâm khối + hệ số thu nhỏ (k<1 khi khối lớn hơn trang). Góc xoay: cfg.rotation.
+function wmPlacements_(cfg, bw, bh, VW, VH){
+  const th = (cfg.rotation || 0) * Math.PI / 180;
+  const c = Math.abs(Math.cos(th)), s = Math.abs(Math.sin(th));
+  const BW0 = bw * c + bh * s;     // hộp bao sau khi xoay
+  const BH0 = bw * s + bh * c;
+  const out = [];
+  if(cfg.tile){
+    let stepX = BW0 + cfg.tileGap, stepY = BH0 + cfg.tileGap;
+    stepX = Math.max(stepX, 8); stepY = Math.max(stepY, 8);
+    let cols, rows;
+    const calc = () => { cols = Math.ceil(VW / stepX) + 2; rows = Math.ceil(VH / stepY) + 2; };
+    calc();
+    while(cols * rows > 300){ stepX *= 1.15; stepY *= 1.15; calc(); }   // chặn số ô quá nhiều
+    for(let r = 0; r < rows; r++){
+      const cy = VH / 2 + (r - (rows - 1) / 2) * stepY;
+      const shift = (r % 2) ? stepX / 2 : 0;                              // so le từng hàng
+      for(let q = 0; q < cols; q++){
+        const cx = VW / 2 + (q - (cols - 1) / 2) * stepX + shift;
+        if(Math.abs(cx - VW / 2) < VW / 2 + BW0 / 2 && Math.abs(cy - VH / 2) < VH / 2 + BH0 / 2){
+          out.push({ cx, cy, k: 1 });
+        }
+      }
+    }
+    return out;
+  }
+  const m = Math.max(0, cfg.margin || 0);
+  const pos = cfg.position || 'mc';
+  const col = pos[1], row = pos[0];                // row: t/m/b ; col: l/c/r
+  const availW = (col === 'c') ? VW * 0.94 : VW - 2 * m;
+  const availH = (row === 'm') ? VH * 0.94 : VH - 2 * m;
+  const k = Math.max(0.02, Math.min(1, availW / BW0, availH / BH0));
+  const BW = BW0 * k, BH = BH0 * k;
+  const cx = col === 'l' ? m + BW / 2 : col === 'r' ? VW - m - BW / 2 : VW / 2;
+  const cy = row === 't' ? VH - m - BH / 2 : row === 'b' ? m + BH / 2 : VH / 2;
+  out.push({ cx, cy, k });
+  return out;
+}
+
+// ---------- Vẽ vào một lớp content stream RIÊNG, rồi đặt lớp đó TRÊN hoặc DƯỚI nội dung ----------
+// pdf-lib mặc định luôn vẽ nối tiếp vào content stream hiện có (tức luôn nằm TRÊN). Để đặt DƯỚI nội dung,
+// ta ép pdf-lib tạo stream mới cho riêng watermark rồi chèn stream đó lên đầu mảng /Contents.
+// Toàn bộ nội dung gốc được bọc q ... Q để trạng thái đồ hoạ (ma trận/clip) của trang gốc
+// không ảnh hưởng tới watermark và ngược lại.
+function wmDrawLayer_(outDoc, pg, drawFn, below){
+  const saved = { cs: pg.contentStream, ref: pg.contentStreamRef };
+  pg.contentStream = undefined;
+  pg.contentStreamRef = undefined;
+  let wmRef;
+  try{
+    drawFn();
+    wmRef = pg.contentStreamRef;
+  } finally {
+    pg.contentStream = saved.cs;
+    pg.contentStreamRef = saved.ref;
+  }
+  if(!wmRef) return false;
+  const ctx = outDoc.context;
+  const arr = pg.node.normalizedEntries().Contents;
+  let idx = arr.indexOf(wmRef);
+  if(idx < 0) idx = arr.size() - 1;
+  arr.remove(idx);
+  const qRef = ctx.register(ctx.stream('q\n'));
+  const QRef = ctx.register(ctx.stream('\nQ\n'));
+  if(below){
+    arr.insert(0, wmRef);   // watermark -> q -> nội dung gốc -> Q
+    arr.insert(1, qRef);
+    arr.push(QRef);
+  } else {
+    arr.insert(0, qRef);    // q -> nội dung gốc -> Q -> watermark
+    arr.push(QRef);
+    arr.push(wmRef);
+  }
+  return true;
+}
+
+// ---------- Chèn watermark (ảnh đã nhúng) vào MỘT trang PDF, tự xử lý CropBox + /Rotate của trang ----------
+// asset: { img: PDFImage, ratio: h/w, fixed: boolean, w, h }
+//   fixed=true  : kích thước khối cố định theo point (watermark chữ)
+//   fixed=false : rộng = cfg.imageScale % bề ngang trang, cao theo tỉ lệ ảnh (watermark ảnh)
+function wmApplyToPage_(outDoc, pg, asset, cfg){
+  let box;
+  try{ box = pg.getCropBox(); }catch(e){ box = pg.getMediaBox(); }
+  const bw0 = box.width, bh0 = box.height;
+  const rot = (((Math.round(pg.getRotation().angle) % 360) + 360) % 360);
+  const swap = (rot === 90 || rot === 270);
+  const VW = swap ? bh0 : bw0;
+  const VH = swap ? bw0 : bh0;
+
+  let bw, bh;
+  if(asset.fixed){ bw = asset.w; bh = asset.h; }
+  else { bw = VW * (cfg.imageScale / 100); bh = bw * asset.ratio; }
+
+  const places = wmPlacements_(cfg, bw, bh, VW, VH);
+  if(!places.length) return false;
+
+  // visual (gốc dưới-trái, chưa tính /Rotate) -> toạ độ không gian người dùng của trang
+  const toUser = (vx, vy) => {
+    switch(rot){
+      case 90:  return { x: box.x + (bw0 - vy), y: box.y + vx };
+      case 180: return { x: box.x + (bw0 - vx), y: box.y + (bh0 - vy) };
+      case 270: return { x: box.x + vy,         y: box.y + (bh0 - vx) };
+      default:  return { x: box.x + vx,         y: box.y + vy };
+    }
+  };
+  const opacity = Math.max(0.01, Math.min(1, cfg.opacity / 100));
+  const degreesFn = PDFLib.degrees;
+  return wmDrawLayer_(outDoc, pg, () => {
+    for(const p of places){
+      const w = bw * p.k, h = bh * p.k;
+      const phiDeg = (cfg.rotation || 0) + rot;           // trang xoay cw `rot` -> cộng thêm để hiển thị đúng góc
+      const phi = phiDeg * Math.PI / 180;
+      const C = toUser(p.cx, p.cy);
+      const ox = C.x - ((w / 2) * Math.cos(phi) - (h / 2) * Math.sin(phi));
+      const oy = C.y - ((w / 2) * Math.sin(phi) + (h / 2) * Math.cos(phi));
+      pg.drawImage(asset.img, { x: ox, y: oy, width: w, height: h, rotate: degreesFn(phiDeg), opacity });
+    }
+  }, cfg.layer === 'below');
+}
+// WM-PURE>>
+
+const wmEl_ = id => document.getElementById(id);
+const wmClamp_ = (v, a, b) => Math.max(a, Math.min(b, v));
+
+function wmToast_(html){
+  const el = document.getElementById('nativeEditToast');
+  if(!el) return;
+  el.innerHTML = html;
+  el.classList.add('show');
+  clearTimeout(wmToast_._t);
+  wmToast_._t = setTimeout(()=> el.classList.remove('show'), 6000);
+}
+
+function wmLoadImage_(src){
+  return new Promise((resolve, reject)=>{
+    const im = new Image();
+    im.onload = ()=> resolve(im);
+    im.onerror = ()=> reject(new Error('Không đọc được hình ảnh watermark.'));
+    im.src = src;
+  });
+}
+
+// ---------- Dựng "khối" watermark: ảnh nguồn + kích thước ----------
+async function wmRenderTextBlock_(cfg){
+  try{ await ensurePdfExportFontLoaded(); }catch(e){}
+  const stack = pdfFontFamilyStack(cfg.fontFamily || '');
+  const lines = String(cfg.text).replace(/\r/g,'').split('\n');
+  const mctx = document.createElement('canvas').getContext('2d');
+  let ppp = 4;                                       // pixel / point: ~288dpi, đủ nét khi in & phóng to
+  for(let attempt = 0; attempt < 3; attempt++){
+    const sizePx = cfg.size * ppp;
+    const font = (cfg.italic ? 'italic ' : '') + (cfg.bold ? '700 ' : '400 ') + sizePx + 'px ' + stack;
+    try{ await document.fonts.load(font, cfg.text); }catch(e){}
+    mctx.font = font;
+    const lh = sizePx * 1.25, pad = sizePx * 0.18;
+    const widths = lines.map(l => mctx.measureText(l).width);
+    const W = Math.ceil(Math.max(1, ...widths) + pad * 2);
+    const H = Math.ceil(lh * lines.length + pad * 2);
+    const limit = 6000;
+    if(W > limit || H > limit){ ppp *= Math.min(limit / W, limit / H) * 0.98; continue; }
+    const cv = document.createElement('canvas');
+    cv.width = W; cv.height = H;
+    const ctx = cv.getContext('2d');
+    ctx.font = font;
+    ctx.fillStyle = cfg.color;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    lines.forEach((l, i)=> ctx.fillText(l, W / 2, pad + lh * (i + 0.5)));
+    return { kind:'text', source:cv, ratio:H / W, fixed:true, w:W / ppp, h:H / ppp, isJpg:false, dataUrl:null };
+  }
+  throw new Error('Nội dung watermark quá dài/lớn. Hãy giảm cỡ chữ hoặc rút ngắn nội dung.');
+}
+
+async function wmGetBlock_(cfg){
+  if(cfg.type === 'image'){
+    if(!cfg.imageDataUrl) throw new Error('Hãy chọn hình ảnh dùng làm watermark.');
+    const key = 'img|' + cfg.imageDataUrl.length + '|' + cfg.imageDataUrl.slice(-48);
+    if(wmBlockCache_.key === key) return wmBlockCache_.val;
+    const im = await wmLoadImage_(cfg.imageDataUrl);
+    const val = { kind:'image', source:im, ratio:im.naturalHeight / im.naturalWidth, fixed:false, w:0, h:0,
+                  isJpg:/^data:image\/jpe?g/i.test(cfg.imageDataUrl), dataUrl:cfg.imageDataUrl };
+    wmBlockCache_.key = key; wmBlockCache_.val = val;
+    return val;
+  }
+  if(!String(cfg.text || '').trim()) throw new Error('Hãy nhập nội dung chữ cho watermark.');
+  const key = ['txt', cfg.text, cfg.fontFamily, cfg.bold, cfg.italic, cfg.color, cfg.size].join('|');
+  if(wmBlockCache_.key === key) return wmBlockCache_.val;
+  const val = await wmRenderTextBlock_(cfg);
+  wmBlockCache_.key = key; wmBlockCache_.val = val;
+  return val;
+}
+
+function wmBlockBytes_(block){
+  if(!block.dataUrl) block.dataUrl = block.source.toDataURL('image/png');
+  return base64ToUint8Array(block.dataUrl.split(',')[1]);
+}
+
+// ---------- Dựng PDF kèm watermark ----------
+// Dùng thay cho buildEditedOutDoc() ở những nơi xuất file. opts.noFlatten: bỏ qua bước "làm phẳng"
+// (dùng cho Print vì Print vốn đã rasterize từng trang).
+async function buildEditedOutDocWM_(indexes, spinnerLabel, opts){
+  const outDoc = await buildEditedOutDoc(indexes, spinnerLabel);
+  const cfg = wmConfig_;
+  if(!cfg) return outDoc;
+  if(spinnerLabel) spinnerLabel.textContent = ' Đang chèn watermark…';
+
+  const allowed = cfg.range === 'range' ? wmParsePageRange_(cfg.rangeText, pages.length) : null;
+  const block = await wmGetBlock_(cfg);
+  const bytes = wmBlockBytes_(block);
+  const img = block.isJpg ? await outDoc.embedJpg(bytes) : await outDoc.embedPng(bytes);
+  const asset = { img, ratio:block.ratio, fixed:block.fixed, w:block.w, h:block.h };
+
+  const outPages = outDoc.getPages();
+  let applied = 0;
+  for(let k = 0; k < indexes.length && k < outPages.length; k++){
+    if(allowed && !allowed.has(indexes[k] + 1)) continue;
+    try{
+      if(wmApplyToPage_(outDoc, outPages[k], asset, cfg)) applied++;
+    }catch(err){
+      console.warn('Không chèn được watermark vào trang ' + (indexes[k] + 1) + ':', err);
+    }
+  }
+  outDoc.__wmApplied = applied;
+
+  if(cfg.flatten && !(opts && opts.noFlatten)) return await wmFlattenOutDoc_(outDoc, spinnerLabel);
+  return outDoc;
+}
+
+// Làm phẳng: dựng từng trang (đã có watermark) thành ảnh JPEG rồi ghép lại -> không còn chữ/vector để copy
+// hay xoá watermark. Giữ nguyên khổ trang (kể cả trang xoay).
+async function wmFlattenOutDoc_(outDoc, spinnerLabel){
+  const bytes = await saveOutDocWithVietWidthFix(outDoc);
+  const docJs = await pdfjsLib.getDocument({ data: bytes.slice() }).promise;
+  const flat = await PDFDocument.create();
+  const SCALE = 2.2;                                  // ~160 dpi
+  for(let i = 0; i < docJs.numPages; i++){
+    if(spinnerLabel) spinnerLabel.textContent = ` Đang làm phẳng trang ${i + 1}/${docJs.numPages}…`;
+    const page = await docJs.getPage(i + 1);
+    const vp1 = page.getViewport({ scale:1 });
+    const vp = page.getViewport({ scale:SCALE });
+    const cv = document.createElement('canvas');
+    cv.width = Math.max(1, Math.round(vp.width));
+    cv.height = Math.max(1, Math.round(vp.height));
+    const ctx = cv.getContext('2d');
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, cv.width, cv.height);
+    await page.render({ canvasContext:ctx, viewport:vp }).promise;
+    const jpg = base64ToUint8Array(cv.toDataURL('image/jpeg', 0.88).split(',')[1]);
+    cv.width = 0; cv.height = 0;
+    const im = await flat.embedJpg(jpg);
+    const np = flat.addPage([vp1.width, vp1.height]);
+    np.drawImage(im, { x:0, y:0, width:vp1.width, height:vp1.height });
+  }
+  flat.__nativeEditStats = outDoc.__nativeEditStats;
+  flat.__wmApplied = outDoc.__wmApplied;
+  return flat;
+}
+
+// ---------- Giao diện modal ----------
+const wmModal_ = wmEl_('watermarkModal');
+const wmRangeInputs_ = [
+  ['wmSize','wmSizeNum'], ['wmImageScale','wmImageScaleNum'], ['wmOpacity','wmOpacityNum'],
+  ['wmRotation','wmRotationNum'], ['wmMargin','wmMarginNum'], ['wmTileGap','wmTileGapNum']
+];
+
+function wmReadForm_(){
+  const num = (id, def) => { const v = parseFloat(wmEl_(id).value); return isFinite(v) ? v : def; };
+  return {
+    type: wmEl_('wmTypeImage').checked ? 'image' : 'text',
+    text: wmEl_('wmText').value,
+    fontFamily: wmEl_('wmFont').value,
+    bold: wmEl_('wmBold').checked,
+    italic: wmEl_('wmItalic').checked,
+    color: wmEl_('wmColor').value,
+    size: wmClamp_(num('wmSizeNum', 72), 6, 400),
+    imageDataUrl: wmImageState_ ? wmImageState_.dataUrl : null,
+    imageRatio: wmImageState_ ? wmImageState_.ratio : 1,
+    imageName: wmImageState_ ? wmImageState_.name : '',
+    imageScale: wmClamp_(num('wmImageScaleNum', 40), 3, 100),
+    opacity: wmClamp_(num('wmOpacityNum', 30), 1, 100),
+    rotation: wmClamp_(num('wmRotationNum', 45), -180, 180),
+    position: wmFormPos_,
+    tile: wmEl_('wmTile').checked,
+    tileGap: wmClamp_(num('wmTileGapNum', 40), 0, 300),
+    margin: wmClamp_(num('wmMarginNum', 36), 0, 300),
+    layer: wmEl_('wmLayerBelow').checked ? 'below' : 'above',
+    range: wmEl_('wmRangeCustom').checked ? 'range' : 'all',
+    rangeText: wmEl_('wmRangeText').value.trim(),
+    flatten: wmEl_('wmFlatten').checked
+  };
+}
+
+function wmWriteForm_(c){
+  wmEl_(c.type === 'image' ? 'wmTypeImage' : 'wmTypeText').checked = true;
+  wmEl_('wmText').value = c.text;
+  wmEl_('wmFont').value = c.fontFamily || '';
+  wmEl_('wmBold').checked = !!c.bold;
+  wmEl_('wmItalic').checked = !!c.italic;
+  wmEl_('wmColor').value = c.color;
+  const setPair = (rid, nid, v) => { wmEl_(rid).value = v; wmEl_(nid).value = v; };
+  setPair('wmSize','wmSizeNum', c.size);
+  setPair('wmImageScale','wmImageScaleNum', c.imageScale);
+  setPair('wmOpacity','wmOpacityNum', c.opacity);
+  setPair('wmRotation','wmRotationNum', c.rotation);
+  setPair('wmMargin','wmMarginNum', c.margin);
+  setPair('wmTileGap','wmTileGapNum', c.tileGap);
+  wmFormPos_ = c.position || 'mc';
+  wmEl_('wmTile').checked = !!c.tile;
+  wmEl_(c.layer === 'below' ? 'wmLayerBelow' : 'wmLayerAbove').checked = true;
+  wmEl_(c.range === 'range' ? 'wmRangeCustom' : 'wmRangeAll').checked = true;
+  wmEl_('wmRangeText').value = c.rangeText || '';
+  wmEl_('wmFlatten').checked = !!c.flatten;
+  wmRefreshFormState_();
+}
+
+function wmRefreshFormState_(){
+  const isImg = wmEl_('wmTypeImage').checked;
+  wmEl_('wmTextWrap').style.display = isImg ? 'none' : 'flex';
+  wmEl_('wmImageWrap').style.display = isImg ? 'flex' : 'none';
+  const tile = wmEl_('wmTile').checked;
+  wmEl_('wmPosGrid').classList.toggle('off', tile);
+  wmEl_('wmMarginRow').style.display = tile ? 'none' : 'flex';
+  wmEl_('wmTileGapRow').style.display = tile ? 'flex' : 'none';
+  wmEl_('wmPosGrid').querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.pos === wmFormPos_));
+  wmEl_('wmLayerHint').style.display = wmEl_('wmLayerBelow').checked ? '' : 'none';
+  wmEl_('wmImageInfo').textContent = wmImageState_
+    ? '✔ ' + wmImageState_.name
+    : 'Chưa chọn hình (PNG trong suốt cho kết quả đẹp nhất).';
+  wmEl_('wmRangeText').disabled = !wmEl_('wmRangeCustom').checked;
+}
+
+function wmRefreshButton_(){
+  const b = wmEl_('btnWatermark');
+  if(!b) return;
+  b.classList.toggle('wm-on', !!wmConfig_);
+  b.title = wmConfig_
+    ? 'Watermark ĐANG BẬT — sẽ được chèn khi Save PDF / Print / Compress / Extract Pages. Bấm để chỉnh sửa hoặc xoá.'
+    : 'Chèn watermark (chữ hoặc hình ảnh mờ) phía trên/dưới nội dung để bảo vệ bản quyền & chống sao chép';
+}
+
+let wmPreviewTimer_ = null;
+function wmSchedulePreview_(){
+  clearTimeout(wmPreviewTimer_);
+  wmPreviewTimer_ = setTimeout(wmUpdatePreview_, 90);
+}
+
+async function wmUpdatePreview_(){
+  if(wmModal_.style.display !== 'flex') return;
+  const token = ++wmPreviewToken_;
+  const cv = wmEl_('wmPreviewCanvas');
+  const note = wmEl_('wmPreviewNote');
+  const S = 0.7;
+  try{
+    if(!wmPreviewBase_ || wmPreviewBase_.idx !== currentIndex){
+      const base = await renderPageToCanvas(currentIndex, S);
+      wmPreviewBase_ = { idx:currentIndex, canvas:base, scale:S };
+    }
+    if(token !== wmPreviewToken_) return;
+    const base = wmPreviewBase_.canvas;
+    cv.width = base.width; cv.height = base.height;
+    const ctx = cv.getContext('2d');
+    ctx.drawImage(base, 0, 0);
+    const cfg = wmReadForm_();
+    let block;
+    try{ block = await wmGetBlock_(cfg); }
+    catch(err){ note.textContent = err.message; return; }
+    if(token !== wmPreviewToken_) return;
+    const VW = base.width / S, VH = base.height / S;
+    const bw = block.fixed ? block.w : VW * cfg.imageScale / 100;
+    const bh = block.fixed ? block.h : bw * block.ratio;
+    const places = wmPlacements_(cfg, bw, bh, VW, VH);
+    ctx.save();
+    // "Phía dưới nội dung" được mô phỏng bằng multiply: watermark chỉ hiện trên vùng trắng/sáng của trang.
+    if(cfg.layer === 'below') ctx.globalCompositeOperation = 'multiply';
+    for(const p of places){
+      ctx.save();
+      ctx.globalAlpha = cfg.opacity / 100;
+      ctx.translate(p.cx * S, (VH - p.cy) * S);
+      ctx.rotate(-(cfg.rotation || 0) * Math.PI / 180);
+      const w = bw * p.k * S, h = bh * p.k * S;
+      ctx.drawImage(block.source, -w / 2, -h / 2, w, h);
+      ctx.restore();
+    }
+    ctx.restore();
+    note.textContent = 'Xem trước trên trang ' + (currentIndex + 1) + (cfg.layer === 'below' ? ' (lớp dưới được mô phỏng).' : '.');
+  }catch(err){
+    console.warn('Xem trước watermark lỗi:', err);
+    note.textContent = 'Không dựng được bản xem trước.';
+  }
+}
+
+function openWatermarkModal(){
+  if(!pages.length){ alert('Hãy mở một file PDF trước.'); return; }
+  flushPendingEdit();
+  wmEl_('wmError').textContent = '';
+  wmPreviewBase_ = null;
+  wmWriteForm_(wmConfig_ || WM_DEFAULTS_);
+  wmEl_('wmRemoveBtn').style.display = wmConfig_ ? '' : 'none';
+  wmEl_('wmApplyBtn').textContent = wmConfig_ ? '💧 Cập nhật' : '💧 Áp dụng';
+  wmModal_.style.display = 'flex';
+  wmUpdatePreview_();
+}
+function closeWatermarkModal(){ wmModal_.style.display = 'none'; }
+
+// Các ô kéo + ô nhập số đi đôi với nhau
+for(const [rid, nid] of wmRangeInputs_){
+  wmEl_(rid).addEventListener('input', ()=>{ wmEl_(nid).value = wmEl_(rid).value; wmSchedulePreview_(); });
+  wmEl_(nid).addEventListener('input', ()=>{
+    const v = parseFloat(wmEl_(nid).value);
+    if(isFinite(v)) wmEl_(rid).value = v;
+    wmSchedulePreview_();
+  });
+}
+['wmText','wmFont','wmBold','wmItalic','wmColor','wmTile','wmLayerAbove','wmLayerBelow','wmTypeText','wmTypeImage'].forEach(id=>{
+  wmEl_(id).addEventListener('input', ()=>{ wmRefreshFormState_(); wmSchedulePreview_(); });
+  wmEl_(id).addEventListener('change', ()=>{ wmRefreshFormState_(); wmSchedulePreview_(); });
+});
+['wmRangeAll','wmRangeCustom'].forEach(id => wmEl_(id).addEventListener('change', wmRefreshFormState_));
+wmEl_('wmRangeText').addEventListener('input', ()=>{ wmEl_('wmRangeCustom').checked = true; wmRefreshFormState_(); });
+wmEl_('wmRangeCurrent').addEventListener('click', ()=>{
+  wmEl_('wmRangeCustom').checked = true;
+  wmEl_('wmRangeText').value = String(currentIndex + 1);
+  wmRefreshFormState_();
+});
+wmEl_('wmPosGrid').addEventListener('click', e=>{
+  const b = e.target.closest('button[data-pos]');
+  if(!b) return;
+  wmFormPos_ = b.dataset.pos;
+  wmRefreshFormState_();
+  wmSchedulePreview_();
+});
+
+wmEl_('wmImagePick').addEventListener('click', ()=> wmEl_('wmImageInput').click());
+wmEl_('wmImageInput').addEventListener('change', async e=>{
+  const f = e.target.files && e.target.files[0];
+  e.target.value = '';
+  if(!f) return;
+  wmEl_('wmError').textContent = '';
+  const url = URL.createObjectURL(f);
+  try{
+    const im = await wmLoadImage_(url);
+    const maxSide = 1600;                             // giới hạn kích thước để file xuất không quá nặng
+    const k = Math.min(1, maxSide / Math.max(im.naturalWidth, im.naturalHeight));
+    const c = document.createElement('canvas');
+    c.width = Math.max(1, Math.round(im.naturalWidth * k));
+    c.height = Math.max(1, Math.round(im.naturalHeight * k));
+    const ctx = c.getContext('2d');
+    const isJpg = /jpe?g/i.test(f.type);
+    if(isJpg){ ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height); }
+    ctx.drawImage(im, 0, 0, c.width, c.height);
+    wmImageState_ = {
+      dataUrl: isJpg ? c.toDataURL('image/jpeg', 0.92) : c.toDataURL('image/png'),
+      ratio: c.height / c.width,
+      name: f.name
+    };
+    wmEl_('wmTypeImage').checked = true;
+    wmRefreshFormState_();
+    wmSchedulePreview_();
+  }catch(err){
+    wmEl_('wmError').textContent = err.message || 'Không đọc được hình ảnh.';
+  }finally{
+    URL.revokeObjectURL(url);
+  }
+});
+
+wmEl_('wmApplyBtn').addEventListener('click', async ()=>{
+  const cfg = wmReadForm_();
+  const err = wmEl_('wmError');
+  err.textContent = '';
+  if(cfg.type === 'text' && !cfg.text.trim()){ err.textContent = 'Hãy nhập nội dung chữ cho watermark.'; return; }
+  if(cfg.type === 'image' && !cfg.imageDataUrl){ err.textContent = 'Hãy chọn hình ảnh dùng làm watermark.'; return; }
+  if(cfg.range === 'range'){
+    if(!wmParsePageRange_(cfg.rangeText, pages.length).size){
+      err.textContent = 'Danh sách trang không hợp lệ (tài liệu có ' + pages.length + ' trang). Ví dụ: 1-3, 5, 8-';
+      return;
+    }
+  }
+  try{ await wmGetBlock_(cfg); }
+  catch(e){ err.textContent = e.message; return; }
+  const wasActive = !!wmConfig_;
+  wmConfig_ = cfg;
+  wmRefreshButton_();
+  closeWatermarkModal();
+  wmToast_('<span class="dotOk">●</span> <b>Watermark ' + (wasActive ? 'đã cập nhật' : 'đã bật') + '</b> — sẽ được chèn vào file khi <b>Save PDF</b>, <b>Print</b>, <b>Compress PDF</b> hoặc <b>Extract Pages</b>.'
+    + (cfg.flatten ? ' Trang sẽ được làm phẳng thành ảnh.' : ''));
+});
+wmEl_('wmRemoveBtn').addEventListener('click', ()=>{
+  wmConfig_ = null;
+  wmRefreshButton_();
+  closeWatermarkModal();
+  wmToast_('<span class="dotFallback">●</span> Đã <b>tắt watermark</b> — các lần xuất file tiếp theo sẽ không còn watermark.');
+});
+wmEl_('wmCloseBtn').addEventListener('click', closeWatermarkModal);
+wmEl_('wmCancelBtn').addEventListener('click', closeWatermarkModal);
+wmModal_.addEventListener('mousedown', e=>{ if(e.target === wmModal_) closeWatermarkModal(); });
+document.addEventListener('keydown', e=>{ if(e.key === 'Escape' && wmModal_.style.display === 'flex') closeWatermarkModal(); });
+
+wmEl_('btnWatermark').addEventListener('click', openWatermarkModal);
+wmRefreshButton_();
+
+// Thông báo kết quả sau khi xuất (gọi từ exportPdfAs): cho người dùng biết watermark đã vào bao nhiêu trang.
+function wmReportExport_(outDoc){
+  if(!wmConfig_) return;
+  const st = outDoc && outDoc.__nativeEditStats;
+  if(st && st.eligible > 0) return;   // toast "sửa thật" đang hiển thị, không ghi đè
+  const n = outDoc && outDoc.__wmApplied;
+  if(n === 0){
+    wmToast_('<span class="dotFallback">●</span> <b>Watermark chưa được chèn</b> vào trang nào (danh sách trang được chọn không khớp các trang vừa xuất).');
+  } else if(n > 0){
+    wmToast_('<span class="dotOk">●</span> Đã chèn <b>watermark</b> vào <b>' + n + '</b> trang' + (wmConfig_.flatten ? ' và làm phẳng thành ảnh.' : '.'));
+  }
+}
 
 // ---------- Xuất sang Word (.doc) — giữ đúng vị trí/bố cục như bản gốc ----------
 function escapeHtml(str){
@@ -19484,6 +20361,152 @@ function open(){
 }
 window.openOrganizePages=open; window.__orgInternals=()=>O;
 const btn=document.getElementById('btnOrganizePages'); if(btn) btn.onclick=open;
+})();
+
+</script>
+<script>
+/* ===== LAYER / Z-ORDER — thứ tự lớp của các đối tượng chỉnh sửa trên trang =====
+   Trên màn hình (redrawOverlay) và khi xuất PDF (buildEditedOutDoc) các đối tượng được vẽ THEO THỨ TỰ trong mảng
+   page.edits: phần tử cuối nằm TRÊN CÙNG. Tính năng này cho phép đổi thứ tự đó:
+   • Bring to Front / Bring Forward / Send Backward / Send to Back cho đối tượng đang chọn
+     (phím tắt: Ctrl+Shift+] · Ctrl+] · Ctrl+[ · Ctrl+Shift+[ )
+   • Bảng Layers: liệt kê mọi đối tượng của trang (trên cùng ở đầu danh sách), bấm để chọn, KÉO-THẢ để đổi thứ tự,
+     nút mắt để ẩn/hiện (đối tượng ẩn không hiển thị, không chọn được và không xuất ra PDF).
+   Mọi thay đổi thứ tự/ẩn hiện đều Undo/Redo được. */
+(function(){
+'use strict';
+const TY = { text:['🔤','Text'], textfix:['🔤','Text (sửa)'], ocrfix:['🔤','Text (OCR)'], whiteout:['⬜','Whiteout'],
+             highlight:['🖍️','Highlight'], draw:['✏️','Vẽ tay'], image:['🖼️','Ảnh'] };
+let panel = null, list = null, sig = '', timer = null, dragFrom = -1;
+const toast = m => { try{ showToast_(m); }catch(e){ console.log(m); } };
+const edits = () => (pages.length && cur()) ? cur().edits : [];
+function label(e){
+  const t = TY[e.type] || ['◻️', String(e.type || 'Đối tượng')];
+  let s = t[1];
+  if(e.text) s += ': ' + String(e.text).replace(/\s+/g, ' ').trim().slice(0, 26);
+  return [t[0], s];
+}
+
+/* ---------- Thao tác thứ tự ---------- */
+function moveTo(from, to){
+  try{ flushPendingEdit(); }catch(e){}
+  const E = edits();
+  if(from < 0 || from >= E.length) return false;
+  to = Math.max(0, Math.min(E.length - 1, to));
+  if(to === from) return false;
+  const sel = selectedEditIndex >= 0 ? E[selectedEditIndex] : null;
+  pushUndo(currentIndex);                                    // Undo được (và xoá ngăn Redo như mọi thao tác mới)
+  const it = E.splice(from, 1)[0];
+  E.splice(to, 0, it);
+  selectedEditIndex = sel ? E.indexOf(sel) : -1;             // giữ nguyên đối tượng đang chọn dù chỉ số đã đổi
+  try{ pendingTextColor = null; pendingTextTarget = null; }catch(e){}
+  redrawOverlay(); render(true);
+  return true;
+}
+function arrange(kind){
+  try{ flushPendingEdit(); }catch(e){}
+  const E = edits(), i = selectedEditIndex;
+  if(i < 0 || !E[i]){ toast('Hãy chọn một đối tượng (chữ/ảnh/hình) trên trang hoặc trong bảng Layers.'); return; }
+  const to = kind === 'front' ? E.length - 1 : kind === 'back' ? 0 : kind === 'forward' ? i + 1 : i - 1;
+  if(to < 0 || to >= E.length || to === i){ toast(kind === 'front' || kind === 'forward' ? 'Đối tượng đã ở trên cùng.' : 'Đối tượng đã ở dưới cùng.'); return; }
+  moveTo(i, to);
+}
+function toggleHidden(i){
+  const E = edits(); if(!E[i]) return;
+  pushUndo(currentIndex);
+  if(E[i].hidden) delete E[i].hidden; else E[i].hidden = true;
+  if(E[i].hidden && selectedEditIndex === i) selectedEditIndex = -1;
+  redrawOverlay(); render(true);
+}
+function selectIdx(i){
+  const E = edits(); if(!E[i] || E[i].hidden) return;
+  if(activeTool !== 'select'){ const b = document.getElementById('toolSelect'); if(b) b.click(); }
+  selectedEditIndex = i; redrawOverlay(); render(true);
+}
+
+/* ---------- Bảng Layers ---------- */
+const CSS = `#lyPanel{position:fixed;right:14px;top:120px;width:290px;max-height:68vh;z-index:9990;display:flex;flex-direction:column;background:#25282e;color:#eceff1;border:1px solid #454a52;border-radius:10px;box-shadow:0 6px 24px #0008;font:13px "Segoe UI",Roboto,Arial,sans-serif}
+#lyPanel .h{display:flex;align-items:center;gap:6px;padding:8px 10px;background:#3a3f47;border-radius:10px 10px 0 0;font-weight:600;cursor:move;user-select:none}
+#lyPanel .h .t{flex:1}
+#lyPanel button{background:#4a5a72;color:#fff;border:0;border-radius:5px;padding:4px 8px;cursor:pointer;font-size:13px}
+#lyPanel button:hover{background:#5a6d8a}#lyPanel button:disabled{opacity:.4;cursor:default}
+#lyPanel .bar{display:flex;gap:5px;padding:7px 10px;border-bottom:1px solid #3a3f47}
+#lyPanel .bar button{flex:1}
+#lyPanel .list{overflow:auto;flex:1;min-height:60px}
+#lyPanel .row{display:flex;align-items:center;gap:7px;padding:6px 10px;border-bottom:1px solid #2f3339;cursor:pointer;position:relative}
+#lyPanel .row:hover{background:#2f3641}#lyPanel .row.sel{background:#33506f}#lyPanel .row.hid .nm{opacity:.45;text-decoration:line-through}
+#lyPanel .row.over{box-shadow:inset 0 2px 0 #ffd600}
+#lyPanel .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#lyPanel .zn{color:#8b929b;font-size:11px;min-width:20px;text-align:right}
+#lyPanel .eye{padding:1px 5px;background:transparent}
+#lyPanel .empty{padding:18px 12px;color:#9aa0a8;text-align:center;line-height:1.5}
+#lyPanel .ft{padding:6px 10px;font-size:11px;color:#8b929b;border-top:1px solid #3a3f47}`;
+function build(){
+  if(!document.getElementById('lyStyle')){ const st = document.createElement('style'); st.id = 'lyStyle'; st.textContent = CSS; document.head.appendChild(st); }
+  panel = document.createElement('div'); panel.id = 'lyPanel';
+  panel.innerHTML = `<div class="h"><span class="t">📑 Layers (Z-order)</span><button class="x" title="Đóng">✕</button></div>
+  <div class="bar"><button data-k="front" title="Đưa lên trên cùng (Ctrl+Shift+])">⤒</button><button data-k="forward" title="Đưa lên 1 lớp (Ctrl+])">↑</button>
+    <button data-k="backward" title="Đưa xuống 1 lớp (Ctrl+[)">↓</button><button data-k="back" title="Đưa xuống dưới cùng (Ctrl+Shift+[)">⤓</button></div>
+  <div class="list"></div><div class="ft">Lớp trên cùng ở đầu danh sách · kéo-thả để đổi thứ tự · 👁 ẩn/hiện</div>`;
+  document.body.appendChild(panel); list = panel.querySelector('.list');
+  panel.querySelector('.x').onclick = closePanel;
+  panel.querySelectorAll('.bar button').forEach(b => b.onclick = () => arrange(b.dataset.k));
+  // kéo bảng bằng thanh tiêu đề
+  const h = panel.querySelector('.h'); let ox = 0, oy = 0, drag = false;
+  h.addEventListener('mousedown', e => { if(e.target.tagName === 'BUTTON') return; drag = true; const r = panel.getBoundingClientRect(); ox = e.clientX - r.left; oy = e.clientY - r.top; e.preventDefault(); });
+  document.addEventListener('mousemove', e => { if(!drag) return; panel.style.left = Math.max(0, e.clientX - ox) + 'px'; panel.style.top = Math.max(0, e.clientY - oy) + 'px'; panel.style.right = 'auto'; });
+  document.addEventListener('mouseup', () => { drag = false; });
+}
+function render(force){
+  if(!panel) return;
+  const E = edits(), s = (pages.length && cur() ? cur().id : '') + '|' + selectedEditIndex + '|' + E.map(e => (e.type || '') + ':' + (e.hidden ? 'h' : '') + ':' + (e.text ? String(e.text).slice(0, 26) : '')).join(',');
+  if(!force && s === sig) return;
+  sig = s; list.textContent = '';
+  if(!E.length){ const d = document.createElement('div'); d.className = 'empty'; d.textContent = 'Trang này chưa có đối tượng chỉnh sửa nào (chữ, ảnh, whiteout, highlight, nét vẽ…).'; list.appendChild(d); }
+  for(let i = E.length - 1; i >= 0; i--){
+    const e = E[i], [ic, nm] = label(e), row = document.createElement('div');
+    row.className = 'row' + (i === selectedEditIndex ? ' sel' : '') + (e.hidden ? ' hid' : '');
+    row.draggable = true; row.dataset.i = i;
+    const a = document.createElement('span'); a.textContent = ic;
+    const n = document.createElement('span'); n.className = 'nm'; n.textContent = nm; n.title = nm;
+    const z = document.createElement('span'); z.className = 'zn'; z.textContent = '#' + (i + 1); z.title = 'Vị trí lớp (1 = dưới cùng)';
+    const eye = document.createElement('button'); eye.className = 'eye'; eye.textContent = e.hidden ? '🚫' : '👁️'; eye.title = e.hidden ? 'Hiện lại' : 'Ẩn đối tượng';
+    eye.onclick = ev => { ev.stopPropagation(); toggleHidden(i); };
+    row.append(a, n, z, eye);
+    row.onclick = () => selectIdx(i);
+    row.ondragstart = ev => { dragFrom = i; ev.dataTransfer.effectAllowed = 'move'; ev.dataTransfer.setData('text/plain', 'layer'); };
+    row.ondragover = ev => { if(dragFrom < 0) return; ev.preventDefault(); list.querySelectorAll('.over').forEach(x => x.classList.remove('over')); row.classList.add('over'); };
+    row.ondragleave = () => row.classList.remove('over');
+    row.ondrop = ev => { ev.preventDefault(); const f = dragFrom; dragFrom = -1; if(f >= 0 && f !== i) moveTo(f, i); else render(true); };
+    row.ondragend = () => { dragFrom = -1; list.querySelectorAll('.over').forEach(x => x.classList.remove('over')); };
+    list.appendChild(row);
+    if(i === selectedEditIndex && force !== 'noscroll'){ setTimeout(() => { try{ row.scrollIntoView({ block:'nearest' }); }catch(err){} }, 0); }
+  }
+}
+function openPanel(){
+  if(!pages.length){ alert('Hãy mở một file PDF trước.'); return; }
+  if(!panel) build();
+  panel.style.display = 'flex'; render(true);
+  if(!timer) timer = setInterval(() => render(false), 250);      // tự cập nhật khi thêm/xoá/Undo/đổi trang/đổi đối tượng chọn
+}
+function closePanel(){ if(panel) panel.style.display = 'none'; if(timer){ clearInterval(timer); timer = null; } }
+function togglePanel(){ (panel && panel.style.display !== 'none') ? closePanel() : openPanel(); }
+
+/* ---------- Phím tắt ---------- */
+document.addEventListener('keydown', function(e){
+  if(!(e.ctrlKey || e.metaKey) || e.altKey || e.defaultPrevented) return;
+  if(document.getElementById('orgRoot') || document.getElementById('dcRoot')) return;
+  const ae = document.activeElement;
+  if(ae && (ae.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName))) return;
+  if(!pages.length || selectedEditIndex < 0) return;
+  let kind = null;
+  if(e.code === 'BracketRight') kind = e.shiftKey ? 'front' : 'forward';
+  else if(e.code === 'BracketLeft') kind = e.shiftKey ? 'back' : 'backward';
+  if(!kind) return;
+  e.preventDefault(); arrange(kind);
+});
+const btn = document.getElementById('btnLayers'); if(btn) btn.onclick = togglePanel;
+window.arrangeSelected = arrange; window.toggleLayersPanel = togglePanel;
 })();
 
 </script>
