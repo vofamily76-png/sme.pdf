@@ -1151,6 +1151,18 @@
       </div>
     </div>
 
+    <!-- [MỚI] LAYOUT ENGINE 2.0 cho Scan PDF → Word -->
+    <div style="margin-bottom:12px;padding:10px 12px;background:#1c1e22;border:1px solid #454a52;border-radius:6px;">
+      <label style="display:flex;align-items:center;gap:8px;font-size:12.5px;color:#eceff1;cursor:pointer;font-weight:600;">
+        <input type="checkbox" id="ewL2Check" checked> 🚀 Layout Engine 2.0 (bảng &amp; cột cho file scan)
+      </label>
+      <div style="font-size:11px;color:#9aa0a8;margin-top:5px;line-height:1.55;">
+        Lọc nhiễu hạt bụi · dò đường kẻ bảng bị <b style="color:#c6cad0;">đứt/nhạt</b> (không còn biến cả bảng thành ảnh) ·
+        nhận diện <b style="color:#c6cad0;">bảng không viền</b> và <b style="color:#c6cad0;">văn bản nhiều cột</b> thành bảng/cột Word thật ·
+        tự canh phải cột số. Tắt nếu muốn dùng cách dò cũ.
+      </div>
+    </div>
+
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
       <label style="display:flex;align-items:center;gap:8px;font-size:12.5px;cursor:pointer;">
         <input type="checkbox" id="ewSelectAll"> Chọn tất cả (Xuất tất cả các trang)
@@ -1401,6 +1413,50 @@
       <button type="button" id="cprConfirmBtn" style="
         flex:1;padding:10px;border:none;border-radius:6px;background:#e2402c;color:#fff;
         font-weight:600;font-size:13px;cursor:pointer;">🗜️ Nén &amp; Tải xuống</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== REDACTION: thanh công cụ + hộp thoại xác nhận cuối cùng ===================== -->
+<style>
+  #redactBar{display:none;position:absolute;top:0;left:0;right:0;height:34px;z-index:45;box-sizing:border-box;
+    background:var(--bg-toolbar-2);border-bottom:2px solid #e11d1d;
+    padding:0 10px;color:var(--text-light);font-size:11.5px;align-items:center;gap:8px;flex-wrap:nowrap;
+    overflow-x:auto;overflow-y:hidden;white-space:nowrap;}
+  #redactBar.show{display:flex;}
+  #redactBar b{font-size:12px;color:#ff8a80;}
+  #redactBar .tbtn{padding:3px 9px;font-size:11.5px;height:24px;flex-shrink:0;}
+  #redactBar select{background:#1c1e22;color:var(--text-light);border:1px solid var(--border);border-radius:5px;padding:2px 5px;font-size:11.5px;height:24px;flex-shrink:0;}
+  #redactBar .redactInfo{color:var(--text-dim);flex-shrink:0;margin-right:4px;}
+  #redactBar .redactLbl{display:inline-flex;align-items:center;gap:4px;flex-shrink:0;cursor:pointer;}
+  #redactBar input[type=color]{width:26px;height:22px;padding:0;border:1px solid var(--border);border-radius:4px;background:none;cursor:pointer;}
+  #redactBar #redactApply{background:#e11d1d;border-color:#e11d1d;color:#fff;font-weight:600;}
+  #canvasArea.redacting #pagesScroll{top:34px;}
+  #canvasArea.finding #redactBar{top:72px;}
+  #toolRedact.active{background:#7f1d1d;border-color:#e11d1d;}
+  #redactConfirmModal{position:fixed;inset:0;z-index:1250;display:none;background:rgba(0,0,0,.62);align-items:center;justify-content:center;
+    font-family:'Segoe UI',Roboto,Arial,sans-serif;color:#eceff1;}
+  #redactConfirmModal .rc-box{background:#25282e;border:2px solid #e11d1d;border-radius:10px;padding:20px 22px;width:480px;max-width:94vw;box-shadow:0 10px 40px rgba(0,0,0,.6);}
+  #redactConfirmModal .rc-title{font-weight:700;font-size:16px;color:#ff8a80;margin-bottom:10px;}
+  #redactConfirmModal ul{margin:10px 0 12px 18px;padding:0;font-size:12.5px;line-height:1.55;color:#c9ced4;}
+  #redactConfirmModal .rc-btn{padding:10px 14px;border-radius:6px;font-weight:600;font-size:13px;cursor:pointer;}
+</style>
+<div id="redactConfirmModal">
+  <div class="rc-box">
+    <div class="rc-title">⚠️ Cảnh báo cuối cùng — xóa vĩnh viễn</div>
+    <div id="rcSummary" style="font-size:13.5px;"></div>
+    <ul>
+      <li>Các trang này sẽ được <b>chuyển thành ảnh</b>: chữ, bảng, hình ảnh dưới vùng đánh dấu bị <b>xóa hẳn</b>, không thể khôi phục hay gỡ vệt đè.</li>
+      <li>Toàn bộ trang đó <b>không còn bôi đen/copy/tìm kiếm chữ</b> được và file có thể nặng hơn.</li>
+      <li id="rcMeta">Metadata (tác giả, tiêu đề, phần mềm tạo, XMP, thumbnail, bookmark, tệp đính kèm...) sẽ bị <b>loại bỏ khi lưu, in, nén</b>.</li>
+      <li><b>Không hoàn tác được</b> trong ứng dụng. File PDF gốc trên máy bạn chỉ thay đổi nếu bạn lưu đè lên nó.</li>
+    </ul>
+    <label style="display:flex;align-items:flex-start;gap:8px;font-size:12.5px;cursor:pointer;margin-bottom:14px;">
+      <input type="checkbox" id="rcUnderstand" style="margin-top:2px;"> <span>Tôi hiểu và muốn xóa vĩnh viễn các vùng đã đánh dấu.</span>
+    </label>
+    <div style="display:flex;gap:8px;justify-content:flex-end;">
+      <button type="button" id="rcCancel" class="rc-btn" style="border:1px solid #454a52;background:transparent;color:#eceff1;min-width:90px;">Hủy</button>
+      <button type="button" id="rcOk" class="rc-btn" disabled style="border:none;background:#e11d1d;color:#fff;min-width:160px;opacity:.45;">🛡️ Xóa vĩnh viễn</button>
     </div>
   </div>
 </div>
@@ -1807,6 +1863,7 @@
   <button class="tbtn" data-tool="draw" id="toolDraw"><span class="ic">✏️</span>Paint</button>
   <button class="tbtn" data-tool="erase" id="toolErase" title="Xóa nét vẽ do Paint tạo ra — kéo chuột qua nét cần xóa"><span class="ic">🧽</span>Eraser</button>
   <button class="tbtn" data-tool="whiteout" id="toolWhiteout"><span class="ic">▭</span>Text overlay</button>
+  <button class="tbtn" data-tool="redact" id="toolRedact" title="Redaction — đánh dấu vùng cần xóa (viền đỏ) rồi Apply để xóa vĩnh viễn (đè vệt màu) và loại bỏ metadata"><span class="ic">🛡️</span>Redaction</button>
   <input type="color" id="colorSwatch" value="#e2402c" title="Màu">
   <span id="paintSizeWrap" title="Kích thước nét vẽ Paint — kéo thanh trượt hoặc gõ số (pt). Phím [ giảm, ] tăng." style="display:none;align-items:center;gap:5px;font-size:11.5px;color:var(--text-dim);margin-left:2px;">
     Nét
@@ -5623,6 +5680,7 @@ async function renderStaticPreview(idx){
   const ctx = c.getContext('2d');
   for(const e of p.edits) drawEdit(ctx, e, scale);
   try{ findDrawHighlights_(ctx, p, scale); }catch(err){ /* tô sáng kết quả Find (chỉ hiển thị, không ghi vào PDF) */ }
+  try{ redactDrawMarksOn_(ctx, p, scale, false); }catch(err){ /* viền đỏ Redaction (chỉ hiển thị) */ }
   // Xoay ảnh xem trước tĩnh này theo đúng góc xoay đã đặt cho trang (nếu có) — chỉ ảnh hưởng hiển
   // thị, KHÔNG đụng gì tới toạ độ edits vừa vẽ ở trên (đã vẽ xong trước khi xoay raster).
   // Crop: chỉ giữ vùng crop của trang (cắt TRƯỚC khi xoay, vì crop tính theo hệ toạ độ chưa xoay).
@@ -6682,6 +6740,7 @@ function redrawOverlay(){
   }
   if((activeTool==='ocr' || activeTool==='edittext') && hoverLine) drawHoverLineBox(hoverLine);
   drawCropOverlay_(); // khung crop đang vẽ (chỉ khi công cụ Crop bật)
+  try{ drawRedactMarks_(); }catch(err){ /* vùng Redaction: lỗi không được làm hỏng vẽ chính */ }
   // Đồng bộ thanh Opacity theo khối chữ/ảnh đang chọn (nếu có) — xem refreshOpacityControl.
   refreshOpacityControl();
   refreshRotateControl();
@@ -7313,6 +7372,7 @@ async function updateZoom(){
 
 // ---------- Chọn công cụ ----------
 const toolLabels = {
+  redact:'Redaction — kéo chuột trên trang để ĐÁNH DẤU vùng cần xóa (chữ, bảng, hình ảnh): vùng hiện viền đỏ. Kéo trong vùng để dời, kéo ô vuông để đổi cỡ, Delete để bỏ một vùng. Khi xong bấm "Apply Redaction" để xóa vĩnh viễn (đè vệt màu + xóa metadata).',
   hand:'Hand — kéo chuột ở bất kỳ đâu trên trang để cuộn/di chuyển góc nhìn tài liệu (không chỉnh sửa gì). Mẹo: giữ phím Cách (Space) để tạm dùng Hand dù đang ở công cụ khác, thả ra để quay về công cụ cũ.',
   select:'Select — nhấn để chọn, kéo để di chuyển, kéo 8 ô vuông xanh ở viền để chỉnh khung chữ (khung sẽ được LƯU LẠI đúng kích thước vừa canh, không tự to ra nữa; phím F để trả về khung tự động), đúp chuột để sửa chữ, phím Delete để xóa',
   textselect:'Select text to copy — bôi đen (kéo chuột) qua chữ trong PDF, bấm "📋 Copy chữ" (hoặc Ctrl+C) rồi vào Tool ▸ Paste (hoặc Ctrl+V) để dán chữ đó lên trang; bấm nút "🖍️ Marker" nổi lên cạnh vùng vừa bôi đen để tô sáng đúng đoạn chữ đó.',
@@ -11965,13 +12025,15 @@ function patchVietFontFullWidths(outDoc, vietFontKitFont){
 // đó bước vá gặp lỗi hoặc không tìm thấy font tiếng Việt nào cần vá, tự động trả về nguyên byte của
 // lần lưu đầu tiên — không để lỗi ở bước vá làm hỏng cả việc xuất file.
 async function saveOutDocWithVietWidthFix(outDoc){
+  if(redactStripMeta_) redactSanitizeOutDoc_(outDoc);   // Redaction: xóa metadata/dữ liệu ẩn khi đã Apply
   const firstBytes = await outDoc.save();
   try{
     if(typeof fontkit === 'undefined') return firstBytes;
-    const reloaded = await PDFDocument.load(firstBytes, { ignoreEncryption: true });
+    const reloaded = await PDFDocument.load(firstBytes, { ignoreEncryption: true, updateMetadata: !redactStripMeta_ });
     const vietFontKitFont = fontkit.create(getVietFontBytes());
     const patched = patchVietFontFullWidths(reloaded, vietFontKitFont);
     if(!patched) return firstBytes;
+    if(redactStripMeta_) redactSanitizeOutDoc_(reloaded);
     return await reloaded.save();
   }catch(patchErr){
     console.warn('Không vá được lỗi độ rộng glyph tiếng Việt sau khi lưu PDF (bỏ qua, dùng bản gốc chưa vá — hiếm khi vẫn còn hiện tượng dấu/chữ bị tách xa nhau):', patchErr);
@@ -12205,6 +12267,7 @@ async function applyFreeRotationToPdfPage_(outDoc, pageObj, totalDeg){
 
 async function exportPdfAs(filename, pageIndexes){
   if(!pages.length){ alert('Hãy mở một file PDF trước.'); return; }
+  if(!redactConfirmPending_(pageIndexes)) return;   // còn vùng Redaction chưa áp dụng -> hỏi lại
   // QUAN TRỌNG: chốt lại ô nhập sửa chữ đang mở (nếu có) TRƯỚC khi đọc dữ liệu "edits" để xuất
   // PDF. Nếu người dùng vừa gõ xong rồi bấm thẳng nút "Lưu PDF" mà chưa click ra ngoài, một số
   // trình duyệt (đặc biệt Safari/Firefox trên macOS) không tự động bắn sự kiện "blur" cho ô đang
@@ -12252,6 +12315,7 @@ document.getElementById('btnSave').onclick = ()=> exportPdfAs(originalFileName);
 // Google Drive/Tải xuống nữa — hộp thoại in hiện ra chỉ có đúng các tùy chọn in tiêu chuẩn.
 async function printPdf(){
   if(!pages.length){ alert('Hãy mở một file PDF trước.'); return; }
+  if(!redactConfirmPending_()) return;   // còn vùng Redaction chưa áp dụng -> hỏi lại
   flushPendingEdit();
   const spinner = document.getElementById('spinner');
   const spinnerLabel = spinner.lastChild;
@@ -12600,6 +12664,7 @@ function isDocUnchangedFromOriginalRaw_(){
 }
 
 async function compressPdfAndDownload(level){
+  if(!redactConfirmPending_()) return;   // còn vùng Redaction chưa áp dụng -> hỏi lại
   if(!pages.length){ alert('Hãy mở một file PDF trước.'); return; }
   flushPendingEdit();
   const baseCfg = COMPRESS_LEVELS[level] || COMPRESS_LEVELS.standard;
@@ -12815,6 +12880,382 @@ document.getElementById('cprConfirmBtn').addEventListener('click', async () => {
   const level = checked ? checked.value : 'standard';
   await compressPdfAndDownload(level);
 });
+
+// ============================================================================
+// REDACTION — đánh dấu vùng cần xóa (viền đỏ) rồi ÁP DỤNG xóa vĩnh viễn (đè vệt màu) + loại bỏ metadata
+// ----------------------------------------------------------------------------
+// BƯỚC 1 — MARK FOR REDACTION (đánh dấu):
+//   Chọn công cụ "Redaction", kéo chuột trên trang để khoanh vùng (chữ, bảng biểu, hình ảnh...). Mỗi vùng hiện
+//   khung VIỀN ĐỎ. Có thể đánh dấu nhiều vùng trên nhiều trang; kéo trong vùng để dời, kéo 8 ô vuông để đổi cỡ,
+//   phím Delete để bỏ một vùng. Vùng đánh dấu lưu ở p.redactMarks = [{x,y,w,h}] (point, CÙNG hệ toạ độ với edits/crop,
+//   chưa xoay). Đây mới chỉ là ĐÁNH DẤU: nội dung bên dưới CHƯA bị xóa và viền đỏ KHÔNG được ghi vào file xuất.
+// BƯỚC 2 — APPLY REDACTION (xóa vĩnh viễn):
+//   Bấm "Apply Redaction" -> hộp thoại cảnh báo cuối cùng -> nếu xác nhận, với mỗi trang có vùng đánh dấu:
+//     • Dựng ảnh của TOÀN BỘ trang (kèm mọi chỉnh sửa đang có) ở ~216 dpi, tô vệt màu (mặc định đen) lên các vùng,
+//     • Thay trang đó bằng một trang CHỈ CHỨA ẢNH đã tô -> chữ/vector/ảnh gốc dưới vùng bị xóa không còn tồn tại trong
+//       file (không thể bôi đen, copy, tìm kiếm hay gỡ vệt đen bằng công cụ chỉnh sửa PDF). Các trang khác giữ nguyên.
+//     • Bật chế độ XÓA METADATA khi xuất file (redactSanitizeOutDoc_): thông tin tài liệu (Info), XMP, thumbnail,
+//       PieceInfo, bookmark, tệp đính kèm / annotation ẩn... không được ghi vào file lưu/in/nén.
+//   Hành động này KHÔNG hoàn tác được trong ứng dụng; file PDF gốc trên máy bạn không bị đụng tới cho tới khi bạn lưu đè.
+// An toàn: nếu còn vùng đánh dấu CHƯA áp dụng mà bấm Save/Print, ứng dụng cảnh báo (redactConfirmPending_).
+// ============================================================================
+var redactModeOn_ = false;
+var redactSel_ = -1, redactSelId_ = null;      // vùng đang chọn trên trang hiện tại
+var redactDrag_ = null;
+var redactStripMeta_ = false;                  // true -> mọi lần xuất file đều bị xóa metadata
+var redactAppliedAny_ = false;
+var REDACT_MIN_PT = 4, REDACT_HANDLE_PX = 8, REDACT_RENDER_SCALE = 3, REDACT_MAX_SIDE_PX = 7000;
+
+function redactMarksOf_(p, create){
+  if(!p) return null;
+  if(!p.redactMarks && create) p.redactMarks = [];
+  return p.redactMarks || null;
+}
+function redactCounts_(indexes){
+  let marks = 0, pgs = 0;
+  const idx = (indexes && indexes.length) ? indexes : pages.map((_, i) => i);
+  for(const i of idx){ const m = pages[i] && pages[i].redactMarks; if(m && m.length){ marks += m.length; pgs++; } }
+  return { marks, pages: pgs };
+}
+function redactSelIndex_(){
+  const p = cur();
+  if(!p || redactSelId_ !== p.id) return -1;
+  const m = p.redactMarks;
+  return (m && redactSel_ >= 0 && redactSel_ < m.length) ? redactSel_ : -1;
+}
+
+// ---------- Vẽ vùng đánh dấu (viền đỏ). interactive=true: hiện ô vuông chỉnh cỡ cho vùng đang chọn ----------
+function redactDrawMarksOn_(ctx, p, s, interactive){
+  const marks = p && p.redactMarks;
+  if(!marks || !marks.length) return;
+  const sel = interactive ? redactSelIndex_() : -1;
+  ctx.save();
+  marks.forEach((m, i) => {
+    const x = m.x * s, y = m.y * s, w = m.w * s, h = m.h * s;
+    ctx.fillStyle = (i === sel) ? 'rgba(225,29,29,0.22)' : 'rgba(225,29,29,0.12)';
+    ctx.fillRect(x, y, w, h);
+    ctx.strokeStyle = '#e11d1d';
+    ctx.lineWidth = (i === sel) ? 2.5 : 2;
+    ctx.setLineDash([]);
+    ctx.strokeRect(x, y, w, h);
+    if(w > 46){
+      ctx.font = 'bold 9px Arial, sans-serif';
+      ctx.textBaseline = 'top';
+      const ly = (y >= 13) ? y - 12 : y + h + 2;      // nhãn nằm NGOÀI khung để không che chữ bên dưới
+      ctx.fillStyle = '#e11d1d';
+      ctx.fillRect(x, ly, 46, 11);
+      ctx.fillStyle = '#fff';
+      ctx.fillText('REDACT', x + 3, ly + 1.5);
+    }
+  });
+  if(sel >= 0){
+    for(const hp of redactHandlePoints_(marks[sel])){
+      const hs = REDACT_HANDLE_PX;
+      ctx.fillStyle = '#fff'; ctx.strokeStyle = '#e11d1d'; ctx.lineWidth = 1.5;
+      ctx.fillRect(hp.x - hs / 2, hp.y - hs / 2, hs, hs);
+      ctx.strokeRect(hp.x - hs / 2, hp.y - hs / 2, hs, hs);
+    }
+  }
+  ctx.restore();
+}
+function drawRedactMarks_(){
+  if(!pages.length || !cur()) return;
+  redactDrawMarksOn_(octx, cur(), scale, redactModeOn_);
+  redactUpdateInfo_();
+}
+function redactHandlePoints_(m){
+  const l = m.x * scale, t = m.y * scale, r = (m.x + m.w) * scale, b = (m.y + m.h) * scale, cx = (l + r) / 2, cy = (t + b) / 2;
+  return [{n:'nw',x:l,y:t},{n:'n',x:cx,y:t},{n:'ne',x:r,y:t},{n:'e',x:r,y:cy},
+          {n:'se',x:r,y:b},{n:'s',x:cx,y:b},{n:'sw',x:l,y:b},{n:'w',x:l,y:cy}];
+}
+function redactHit_(px, py){
+  const p = cur(); const marks = p && p.redactMarks;
+  if(!marks || !marks.length) return null;
+  const sel = redactSelIndex_();
+  if(sel >= 0){
+    for(const hp of redactHandlePoints_(marks[sel])){
+      if(Math.abs(px - hp.x) <= REDACT_HANDLE_PX && Math.abs(py - hp.y) <= REDACT_HANDLE_PX) return { idx: sel, mode: hp.n };
+    }
+  }
+  for(let i = marks.length - 1; i >= 0; i--){
+    const m = marks[i];
+    if(px >= m.x * scale && px <= (m.x + m.w) * scale && py >= m.y * scale && py <= (m.y + m.h) * scale) return { idx: i, mode: 'move' };
+  }
+  return null;
+}
+var REDACT_CURSORS_ = { nw:'nwse-resize', se:'nwse-resize', ne:'nesw-resize', sw:'nesw-resize', n:'ns-resize', s:'ns-resize', e:'ew-resize', w:'ew-resize', move:'move' };
+
+// ---------- Thanh điều khiển Redaction ----------
+var redactBarEl_ = (function(){
+  const d = document.createElement('div');
+  d.id = 'redactBar';
+  d.innerHTML =
+    '<b>🛡️ Redaction</b><span class="redactInfo" id="redactInfo">Kéo trên trang để đánh dấu vùng cần xóa</span>'+
+    '<label class="redactLbl" title="Màu vệt đè lên vùng bị xóa">Màu <input type="color" id="redactColor" value="#000000"></label>'+
+    '<select id="redactScope" title="Phạm vi áp dụng">'+
+      '<option value="all">Mọi trang đã đánh dấu</option><option value="current">Chỉ trang này</option></select>'+
+    '<label class="redactLbl" title="Khi xuất file: xóa thông tin tài liệu (tác giả, tiêu đề, phần mềm tạo...), XMP, thumbnail, bookmark, tệp đính kèm"><input type="checkbox" id="redactMeta" checked> Xóa metadata</label>'+
+    '<button class="tbtn" id="redactDel" title="Bỏ vùng đang chọn (phím Delete)">🗑 Bỏ vùng</button>'+
+    '<button class="tbtn" id="redactClear" title="Bỏ toàn bộ vùng đánh dấu của trang này (chưa xóa nội dung)">✕ Bỏ cả trang</button>'+
+    '<button class="tbtn primary" id="redactApply" title="Xóa vĩnh viễn nội dung trong các vùng đã đánh dấu (sẽ có cảnh báo xác nhận)">✔ Apply Redaction</button>'+
+    '<button class="tbtn" id="redactClose" title="Thoát công cụ Redaction (Esc) — các vùng đánh dấu vẫn được giữ">✕</button>';
+  (document.getElementById('canvasArea') || document.body).appendChild(d);
+  return d;
+})();
+function redactUpdateInfo_(){
+  const el = document.getElementById('redactInfo');
+  if(!el || !pages.length || !cur()) return;
+  const here = (cur().redactMarks || []).length;
+  const c = redactCounts_();
+  el.textContent = c.marks
+    ? (here + ' vùng ở trang này · tổng ' + c.marks + ' vùng / ' + c.pages + ' trang · CHƯA xóa')
+    : 'Kéo trên trang để đánh dấu vùng cần xóa';
+}
+
+// ---------- Kéo chuột: vẽ vùng mới / dời / đổi cỡ ----------
+overlayCanvas.addEventListener('mousedown', (e)=>{
+  if(activeTool !== 'redact' || !redactModeOn_ || !pages.length || e.button !== 0) return;
+  const p = cur();
+  const c = clientToCanvasXY_(overlayCanvas, e.clientX, e.clientY);
+  const pt = toPdfSpace(c.x, c.y);
+  const hit = redactHit_(c.x, c.y);
+  if(hit){
+    redactSel_ = hit.idx; redactSelId_ = p.id;
+    redactDrag_ = { mode: hit.mode, idx: hit.idx, start: pt, orig: Object.assign({}, p.redactMarks[hit.idx]) };
+  } else {
+    redactSel_ = -1; redactSelId_ = p.id;
+    redactDrag_ = { mode: 'new', idx: -1, start: pt, orig: null };
+  }
+  redrawOverlay();
+});
+overlayCanvas.addEventListener('mousemove', (e)=>{
+  if(activeTool !== 'redact' || !redactModeOn_ || redactDrag_ || !pages.length) return;
+  const c = clientToCanvasXY_(overlayCanvas, e.clientX, e.clientY);
+  const hit = redactHit_(c.x, c.y);
+  overlayCanvas.style.cursor = hit ? REDACT_CURSORS_[hit.mode] : 'crosshair';
+});
+window.addEventListener('mousemove', (e)=>{
+  if(!redactDrag_ || !pages.length) return;
+  const p = cur();
+  const W = overlayCanvas.width / scale, H = overlayCanvas.height / scale;
+  const c = clientToCanvasXY_(overlayCanvas, e.clientX, e.clientY);
+  const pt = toPdfSpace(c.x, c.y);
+  const cx = v => Math.min(Math.max(v, 0), W), cy = v => Math.min(Math.max(v, 0), H);
+  const g = redactDrag_;
+  const marks = redactMarksOf_(p, true);
+  if(g.mode === 'new'){
+    const x1 = cx(g.start.x), y1 = cy(g.start.y), x2 = cx(pt.x), y2 = cy(pt.y);
+    const r = { x: Math.min(x1, x2), y: Math.min(y1, y2), w: Math.abs(x2 - x1), h: Math.abs(y2 - y1) };
+    if(g.idx < 0){
+      if(r.w < 2 && r.h < 2) return;                       // chưa kéo đủ xa -> chưa tạo vùng
+      marks.push(r); g.idx = marks.length - 1;
+    } else marks[g.idx] = r;
+    redactSel_ = g.idx; redactSelId_ = p.id;
+  } else if(g.mode === 'move'){
+    const o = g.orig;
+    marks[g.idx] = { x: Math.min(Math.max(o.x + pt.x - g.start.x, 0), W - o.w), y: Math.min(Math.max(o.y + pt.y - g.start.y, 0), H - o.h), w: o.w, h: o.h };
+  } else {
+    let l = g.orig.x, t = g.orig.y, r = g.orig.x + g.orig.w, b = g.orig.y + g.orig.h;
+    if(g.mode.includes('w')) l = cx(pt.x);
+    if(g.mode.includes('e')) r = cx(pt.x);
+    if(g.mode.includes('n')) t = cy(pt.y);
+    if(g.mode.includes('s')) b = cy(pt.y);
+    marks[g.idx] = { x: Math.min(l, r), y: Math.min(t, b), w: Math.abs(r - l), h: Math.abs(b - t) };
+  }
+  redrawOverlay();
+});
+window.addEventListener('mouseup', ()=>{
+  if(!redactDrag_) return;
+  const g = redactDrag_; redactDrag_ = null;
+  const p = cur(); const marks = p && p.redactMarks;
+  if(marks && g.idx >= 0 && marks[g.idx] && (marks[g.idx].w < REDACT_MIN_PT || marks[g.idx].h < REDACT_MIN_PT)){
+    if(g.mode === 'new'){ marks.splice(g.idx, 1); redactSel_ = -1; }
+    else marks[g.idx] = g.orig;                            // đổi cỡ quá nhỏ -> trả về cũ
+  }
+  if(marks && !marks.length) delete p.redactMarks;
+  redrawOverlay();
+});
+
+function redactDeleteSelected_(){
+  const p = cur(); const i = redactSelIndex_();
+  if(!p || i < 0) return false;
+  p.redactMarks.splice(i, 1);
+  if(!p.redactMarks.length) delete p.redactMarks;
+  redactSel_ = -1;
+  redrawOverlay();
+  return true;
+}
+window.addEventListener('keydown', (e)=>{
+  if(!redactModeOn_ || activeTool !== 'redact') return;
+  const tag = document.activeElement && document.activeElement.tagName;
+  if(tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+  if(e.key === 'Delete' || e.key === 'Backspace'){ if(redactDeleteSelected_()) e.preventDefault(); }
+  else if(e.key === 'Escape'){ e.preventDefault(); document.getElementById('toolSelect').click(); }
+});
+document.getElementById('redactDel').onclick = ()=>{ redactDeleteSelected_(); };
+document.getElementById('redactClear').onclick = ()=>{
+  const p = cur(); if(!p || !p.redactMarks) return;
+  delete p.redactMarks; redactSel_ = -1; redrawOverlay();
+};
+document.getElementById('redactClose').onclick = ()=> document.getElementById('toolSelect').click();
+document.getElementById('redactMeta').onchange = (e)=>{ if(redactAppliedAny_) redactStripMeta_ = e.target.checked; };
+
+// Vào/ra chế độ Redaction khi đổi công cụ
+function redactSyncMode_(){
+  const want = (activeTool === 'redact' && pages.length > 0);
+  if(want === redactModeOn_) return;
+  redactModeOn_ = want;
+  redactBarEl_.classList.toggle('show', want);
+  const ca = document.getElementById('canvasArea'); if(ca) ca.classList.toggle('redacting', want);
+  redactDrag_ = null; redactSel_ = -1;
+  if(want) overlayCanvas.style.cursor = 'crosshair';
+  if(pages.length){ try{ redrawOverlay(); }catch(err){} }
+}
+document.querySelectorAll('.tbtn[data-tool]').forEach(btn=>{
+  btn.addEventListener('click', ()=> setTimeout(redactSyncMode_, 0));   // chạy SAU handler chọn công cụ chung
+});
+
+// ---------- Hộp thoại cảnh báo CUỐI CÙNG ----------
+function redactConfirmModal_(nMarks, nPages, color, strip){
+  return new Promise(resolve => {
+    const m = document.getElementById('redactConfirmModal');
+    const chk = document.getElementById('rcUnderstand'), ok = document.getElementById('rcOk'), no = document.getElementById('rcCancel');
+    document.getElementById('rcSummary').innerHTML =
+      'Sắp xóa <b>' + nMarks + ' vùng</b> trên <b>' + nPages + ' trang</b>, đè bằng vệt màu <span id="rcSwatch" style="display:inline-block;width:14px;height:14px;vertical-align:-2px;border:1px solid #888;background:' + color + ';"></span>.';
+    document.getElementById('rcMeta').style.display = strip ? '' : 'none';
+    chk.checked = false; ok.disabled = true; ok.style.opacity = '.45';
+    const done = v => { m.style.display = 'none'; chk.onchange = ok.onclick = no.onclick = m.onmousedown = null; resolve(v); };
+    chk.onchange = ()=>{ ok.disabled = !chk.checked; ok.style.opacity = chk.checked ? '1' : '.45'; };
+    ok.onclick = ()=> done(true);
+    no.onclick = ()=> done(false);
+    m.onmousedown = e => { if(e.target === m) done(false); };
+    m.style.display = 'flex';
+  });
+}
+
+// ---------- ÁP DỤNG: làm phẳng các trang có vùng đánh dấu ----------
+async function redactApplyToPages_(targets, color, strip){
+  const spinner = document.getElementById('spinner');
+  const label = spinner.lastChild;
+  const prevLabel = label ? label.textContent : '';
+  spinner.classList.add('show');
+  try{
+    const outDoc = await PDFDocument.create({ updateMetadata: false });
+    const sizes = [];
+    for(let j = 0; j < targets.length; j++){
+      const i = targets[j], p = pages[i];
+      if(label) label.textContent = ' Đang xóa vĩnh viễn trang ' + (i + 1) + ' (' + (j + 1) + '/' + targets.length + ')…';
+      const sz = await getPageSizePt_(i);
+      const S = Math.min(REDACT_RENDER_SCALE, REDACT_MAX_SIDE_PX / Math.max(sz.w, sz.h));
+      const raw = await renderPageToCanvas(i, S);                 // trang gốc (chưa gồm edits)
+      const cv = document.createElement('canvas');
+      cv.width = raw.width; cv.height = raw.height;
+      const ctx = cv.getContext('2d');
+      ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, cv.width, cv.height);   // nền trắng (JPEG không có kênh trong suốt)
+      ctx.drawImage(raw, 0, 0);
+      raw.width = 0;
+      for(const e of (p.edits || [])){ if(e.hidden) continue; drawEdit(ctx, e, S); }   // đúng như đang hiển thị
+      ctx.fillStyle = color;
+      const pad = 0.6;                                            // phủ rộng thêm ~0.6pt để che hết viền nét chữ
+      for(const m of (p.redactMarks || [])){
+        const x0 = Math.max(0, Math.floor((m.x - pad) * S)), y0 = Math.max(0, Math.floor((m.y - pad) * S));
+        const x1 = Math.min(cv.width, Math.ceil((m.x + m.w + pad) * S)), y1 = Math.min(cv.height, Math.ceil((m.y + m.h + pad) * S));
+        ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
+      }
+      const jpg = base64ToUint8Array(cv.toDataURL('image/jpeg', 0.92).split(',')[1]);
+      cv.width = 0; cv.height = 0;
+      const img = await outDoc.embedJpg(jpg);
+      const np = outDoc.addPage([sz.w, sz.h]);
+      np.drawImage(img, { x: 0, y: 0, width: sz.w, height: sz.h });
+      sizes.push(sz);
+    }
+    if(label) label.textContent = ' Đang nạp lại các trang…';
+    const bytes = await outDoc.save();
+    const buf = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+    const newDoc = await pdfjsLib.getDocument({ data: buf.slice(0) }).promise;
+    for(let j = 0; j < targets.length; j++){
+      const old = pages[targets[j]];
+      const np = { id: nextId++, type:'pdf', doc: newDoc, srcPage: j + 1, srcBuf: buf, edits: [], ocrWords: null, ocrText: '', textItems: null };
+      if(old.rotation) np.rotation = old.rotation;                // giữ xoay/crop đã đặt cho trang
+      if(old.crop) np.crop = Object.assign({}, old.crop);
+      delete undoStack[old.id]; delete redoStack[old.id];         // xóa luôn lịch sử hoàn tác của trang cũ
+      pages[targets[j]] = np;
+    }
+    selectedEditIndex = -1; redactSel_ = -1; redactSelId_ = null;
+    redactAppliedAny_ = true;
+    redactStripMeta_ = !!strip;
+  } finally {
+    spinner.classList.remove('show');
+    if(label) label.textContent = prevLabel || ' Đang xử lý OCR…';
+  }
+  await cropRefreshAll_();
+}
+
+document.getElementById('redactApply').onclick = async ()=>{
+  if(!pages.length) return;
+  flushPendingEdit();
+  const onlyCur = document.getElementById('redactScope').value === 'current';
+  const targets = [];
+  pages.forEach((p, i) => { if((!onlyCur || i === currentIndex) && p.redactMarks && p.redactMarks.length) targets.push(i); });
+  if(!targets.length){ alert('Chưa có vùng nào được đánh dấu' + (onlyCur ? ' trên trang này' : '') + '.\nHãy kéo chuột trên trang để khoanh vùng cần xóa, rồi bấm Apply Redaction.'); return; }
+  const nMarks = targets.reduce((s, i) => s + pages[i].redactMarks.length, 0);
+  const color = document.getElementById('redactColor').value || '#000000';
+  const strip = document.getElementById('redactMeta').checked;
+  if(!(await redactConfirmModal_(nMarks, targets.length, color, strip))) return;
+  try{
+    await redactApplyToPages_(targets, color, strip);
+    showToast_('Đã xóa vĩnh viễn ' + nMarks + ' vùng trên ' + targets.length + ' trang' + (strip ? ' và bật xóa metadata khi lưu.' : '.') + ' Bấm Save PDF để lưu file.');
+  }catch(err){
+    console.error('Lỗi Apply Redaction:', err);
+    alert('Không áp dụng được Redaction: ' + (err && err.message ? err.message : err) + '\nCác trang chưa bị thay đổi.');
+  }
+};
+
+// ---------- Xóa metadata / dữ liệu ẩn của file xuất ----------
+// outDoc luôn là PDF MỚI (copyPages) nên Info/XMP/Outlines của file gốc vốn không được mang sang; hàm này dọn nốt phần
+// pdf-lib tự ghi (Producer, ngày tạo...) và các dữ liệu ẩn nằm trong CHÍNH các trang được sao chép.
+function redactSanitizeOutDoc_(doc){
+  const L = PDFLib, ctx = doc.context;
+  const drop = (dict, key) => {
+    const n = L.PDFName.of(key), v = dict.get(n);
+    if(v instanceof L.PDFRef){ try{ ctx.delete(v); }catch(e){} }
+    dict.delete(n);
+  };
+  try{
+    const infoRef = ctx.trailerInfo && ctx.trailerInfo.Info;
+    if(infoRef){
+      const d = ctx.lookupMaybe(infoRef, L.PDFDict);
+      if(d) for(const k of d.keys()) d.delete(k);
+      try{ ctx.delete(infoRef); }catch(e){}
+      delete ctx.trailerInfo.Info;
+    }
+    const cat = doc.catalog;
+    for(const k of ['Metadata','PieceInfo','Outlines','Threads','SpiderInfo','AF']) drop(cat, k);
+    const names = cat.lookupMaybe(L.PDFName.of('Names'), L.PDFDict);
+    if(names){ drop(names, 'EmbeddedFiles'); drop(names, 'JavaScript'); }
+    for(const page of doc.getPages()){
+      const n = page.node;
+      for(const k of ['Thumb','PieceInfo','Metadata','AF']) drop(n, k);
+      const annots = n.lookupMaybe(L.PDFName.of('Annots'), L.PDFArray);
+      if(annots){
+        for(let i = annots.size() - 1; i >= 0; i--){
+          const a = annots.lookupMaybe(i, L.PDFDict);
+          const st = a && a.get(L.PDFName.of('Subtype'));
+          if(st && /FileAttachment|Sound|Movie|Screen|RichMedia/.test(String(st))) annots.remove(i);
+        }
+      }
+    }
+  }catch(err){ console.warn('Redaction: không dọn hết metadata:', err); }
+}
+
+// ---------- Cảnh báo khi Save/Print mà còn vùng đánh dấu CHƯA áp dụng ----------
+function redactConfirmPending_(indexes){
+  const c = redactCounts_(indexes);
+  if(!c.marks) return true;
+  return confirm('⚠️ Còn ' + c.marks + ' vùng Redaction đã đánh dấu trên ' + c.pages + ' trang nhưng CHƯA ÁP DỤNG.\n\n' +
+    'Nếu tiếp tục, nội dung dưới các vùng đó VẪN CÒN NGUYÊN trong file (viền đỏ chỉ hiện trên màn hình, không ghi vào file).\n\n' +
+    'OK = vẫn tiếp tục.   Cancel = quay lại (chọn công cụ Redaction rồi bấm Apply Redaction).');
+}
 
 // ============================================================================
 // WATERMARK — chèn chữ / hình ảnh mờ (trên hoặc dưới nội dung) để bảo vệ bản quyền & chống sao chép
@@ -14680,6 +15121,8 @@ let wxExportForcedFont = 'Times New Roman';
 // [MỚI - DOCUMENT LAYOUT ANALYSIS] Bật/tắt bước phân loại khối (Title/Heading/Paragraph/Table/Image/Header/Footer/Signature/Checkbox/Stamp)
 // khi xuất Word. Giá trị theo ô chọn #ewDlaCheck của modal "Export Word". Tắt = hành vi cũ (mọi khối là đoạn thường).
 let wxUseDLA = true;
+// [MỚI - LAYOUT ENGINE 2.0] Bật/tắt: lọc nhiễu, đường kẻ bảng đứt/nhạt, bảng không viền, bố cục nhiều cột, canh cột số. Theo ô #ewL2Check.
+let wxUseL2 = true;
 
 document.getElementById('ewConfirmBtn').addEventListener('click', async () => {
   const selected = Array.from(ewList.querySelectorAll('.dp-checkbox:checked'))
@@ -14690,6 +15133,8 @@ document.getElementById('ewConfirmBtn').addEventListener('click', async () => {
   wxExportForcedFont = ewFontSel ? ewFontSel.value : '';
   const ewDlaEl = document.getElementById('ewDlaCheck');
   wxUseDLA = ewDlaEl ? !!ewDlaEl.checked : true;
+  const ewL2El = document.getElementById('ewL2Check');
+  wxUseL2 = ewL2El ? !!ewL2El.checked : true;
   closeExportWordModal();
   await exportWordSelected(selected);
 });
@@ -17287,6 +17732,452 @@ const WXI = (function(){
 })();
 if(typeof module!=='undefined') module.exports = WXI;
 
+/* ===== WXE2 — LAYOUT ENGINE 2.0 cho "Scan PDF → Word" =====
+   Pipeline:  PDF Scan → tiền xử lý ảnh → Deskew → Denoise → OCR → Text blocks → Column detection → Paragraph detection
+              → Table detection → Image detection → Header/Footer → Reading order → DOCX
+   Những gì đã có sẵn (WXI/WXL/wx*): deskew (estimateSkewDeg), tách mực, OCR từng dòng, đoạn văn, bảng KẺ LƯỚI, ảnh/con dấu/QR,
+   Header/Footer/Title/Heading (DLA). WXE2 BỔ SUNG những chỗ còn thiếu:
+     1) DENOISE      : despeckle()          — xoá hạt bụi ≤ 3 điểm ảnh (giữ nguyên dấu tiếng Việt, đường kẻ mảnh).
+     2) BẢNG KẺ LƯỚI : buildRuleMasks()     — đường kẻ scan bị ĐỨT / NHẠT vẫn dò được (nối đoạn đứt + ngưỡng xám nới lỏng cho
+                                              đường mảnh). Trước đây lưới đứt => dò bảng thất bại => cả bảng bị cắt thành ẢNH.
+     3) BẢNG KHÔNG VIỀN + BỐ CỤC NHIỀU CỘT : detectGridBlocks() — cột chữ thẳng hàng (không có đường kẻ) → bảng Word THẬT
+                                              (không viền); văn bản 2+ cột → bố cục cột (đọc hết cột trái rồi mới sang cột phải).
+     4) CANH CỘT     : alignColumns()       — cột số canh phải / cột canh giữa giữ đúng vị trí gốc.
+   Hàm thuần (không DOM) => chạy được trong Node để kiểm thử. */
+const WXE2 = (function(){
+  'use strict';
+  const fin = v => typeof v === 'number' && isFinite(v);
+  function median(a){ if(!a.length) return 0; const s = a.slice().sort((x, y) => x - y); return s[s.length >> 1]; }
+
+  /* ---------------------------------------------------------------------------------------------------------------
+     1) DENOISE — xoá hạt bụi. Một điểm mực bị xoá khi TỔNG số điểm mực trong cửa sổ (2R+1)² quanh nó ≤ maxSum (mặc định
+     7×7, ≤ 3 điểm). Dấu thanh/dấu chấm tiếng Việt ở 216 dpi có ≥ 6 điểm ảnh nên không bao giờ bị xoá; đường kẻ & nét chữ
+     luôn có rất nhiều điểm mực lân cận nên cũng an toàn. Trả về số điểm đã xoá.
+  --------------------------------------------------------------------------------------------------------------- */
+  function despeckle(ink, w, h, R, maxSum){
+    R = R || 3; maxSum = (maxSum == null) ? 3 : maxSum;
+    const n = w * h, rs = new Uint8Array(n), pre = new Int32Array(w + 1);
+    for(let y = 0; y < h; y++){
+      const row = y * w;
+      for(let x = 0; x < w; x++) pre[x + 1] = pre[x] + ink[row + x];
+      for(let x = 0; x < w; x++){
+        const s = pre[Math.min(w, x + R + 1)] - pre[Math.max(0, x - R)];
+        rs[row + x] = s > 255 ? 255 : s;
+      }
+    }
+    const kill = [];
+    for(let y = 0; y < h; y++){
+      const row = y * w;
+      for(let x = 0; x < w; x++){
+        if(!ink[row + x]) continue;
+        let s = 0;
+        for(let dy = -R; dy <= R; dy++){ const yy = y + dy; if(yy < 0 || yy >= h) continue; s += rs[yy * w + x]; if(s > maxSum) break; }
+        if(s <= maxSum) kill.push(row + x);
+      }
+    }
+    for(let i = 0; i < kill.length; i++) ink[kill[i]] = 0;
+    return kill.length;
+  }
+
+  /* ---------------------------------------------------------------------------------------------------------------
+     2) ĐƯỜNG KẺ BẢNG BỀN VỮNG
+  --------------------------------------------------------------------------------------------------------------- */
+  // Đoạn thẳng (ngang/dọc) dài ≥ minLen, cho phép hở tối đa `gap` điểm ảnh.
+  function lineMask(src, w, h, horiz, minLen, gap){
+    const m = new Uint8Array(w * h);
+    if(horiz){
+      for(let y = 0; y < h; y++){
+        const row = y * w; let x = 0;
+        while(x < w){
+          if(!src[row + x]){ x++; continue; }
+          const s = x; let e = x, miss = 0;
+          while(x < w){ if(src[row + x]){ e = x; miss = 0; } else { miss++; if(miss > gap) break; } x++; }
+          if(e - s + 1 >= minLen) for(let xx = s; xx <= e; xx++) m[row + xx] = 1;
+        }
+      }
+    } else {
+      for(let x = 0; x < w; x++){
+        let y = 0;
+        while(y < h){
+          if(!src[y * w + x]){ y++; continue; }
+          const s = y; let e = y, miss = 0;
+          while(y < h){ if(src[y * w + x]){ e = y; miss = 0; } else { miss++; if(miss > gap) break; } y++; }
+          if(e - s + 1 >= minLen) for(let yy = s; yy <= e; yy++) m[yy * w + x] = 1;
+        }
+      }
+    }
+    return m;
+  }
+  // Nối hai đoạn thẳng thẳng hàng cách nhau ≤ maxGap (cả hai đoạn dài ≥ minSeg): vá đường kẻ bị đứt do scan/nén JPEG.
+  function bridge(mask, w, h, horiz, maxGap, minSeg){
+    let filled = 0;
+    const outer = horiz ? h : w, inner = horiz ? w : h;
+    for(let a = 0; a < outer; a++){
+      let prevEnd = -1, prevLen = 0, s = -1;
+      for(let b = 0; b <= inner; b++){
+        const v = b < inner ? (horiz ? mask[a * w + b] : mask[b * w + a]) : 0;
+        if(v){ if(s < 0) s = b; }
+        else if(s >= 0){
+          const len = b - s;
+          if(prevEnd >= 0 && s - prevEnd - 1 > 0 && s - prevEnd - 1 <= maxGap && len >= minSeg && prevLen >= minSeg){
+            for(let k = prevEnd + 1; k < s; k++){ if(horiz) mask[a * w + k] = 1; else mask[k * w + a] = 1; filled++; }
+          }
+          prevEnd = b - 1; prevLen = len; s = -1;
+        }
+      }
+    }
+    return filled;
+  }
+  // img: { ink, gray, thr, paper, color, w, h }.  Trả về { hMask, vMask, stats }.
+  //  • Đường kẻ chính: mực đen như cũ (≥ 45 px, hở ≤ 6 px)
+  //  • Đường kẻ NHẠT/MẢNH: điểm ảnh sẫm hơn ngưỡng nới lỏng, chỉ nhận đoạn rất dài (≥ 90 px) VÀ MẢNH (hai bên đường là nền giấy)
+  //    — loại ảnh chụp/vùng tối dày. Bỏ vệt sát mép ảnh (bóng scanner) và các vùng loại trừ (ảnh nhúng, mã QR).
+  //  • Nối các đoạn thẳng hàng bị đứt (≤ 18 px).
+  function buildRuleMasks(img, opt){
+    const w = img.w, h = img.h;
+    const o = Object.assign({ minH: 45, minV: 45, gap: 6, faintMin: 60, faintGap: 10, faintDelta: 34, bridgeGap: 18, bridgeSeg: 60, edge: 24, thin: 6, exclude: [] }, opt || {});
+    const hMask = lineMask(img.ink, w, h, true, o.minH, o.gap), vMask = lineMask(img.ink, w, h, false, o.minV, o.gap);
+    const stats = { faintH: 0, faintV: 0, bridged: 0 };
+    const gray = img.gray;
+    if(gray){
+      const paper = img.paper || 255, relThr = Math.min(paper - 22, Math.max((img.thr || 128) + o.faintDelta, paper - 60), 232);
+      if(relThr > (img.thr || 128) + 4){
+        const rel = new Uint8Array(w * h);
+        const col = img.color;
+        for(let i = 0; i < rel.length; i++) if(gray[i] < relThr && !(col && col[i])) rel[i] = 1;
+        const fh = lineMask(rel, w, h, true, o.faintMin, o.faintGap), fv = lineMask(rel, w, h, false, o.faintMin, o.faintGap);
+        const T = o.thin, E = o.edge;
+        // bộ lọc "mảnh": ≥ 70% điểm của đoạn có nền giấy ở cách ±T điểm (loại vùng tối dày/ảnh chụp)
+        const keepThin = (m, horiz) => {
+          const outer = horiz ? h : w, inner = horiz ? w : h; let added = 0;
+          for(let a = 0; a < outer; a++){
+            let s = -1;
+            for(let b = 0; b <= inner; b++){
+              const v = b < inner ? (horiz ? m[a * w + b] : m[b * w + a]) : 0;
+              if(v){ if(s < 0) s = b; continue; }
+              if(s < 0) continue;
+              const e = b - 1; let ok = 0, tot = 0;
+              for(let k = s; k <= e; k += 3){
+                tot++;
+                const p1 = horiz ? (a - T >= 0 ? rel[(a - T) * w + k] : 0) : (a - T >= 0 ? rel[k * w + (a - T)] : 0);
+                const p2 = horiz ? (a + T < h ? rel[(a + T) * w + k] : 0) : (a + T < w ? rel[k * w + (a + T)] : 0);
+                if(!p1 && !p2) ok++;
+              }
+              if(tot && ok / tot >= 0.7){
+                for(let k = s; k <= e; k++){ const px = horiz ? k : a, py = horiz ? a : k; if(px < E || py < E || px >= w - E || py >= h - E) continue; const idx = py * w + px; const tgt = horiz ? hMask : vMask; if(!tgt[idx]){ tgt[idx] = 1; added++; } }
+              }
+              s = -1;
+            }
+          }
+          return added;
+        };
+        stats.faintH = keepThin(fh, true); stats.faintV = keepThin(fv, false);
+      }
+    }
+    stats.bridged = bridge(hMask, w, h, true, o.bridgeGap, o.bridgeSeg) + bridge(vMask, w, h, false, o.bridgeGap, o.bridgeSeg);
+    // vệt mép ảnh + vùng loại trừ
+    const E = o.edge;
+    const zero = (x0, y0, x1, y1) => {
+      x0 = Math.max(0, Math.floor(x0)); y0 = Math.max(0, Math.floor(y0)); x1 = Math.min(w - 1, Math.ceil(x1)); y1 = Math.min(h - 1, Math.ceil(y1));
+      for(let y = y0; y <= y1; y++) for(let x = x0; x <= x1; x++){ hMask[y * w + x] = 0; vMask[y * w + x] = 0; }
+    };
+    for(const r of (o.exclude || [])) zero(r.x0 - 2, r.y0 - 2, r.x1 + 2, r.y1 + 2);
+    return { hMask, vMask, stats };
+  }
+
+
+  // Cứu bảng: chỉ chạy SAU khi cách dò cũ (kẻ liền nét) đã xong. Chỉ xét vùng NGOÀI các bảng đã dò được, dùng mặt nạ đường kẻ
+  // nhạt/đứt (buildRuleMasks) và CHỈ nhận một lưới khi nó thật sự giống bảng: ≥ 2×2 ô, đủ 4 cạnh viền bao, ô không quá nhỏ,
+  // mặt nạ không quá dày đặc. Nhờ vậy đường gạch chân chữ, nét chữ ký, nền nhiễu KHÔNG bị nhận thành bảng, và các trang đã dò
+  // đúng bằng cách cũ KHÔNG thay đổi gì. detect: hàm dò bảng (WXI.detectTables). Trả { tables, hMask, vMask }.
+  function edgeCover(mask, w, h, horiz, fixed, a, b, tol){
+    let hit = 0, tot = 0;
+    for(let k = Math.max(0, Math.round(a)); k <= Math.min((horiz ? w : h) - 1, Math.round(b)); k++){
+      tot++;
+      for(let d = -tol; d <= tol; d++){
+        const f = Math.round(fixed) + d; if(f < 0 || f >= (horiz ? h : w)) continue;
+        if(mask[horiz ? f * w + k : k * w + f]){ hit++; break; }
+      }
+    }
+    return tot ? hit / tot : 0;
+  }
+  function rescueTables(img, strictTables, detect, opt){
+    const w = img.w, h = img.h;
+    const o = Object.assign({ minCell: [40, 30], coverMin: 0.6, densityMax: 0.12, margin: 10 }, opt || {});
+    const none = { tables: [], hMask: null, vMask: null };
+    const excl = (strictTables || []).map(t => ({ x0: t.bbox.x0 - o.margin, y0: t.bbox.y0 - o.margin, x1: t.bbox.x1 + o.margin, y1: t.bbox.y1 + o.margin })).concat((opt && opt.exclude) || []);
+    const m = buildRuleMasks(img, { exclude: excl });
+    if(!m.stats.faintH && !m.stats.faintV && !m.stats.bridged) return none;
+    const found = detect(m.hMask, m.vMask, w, h), keep = [];
+    for(const t of found){
+      if(t.nR < 2 || t.nC < 2 || (t.cells || []).length < 4) continue;
+      const bb = t.bbox, tol = Math.max(4, (t.thick || 2) + 2);
+      const cw = [], ch = [];
+      for(let i = 1; i < t.X.length; i++) cw.push(t.X[i] - t.X[i - 1]);
+      for(let i = 1; i < t.Y.length; i++) ch.push(t.Y[i] - t.Y[i - 1]);
+      if(median(cw) < o.minCell[0] || median(ch) < o.minCell[1]) continue;
+      const cover = [edgeCover(m.hMask, w, h, true, bb.y0, bb.x0, bb.x1, tol), edgeCover(m.hMask, w, h, true, bb.y1, bb.x0, bb.x1, tol),
+                     edgeCover(m.vMask, w, h, false, bb.x0, bb.y0, bb.y1, tol), edgeCover(m.vMask, w, h, false, bb.x1, bb.y0, bb.y1, tol)];
+      if(Math.min.apply(null, cover) < o.coverMin) continue;
+      let on = 0; const bw = bb.x1 - bb.x0 + 1, bh = bb.y1 - bb.y0 + 1;
+      for(let y = Math.max(0, Math.floor(bb.y0)); y <= Math.min(h - 1, Math.ceil(bb.y1)); y += 2) for(let x = Math.max(0, Math.floor(bb.x0)); x <= Math.min(w - 1, Math.ceil(bb.x1)); x += 2) if(m.hMask[y * w + x] || m.vMask[y * w + x]) on++;
+      if(on / Math.max(1, (bw * bh) / 4) > o.densityMax) continue;
+      t.rescued = true; keep.push(t);
+    }
+    return keep.length ? { tables: keep, hMask: m.hMask, vMask: m.vMask } : none;
+  }
+
+  /* ---------------------------------------------------------------------------------------------------------------
+     3) BẢNG KHÔNG VIỀN + BỐ CỤC NHIỀU CỘT — dựa trên hình học dòng chữ (đã OCR, chưa suy luận kiểu chữ)
+        lines: [{ x0,y0,x1,y1, comps, words:[{text,x0,x1,...}], ocrWords, bullet, textX0, table:-1 ... }]
+        ctx  : { medH, pageW, pageH, baseOf(L) }
+        Kết quả: { blocks:[{ kind:'table'|'columns', t, lines:[dòng gốc bị thay], added:[dòng mới], nRows, nCols }], }
+  --------------------------------------------------------------------------------------------------------------- */
+  function splitPoints(L, G){
+    const ws = L.words || [];
+    if(ws.length < 2) return [];
+    for(let i = 0; i < ws.length; i++){ const w = ws[i]; if(!fin(w.x0) || !fin(w.x1) || w.cb) return []; if(i && w.x0 < ws[i - 1].x0) return []; }
+    const cuts = [];
+    for(let k = 1; k < ws.length; k++) if(ws[k].x0 - ws[k - 1].x1 >= G) cuts.push({ k, x: (ws[k - 1].x1 + ws[k].x0) / 2 });
+    return cuts;
+  }
+  // Cắt một dòng thành các phần theo các điểm cắt x (thành phần mực + từ OCR gán theo tâm x)
+  function sliceLine(L, cutXs){
+    const edges = [-Infinity].concat(cutXs, [Infinity]), out = [];
+    for(let k = 0; k < edges.length - 1; k++){
+      const lo = edges[k], hi = edges[k + 1];
+      const inR = (a, b) => { const c = (a + b) / 2; return c >= lo && c < hi; };
+      const comps = (L.comps || []).filter(c => inR(c.x0, c.x1));
+      const words = (L.words || []).filter(w => inR(w.x0, w.x1));
+      const ocrWords = (L.ocrWords || []).filter(w => inR(w.x0, w.x1));
+      if(!comps.length && !words.length) continue;
+      const P = Object.assign({}, L);
+      P.comps = comps; P.words = words; P.ocrWords = ocrWords;
+      if(comps.length){
+        P.x0 = Math.min(...comps.map(c => c.x0)); P.x1 = Math.max(...comps.map(c => c.x1));
+        P.y0 = Math.min(...comps.map(c => c.y0)); P.y1 = Math.max(...comps.map(c => c.y1));
+      } else if(words.length){ P.x0 = words[0].x0; P.x1 = words[words.length - 1].x1; }
+      P.ocrText = ocrWords.map(w => w.text).join(' ');
+      if(k > 0){ P.bullet = null; P.textX0 = P.x0; P._split = true; } else if(L.bullet){ P.textX0 = L.textX0; }
+      out.push(P);
+    }
+    return out;
+  }
+
+  function detectGridBlocks(lines, ctx){
+    const medH = ctx.medH, pageW = ctx.pageW || 1, pageH = ctx.pageH || 1;
+    const baseOf = ctx.baseOf || (L => L.y1);
+    const G = Math.max(1.5 * medH, 30), gMin = Math.max(1.2 * medH, 24);
+    const res = { blocks: [] };
+    const cand = lines.filter(L => L.table < 0 && L.words && L.words.length);
+    if(cand.length < 6) return res;
+    // 1) mỗi dòng -> các "phần" (tách tại khoảng trống lớn giữa các từ)
+    const items = cand.map(L => {
+      const cuts = splitPoints(L, G), ws = L.words;
+      const parts = []; let s = 0;
+      const bounds = cuts.map(c => c.k).concat([ws.length]);
+      for(const e of bounds){
+        let xa = ws[s].x0, xb = ws[e - 1].x1;
+        if(s === 0){ xa = Math.min(xa, L.x0); if(L.bullet && fin(L.bullet.x0)) xa = Math.min(xa, L.bullet.x0); }
+        if(e === ws.length) xb = Math.max(xb, L.x1);
+        parts.push({ L, xa, xb, wi0: s, wi1: e - 1, text: ws.slice(s, e).map(w => w.text).join(' '), nParts: bounds.length });
+        s = e;
+      }
+      return { L, base: baseOf(L), cuts, parts, y0: L.y0, y1: L.y1 };
+    });
+    // 2) nhóm thành HÀNG theo đường cơ sở
+    items.sort((a, b) => a.base - b.base || a.L.x0 - b.L.x0);
+    const rows = [];
+    for(const it of items){
+      const last = rows[rows.length - 1];
+      if(last && Math.abs(last.base - it.base) <= 0.45 * medH){ last.items.push(it); last.parts.push(...it.parts); }
+      else rows.push({ items: [it], parts: it.parts.slice(), base: it.base });
+    }
+    for(const r of rows){
+      r.parts.sort((a, b) => a.xa - b.xa);
+      r.base = Math.round(r.items.reduce((s, i) => s + i.base, 0) / r.items.length);
+      r.x0 = Math.min(...r.parts.map(p => p.xa)); r.x1 = Math.max(...r.parts.map(p => p.xb));
+      r.y0 = Math.min(...r.items.map(i => i.y0)); r.y1 = Math.max(...r.items.map(i => i.y1));
+    }
+    const textL = Math.min(...rows.map(r => r.x0)), textR = Math.max(...rows.map(r => r.x1)), textW = Math.max(1, textR - textL);
+    // 3) ứng viên khối: dãy hàng liên tiếp bắt đầu & kết thúc bằng hàng nhiều phần
+    const maxGap = 3.6 * medH;
+    let i = 0;
+    while(i < rows.length){
+      if(rows[i].parts.length < 2){ i++; continue; }
+      let lastMulti = i;
+      for(let k = i + 1; k < rows.length; k++){
+        if(rows[k].base - rows[k - 1].base > maxGap) break;
+        if(rows[k].parts.length >= 2){ lastMulti = k; continue; }
+        if(rows[k].x1 - rows[k].x0 > 0.62 * textW) break;          // dòng văn xuôi rộng gần hết khổ -> kết thúc khối
+      }
+      let blockRows = rows.slice(i, lastMulti + 1);
+      const blk = analyzeBlock(blockRows, { medH, pageW, pageH, gMin });
+      if(blk && blk.used < blockRows.length){ i = i + blk.used; blockRows = blockRows.slice(0, blk.used); }
+      else i = lastMulti + 1;
+      if(blk) finishBlock(blk, blockRows, res, ctx);
+    }
+    return res;
+  }
+
+  // Phân tích một dãy hàng: cột (khe trắng dọc), hàng logic, phân loại table/columns. null nếu không phải.
+  function analyzeBlock(rows, c){
+    const { medH, pageH, gMin } = c;
+    let used = rows.length;
+    for(let attempt = 0; attempt < 4; attempt++){
+      const rs = rows.slice(0, used);
+      const multi = rs.filter(r => r.parts.length >= 2);
+      if(multi.length < 3) return null;
+      const iv = [];
+      for(const r of multi) for(const p of r.parts) iv.push([p.xa, p.xb]);
+      iv.sort((a, b) => a[0] - b[0]);
+      const U = [];
+      for(const [a, b] of iv){ const l = U[U.length - 1]; if(l && a - l[1] < gMin) l[1] = Math.max(l[1], b); else U.push([a, b]); }
+      const nC = U.length;
+      if(nC < 2 || nC > 12) return null;
+      const colOf = p => { let best = -1, bo = 0; for(let k = 0; k < nC; k++){ const ov = Math.min(p.xb, U[k][1]) - Math.max(p.xa, U[k][0]); if(ov > bo){ bo = ov; best = k; } } return best; };
+      // hàng đơn vắt ngang nhiều cột / rơi vào khe -> cắt khối tại đó
+      let bad = -1;
+      for(let k = 0; k < rs.length; k++){
+        const r = rs[k]; if(r.parts.length >= 2) continue;
+        const p = r.parts[0]; let hit = 0;
+        for(let q = 0; q < nC; q++) if(Math.min(p.xb, U[q][1]) - Math.max(p.xa, U[q][0]) > 0) hit++;
+        if(hit !== 1){ bad = k; break; }
+      }
+      if(bad >= 0){ used = bad; while(used > 0 && rows[used - 1].parts.length < 2) used--; if(used < 3) return null; continue; }
+      // cột của từng phần
+      for(const r of rs) for(const p of r.parts) p.col = colOf(p);
+      if(rs.some(r => r.parts.some(p => p.col < 0))) return null;
+      // ---- phân loại ----
+      const colParts = Array.from({ length: nC }, () => []);
+      for(const r of rs) for(const p of r.parts) colParts[p.col].push(p);
+      let full = 0, tot = 0, chars = 0;
+      colParts.forEach(arr => { if(!arr.length) return; const span = Math.max(...arr.map(p => p.xb)) - Math.min(...arr.map(p => p.xa)); for(const p of arr){ tot++; chars += p.text.length; if((p.xb - p.xa) >= 0.8 * span) full++; } });
+      const fullFrac = full / Math.max(1, tot), avgChars = chars / Math.max(1, tot);
+      const minPer = Math.min(...colParts.map(a => a.length));
+      let kind = 'table';
+      if(rs.length >= 6 && fullFrac >= 0.55 && avgChars >= 40 && minPer >= 5) kind = 'columns';
+      // ---- hàng logic (ô nhiều dòng) — chỉ cho bảng ----
+      const logical = [];
+      if(kind === 'table'){
+        const contGap = 2.15 * medH; let cur = null, prev = null;
+        for(const r of rs){
+          const cols = new Set(r.parts.map(p => p.col));
+          let cont = false;
+          if(cur && prev && r.base - prev.base <= contGap && r.parts.length < cur.rows[0].parts.length){
+            const inCur = [...cols].every(cc => cur.colSet.has(cc));
+            const tol = 0.9 * medH;
+            const aligned = r.parts.every(p => cur.rows.some(rr => rr.parts.some(q => q.col === p.col && (Math.abs(q.xa - p.xa) <= tol || Math.abs(q.xb - p.xb) <= tol || Math.abs((q.xa + q.xb) / 2 - (p.xa + p.xb) / 2) <= tol))));
+            cont = inCur && aligned;
+          }
+          if(cont){ cur.rows.push(r); cols.forEach(cc => cur.colSet.add(cc)); }
+          else { cur = { rows: [r], colSet: new Set(cols) }; logical.push(cur); }
+          prev = r;
+        }
+        let occ = 0; for(const lr of logical) occ += lr.colSet.size;
+        const colFill = occ / (logical.length * nC);
+        // Bảng thật cần tiêu đề + ≥ 3 hàng dữ liệu, ô ngắn; khối 3 hàng chữ dài (đầu thư: "CÔNG TY… | CỘNG HÒA…") KHÔNG phải bảng
+        if(logical.length < 4 || colFill < 0.45 || avgChars > 40) return null;
+        // loại khối "đầu thư / chữ ký": toàn chữ canh GIỮA trong cột, ≤ 5 hàng, nằm ở đầu hoặc cuối trang
+        const sd = a => { if(a.length < 2) return 0; const m = a.reduce((s, v) => s + v, 0) / a.length; return Math.sqrt(a.reduce((s, v) => s + (v - m) * (v - m), 0) / a.length); };
+        let centeredCols = 0, nonEmpty = 0;
+        colParts.forEach(arr => { if(arr.length < 2) return; nonEmpty++; const cs = sd(arr.map(p => (p.xa + p.xb) / 2)), ls = sd(arr.map(p => p.xa)); if(cs < ls && cs < 0.7 * medH) centeredCols++; });
+        const top = rs[0].y0 / pageH, bottom = rs[rs.length - 1].y1 / pageH;
+        if(nonEmpty && centeredCols === nonEmpty && logical.length <= 5 && (top < 0.30 || bottom > 0.55)) return null;
+        if(logical.length <= 5 && bottom < 0.22) return null;   // vùng đầu thư (22% trên cùng của trang)
+      } else {
+        logical.push({ rows: rs, colSet: new Set(rs.flatMap(r => r.parts.map(p => p.col))) });
+      }
+      return { used, rows: rs, kind, nC, U, logical, colOf };
+    }
+    return null;
+  }
+
+  // Dựng bảng giả (cấu trúc giống bảng kẻ lưới của WXI.detectTables) + cắt dòng bị dính nhiều ô
+  function finishBlock(blk, rows, res, ctx){
+    const medH = ctx.medH, nC = blk.nC, nR = blk.logical.length;
+    // dòng mới cho từng phần
+    const lineOfPart = new Map(), removed = [], added = [];
+    for(const r of rows) for(const it of r.items){
+      if(it.parts.length === 1){ lineOfPart.set(it.parts[0], it.L); continue; }
+      const sl = sliceLine(it.L, it.cuts.map(c => c.x));
+      removed.push(it.L);
+      // ghép lại theo thứ tự x: phần k <-> dòng cắt thứ k (nếu có phần rỗng bị bỏ thì khớp theo vị trí tâm)
+      for(const P of sl){ added.push(P); }
+      it.parts.forEach(p => {
+        const cx = (p.xa + p.xb) / 2;
+        let best = null, bd = Infinity;
+        for(const P of sl){ const d = Math.abs((P.x0 + P.x1) / 2 - cx); if(d < bd){ bd = d; best = P; } }
+        lineOfPart.set(p, best);
+      });
+    }
+    // cột: biên trái = mép trái chữ nhỏ nhất của cột (−1), biên phải cuối = mép phải chữ lớn nhất + chừa
+    const colMinX = [], colMaxX = [];
+    for(let c = 0; c < nC; c++){
+      let mn = Infinity, mx = -Infinity;
+      for(const r of rows) for(const p of r.parts) if(p.col === c){ mn = Math.min(mn, p.xa); mx = Math.max(mx, p.xb); }
+      colMinX.push(mn); colMaxX.push(mx);
+    }
+    const X = [colMinX[0] - 1];
+    for(let c = 1; c < nC; c++) X.push(Math.max(X[c - 1] + 4, colMinX[c] - 1));
+    X.push(Math.max(colMaxX[nC - 1] + Math.min(1.5 * medH, 40), X[nC - 1] + 8));
+    // hàng: biên giữa hai hàng logic = trung điểm khoảng trống
+    const lrTop = blk.logical.map(lr => Math.min(...lr.rows.map(r => r.y0))), lrBot = blk.logical.map(lr => Math.max(...lr.rows.map(r => r.y1)));
+    const Y = [lrTop[0] - 2];
+    for(let k = 1; k < nR; k++) Y.push(Math.round((lrBot[k - 1] + lrTop[k]) / 2));
+    Y.push(lrBot[nR - 1] + 2);
+    // ô lưới
+    const cells = [], grid = [];
+    for(let r = 0; r < nR; r++){ grid.push([]); for(let c = 0; c < nC; c++){ const cell = { r0: r, r1: r, c0: c, c1: c, x0: X[c], x1: X[c + 1], y0: Y[r], y1: Y[r + 1], lines: [], noBg: true }; grid[r].push(cell); cells.push(cell); } }
+    blk.logical.forEach((lr, r) => { for(const row of lr.rows) for(const p of row.parts){ const L = lineOfPart.get(p); if(L && !grid[r][p.col].lines.includes(L)) grid[r][p.col].lines.push(L); } });
+    const t = { bbox: { x0: X[0], y0: Y[0], x1: X[nC], y1: Y[nR] }, X, Y, thick: 0, id: -1, _lab: null, cells, nR, nC, borderless: true, layoutOnly: blk.kind === 'columns', src: 'stream' };
+    res.blocks.push({ kind: blk.kind, t, lines: removed.concat(rows.flatMap(r => r.items.filter(i => i.parts.length === 1).map(i => i.L))), removed, added, nRows: nR, nCols: nC });
+  }
+
+  /* ---------------------------------------------------------------------------------------------------------------
+     4) CANH CỘT — sau khi đã có đoạn văn trong ô: cột SỐ canh phải / cột canh giữa giữ đúng vị trí gốc
+        cells: [{ c0,c1,image,paras:[{ rows:[{x0,x1}], jc, indL, indR, first }] }]
+  --------------------------------------------------------------------------------------------------------------- */
+  function alignColumns(cells, X, medH, PX2PT){
+    const tol = 0.8 * medH, byCol = new Map();
+    for(const cell of cells){
+      if(cell.image || cell.c1 !== cell.c0 || !(cell.paras || []).length) continue;
+      if(!byCol.has(cell.c0)) byCol.set(cell.c0, []);
+      byCol.get(cell.c0).push(cell);
+    }
+    let changed = 0;
+    for(const [c, cs] of byCol){
+      const paras = []; for(const cell of cs) for(const p of cell.paras) if(p.rows && p.rows.length) paras.push(p);
+      const one = paras.filter(p => p.rows.length === 1 && !(p.runs || []).some(r => r.tab));
+      if(one.length < 3) continue;
+      const x0s = one.map(p => p.rows[0].x0), x1s = one.map(p => p.rows[0].x1), cxs = one.map((p, i) => (x0s[i] + x1s[i]) / 2);
+      const mx1 = median(x1s), mcx = median(cxs), mx0 = median(x0s);
+      const near = (a, m) => a.filter(v => Math.abs(v - m) <= tol).length / a.length;
+      const left = near(x0s, mx0), right = near(x1s, mx1), center = near(cxs, mcx);
+      let mode = null;
+      if(left >= 0.7) mode = null;
+      else if(right >= 0.7 && right > center) mode = 'right';
+      else if(center >= 0.7) mode = 'center';
+      if(!mode) continue;
+      const L = X[c], R = X[c + 1];
+      for(const cell of cs) for(const p of cell.paras){
+        if(!p.rows || !p.rows.length) continue;
+        const bl = Math.min(...p.rows.map(r => r.x0)), br = Math.max(...p.rows.map(r => r.x1));
+        if(mode === 'right' && Math.abs(br - mx1) <= tol){ p.jc = 'right'; p.indL = 0; p.indR = Math.max(0, R - br) * PX2PT; p.first = 0; changed++; }
+        else if(mode === 'center' && Math.abs((bl + br) / 2 - mcx) <= tol){
+          const D = 2 * ((bl + br) / 2) - (L + R);
+          p.jc = 'center'; p.indL = Math.max(0, D) * PX2PT; p.indR = Math.max(0, -D) * PX2PT; p.first = 0; changed++;
+        }
+      }
+    }
+    return changed;
+  }
+
+  return { despeckle, lineMask, bridge, buildRuleMasks, rescueTables, detectGridBlocks, sliceLine, alignColumns };
+})();
+if(typeof module!=='undefined') module.exports = WXE2;
+
+
 /* ===== WXL — DOCUMENT LAYOUT ANALYSIS (DLA) cho xuất Word =====
    Phân loại từng khối của trang thành 10 lớp:
      Title · Heading · Paragraph · Table · Image · Header · Footer · Signature · Checkbox · Stamp
@@ -17944,6 +18835,8 @@ async function wxAnalyzePage(idx){
     codes = WXI.detectCodeBlocks(sep.ink, w, h);   // toạ độ đã đổi sau khi xoay -> dò lại trên ảnh đã chống nghiêng
   }
   wxRestoreColoredText(sep, w, h);
+  // [LAYOUT ENGINE 2.0] DENOISE: xoá hạt bụi ≤ 3 điểm ảnh (không đụng tới dấu tiếng Việt / đường kẻ)
+  if(wxUseL2){ try{ const nd = WXE2.despeckle(sep.ink, w, h); if(nd) console.log('WORD/L2: despeckle xoá', nd, 'điểm bụi'); }catch(err){ console.warn('WORD/L2: lỗi despeckle', err); } }
   if(codes.length){                                // xoá mã khỏi mực đen VÀ mực màu (viền màu do nén JPEG quanh QR)
     WXI.clearRects(sep.ink, w, h, codes, 2);
     WXI.clearRects(sep.color, w, h, codes, 2);
@@ -17972,7 +18865,21 @@ async function wxAnalyzePage(idx){
   }
   const rm = WXI.ruleMasks(sep.ink, w, h, 45, 45, 6);
   const tables = WXI.detectTables(rm.hMask, rm.vMask, w, h);
-  const T = WXI.buildTextMask(sep.ink, rm.hMask, rm.vMask, tables, w, h);
+  let T = WXI.buildTextMask(sep.ink, rm.hMask, rm.vMask, tables, w, h);
+  // [LAYOUT ENGINE 2.0] CỨU BẢNG: cách dò kẻ liền nét ở trên được GIỮ NGUYÊN. Chỉ khi còn vùng chưa có bảng, thử lại với đường kẻ
+  // nhạt/đứt và chỉ nhận lưới thật sự giống bảng (≥2×2 ô, đủ 4 cạnh viền) — tránh biến cả bảng thành ẢNH, không nhận nhầm gạch chân/chữ ký.
+  if(wxUseL2){
+    try{
+      const rs = WXE2.rescueTables({ ink: sep.ink, gray: sep.gray, thr: sep.thr, paper: sep.paper, color: sep.color, w, h }, tables,
+        (hm, vm, ww, hh) => WXI.detectTables(hm, vm, ww, hh), { exclude: (imgRects || []).filter(r => !r.hasText) });
+      if(rs.tables.length){
+        T = WXI.buildTextMask(T, rs.hMask, rs.vMask, rs.tables, w, h);
+        for(const t of rs.tables) tables.push(t);
+        tables.sort((p, q) => p.bbox.y0 - q.bbox.y0 || p.bbox.x0 - q.bbox.x0);
+        console.log('WORD/L2: cứu được', rs.tables.length, 'bảng có đường kẻ đứt/nhạt');
+      }
+    }catch(err){ console.warn('WORD/L2: lỗi cứu bảng — dùng kết quả dò cũ', err); }
+  }
   const cc = WXI.components(T, w, h);
   const medH = WXI.typicalCharH(cc.boxes);
   const EDGE = 32;
@@ -19019,6 +19926,27 @@ function wxLayoutFlow(flow){
   return { out, marginTop, lastBottom };
 }
 
+// [LAYOUT ENGINE 2.0] Dò bảng không viền / bố cục nhiều cột từ hình học các dòng chữ ngoài bảng, rồi GẮN vào A.tables như bảng thường
+// (cùng đường dựng ô → đoạn → XML với bảng kẻ lưới). Trả về { lines, tables:n, columns:n }.
+function wxApplyGridBlocks(A, lines){
+  const res = WXE2.detectGridBlocks(lines, { medH: A.medH, pageW: A.w, pageH: A.h, baseOf: WXI.lineBaseline });
+  if(!res.blocks.length) return { lines, tables: 0, columns: 0 };
+  const drop = new Set(), add = [], orig = new Set(lines);
+  let nT = 0, nC = 0;
+  for(const b of res.blocks){
+    const ti = A.tables.length;
+    A.tables.push(b.t);
+    b.removed.forEach(L => drop.add(L));
+    for(const cell of b.t.cells) for(const L of cell.lines){ L.table = ti; L.cell = cell; if(!orig.has(L)) add.push(L); }   // dòng mới do cắt dòng dính nhiều ô
+    if(b.kind === 'columns') nC++; else nT++;
+  }
+  const out = lines.filter(L => !drop.has(L));
+  for(const L of add) if(!out.includes(L)) out.push(L);
+  out.sort((a, b) => a.y0 - b.y0 || a.x0 - b.x0);
+  console.log('WORD/L2: trang ' + (A.idx + 1) + ': ' + nT + ' bảng không viền, ' + nC + ' khối nhiều cột');
+  return { lines: out, tables: nT, columns: nC };
+}
+
 async function wxBuildPageModel(idx, onStatus, opts){
   opts = opts || {};
   const say = (m)=>{ if(onStatus) onStatus(m); };
@@ -19061,9 +19989,13 @@ async function wxBuildPageModel(idx, onStatus, opts){
   await wxFillTextForLines(A, textLines, (d,t)=>say('Đang nhận dạng chữ trang '+(idx+1)+': '+d+'/'+t));
   if(wxUseDLA){ const ncb = WXL.injectCheckboxWords(textLines); if(ncb) console.log('WORD/DLA: trang '+(idx+1)+': '+ncb+' ô tích'); }
   for(const L of textLines) wxSplitBullet(L, A);
-  const lines = wxDropGarbage(textLines, A);
+  let lines = wxDropGarbage(textLines, A);
+  // [LAYOUT ENGINE 2.0] Bảng KHÔNG VIỀN & bố cục NHIỀU CỘT: dựng bảng Word thật từ cột chữ thẳng hàng
+  let l2Info = null;
+  if(wxUseL2){ try{ l2Info = wxApplyGridBlocks(A, lines); lines = l2Info.lines; }catch(err){ console.warn('WORD/L2: lỗi dò bảng không viền/cột — bỏ qua', err); } }
   wxFixDigitCells(A, lines);
   wxFixUnitAndRoman(A, lines);
+  try{ await wxFixTableColumnsOcr_(A, lines); }catch(err){ console.warn('WORD/COL: lỗi sửa theo cột — bỏ qua', err); }   // [MỚI] sửa lỗi OCR theo cột bảng
   wxFixPhrases(lines);
   wxFixAbbreviations(lines);
   for(const L of lines) L.text = L.words.map(w=>w.text).join(' ');
@@ -19116,7 +20048,7 @@ async function wxBuildPageModel(idx, onStatus, opts){
   const OCR_CONF_MIN = 35;
   for(let ti=0; ti<A.tables.length; ti++){
     for(const cell of A.tables[ti].cells){
-      if(cell.isImage) continue; // đã là ảnh do chứa đồ hoạ lớn, không cần xét lại
+      if(cell.isImage || A.tables[ti].borderless) continue; // đã là ảnh / bảng không viền (luôn giữ chữ để sửa được)
       const ocrLs = lines.filter(L => L.table === ti && L.cell === cell && !L.native && L.words && L.words.length);
       if(!ocrLs.length) continue; // toàn chữ thật/trống -> không cần kiểm tra độ tin cậy OCR
       // [MỚI] Ô chỉ có vài ký tự (đơn vị "M³", số thứ tự, "-"...) rất hay bị OCR chấm điểm thấp dù chỉ là ký tự đặc biệt;
@@ -19135,9 +20067,10 @@ async function wxBuildPageModel(idx, onStatus, opts){
       colW: t.X.slice(1).map((x,i)=>(x-t.X[i])*WX_PX2PT),
       rowH: t.Y.slice(1).map((y,i)=>(y-t.Y[i])*WX_PX2PT),
       borderSz: Math.max(4, Math.min(18, Math.round(t.thick*WX_PX2PT*8))),
+      borderless: !!t.borderless, layoutOnly: !!t.layoutOnly,
       cells: [] };
     for(const cell of t.cells){
-      const cm = { r0:cell.r0, r1:cell.r1, c0:cell.c0, c1:cell.c1, paras:[], vAlign:'top', image:null, bg: cell.isImage ? null : wxCellBackground(A, cell) };
+      const cm = { r0:cell.r0, r1:cell.r1, c0:cell.c0, c1:cell.c1, paras:[], vAlign:'top', image:null, bg: (cell.isImage || cell.noBg) ? null : wxCellBackground(A, cell) };
       const cellFrame = { L: t.X[cell.c0], R: t.X[cell.c1+1] };
       if(cell.isImage){
         const cr = wxCropCanvas(A, { x0:cell.x0+1, y0:cell.y0+1, x1:cell.x1-1, y1:cell.y1-1 }, null);
@@ -19162,15 +20095,18 @@ async function wxBuildPageModel(idx, onStatus, opts){
       }
       tbl.cells.push(cm);
     }
+    if(wxUseL2){ try{ WXE2.alignColumns(tbl.cells, t.X, A.medH, WX_PX2PT); }catch(err){ console.warn('WORD/L2: lỗi canh cột', err); } }
     flow.push(tbl);
   }
-  flow.sort((a,b)=>a.top-b.top);
+  // [LAYOUT ENGINE 2.0] THỨ TỰ ĐỌC: trên→dưới, cùng độ cao thì trái→phải (bố cục cột đã là một khối nên đọc hết cột trái rồi mới sang cột phải)
+  flow.sort((a,b)=>a.top-b.top || ((a.indent||0)-(b.indent||0)));
 
   // 5) [MỚI - DLA] Phân loại khối (Title/Heading/Paragraph/Table/Header/Footer/Signature/Checkbox) + ảnh nổi (Stamp/Signature/Logo/Image/QR)
   if(wxUseDLA){
     try{
       const cls = WXL.classifyFlow(flow, { pageW: pageWpt, pageH: pageHpt, first: !!opts.first });
       WXL.classifyFloats(floats, { pageW: pageWpt, pageH: pageHpt, sigBox: cls.sigBox });
+      for(const el of flow) if(el.kind === 'tbl' && el.layoutOnly){ el.descr = 'Bố cục ' + el.colW.length + ' cột'; el.headerRows = 0; }
     }catch(err){ console.warn('WORD/DLA: lỗi phân loại bố cục — dùng cách xuất thường:', err); floats.forEach(f => { delete f.cv; }); }
   } else floats.forEach(f => { delete f.cv; });
   // 6) Lề trang & khoảng cách trước từng phần tử
@@ -19193,6 +20129,185 @@ async function wxBuildPageModel(idx, onStatus, opts){
 }
 
 // Ô bảng chỉ có 1 ký tự bị OCR đọc là I / l / | (thực ra là số 1) khi cùng cột có số khác -> sửa thành '1'
+/* ===== [MỚI] SỬA LỖI CHÍNH TẢ OCR THEO CỘT BẢNG =====
+   TRIỆU CHỨNG (xuất Word từ bản scan): cột lặp lại cùng một từ, vd "Đá 0x5 / Đá 5x10 / Đá 10x16 / Đá 10x19 / Đá 19x25"
+   bị OCR đọc thành "E6 0x5 / D6 5x10 / D610x16 / D5 10x19 / Đá 19x25" (mất dấu, "Đ"->E/D, "á"->6/5, hai từ dính liền);
+   cột STT "01,02,03,04,05" thành "ŨI, ũ3, Dã".
+   NGUYÊN NHÂN: chữ nhỏ trong ô bảng scan khiến dấu thanh/gạch ngang chữ Đ chỉ còn vài điểm ảnh -> Tesseract đọc mỗi dòng một kiểu
+   (lỗi ngẫu nhiên giữa các dòng, chỉ vài dòng đọc đúng). Trước đây mỗi ô được xử lý ĐỘC LẬP nên không tận dụng được dòng đọc đúng.
+   CÁCH SỬA (chỉ áp dụng cho ô bảng đọc bằng OCR, không đụng chữ thật của PDF / chữ người dùng gõ):
+     1) Từ bị DÍNH (số từ theo khoảng trống ảnh > số từ OCR trả về, và có từ lẫn chữ+số): OCR lại riêng từng nhóm nét.
+     2) Cột SỐ THỨ TỰ (01,02,03... tăng dần theo hàng): ô hỏng (ŨI, ũ3, Dã...) được đổi/suy ra từ quy luật của cả cột.
+     3) Từ RÁC (lẫn chữ+số, vd E6/D6/D5): nếu cùng cột có một từ tiếng Việt HỢP LỆ, cùng độ rộng và cùng HÌNH DẠNG nét mực
+        (so khớp ảnh, không chỉ so chữ) thì thay bằng từ hợp lệ đó (ưu tiên từ có độ tin cậy OCR cao nhất).
+   Tất cả đều có điều kiện chặt (cần bằng chứng từ chính cột đó) để không sửa nhầm chữ đúng. */
+const WX_VI_SYL_RE = new RegExp('^(?:ngh|ng|nh|ch|gh|gi|kh|ph|qu|th|tr|[bcdđghklmnpqrstvx])?[aeiouyăâêôơư]{1,3}(?:ch|ng|nh|[cmnpt])?$');
+const WX_TOK_TRIM = /^[^A-Za-zÀ-ỹĐđ0-9]+|[^A-Za-zÀ-ỹĐđ0-9]+$/g;
+// Âm tiết tiếng Việt hợp lệ? (chỉ chữ cái, đúng cấu trúc phụ âm đầu + nguyên âm + phụ âm cuối; bỏ qua dấu thanh)
+function wxViSyllableOk_(tok){
+  const core = String(tok || '').replace(WX_TOK_TRIM, '');
+  if(!core || /[0-9]/.test(core)) return false;
+  const s = core.toLowerCase().normalize('NFD').replace(/[\u0300\u0301\u0303\u0309\u0323]/g, '').normalize('NFC');
+  return WX_VI_SYL_RE.test(s);
+}
+// Từ "rác" do OCR: ngắn, lẫn chữ và số (E6, D6, D5, D610...) — không phải mã/đơn vị hợp lệ nào đã biết
+function wxIsGarbageMixed_(tok){
+  const core = String(tok || '').replace(WX_TOK_TRIM, '');
+  return core.length >= 2 && core.length <= 4 && /[A-Za-zÀ-ỹĐđ]/.test(core) && /[0-9]/.test(core) && /^[A-Za-zÀ-ỹĐđ]/.test(core);
+}
+// Các nhóm nét mực (= từ) của một dòng theo khoảng trống ảnh
+function wxInkGroups_(A, L){
+  const gap = Math.max(8, 0.5 * A.medH);   // khoảng trắng giữa từ ~0.7-0.85*medH, khe giữa các chữ/số trong một từ <=0.35*medH
+  const cs = L.comps.slice().sort((p, q) => p.x0 - q.x0);
+  const g = [];
+  for(const c of cs){
+    const last = g[g.length - 1];
+    if(last && c.x0 - last.xb <= gap){ last.xb = Math.max(last.xb, c.x1); last.comps.push(c); }
+    else g.push({ xa:c.x0, xb:c.x1, comps:[c] });
+  }
+  return g;
+}
+// "Dấu vân tay" hình dạng của một nhóm nét: lưới 10x14 tỉ lệ điểm mực trong hộp bao của chính nhóm đó
+function wxGroupPrint_(A, g){
+  const ids = new Set(g.comps.map(c => c.id));
+  let x0 = 1e9, y0 = 1e9, x1 = -1, y1 = -1;
+  for(const c of g.comps){ x0 = Math.min(x0, c.x0); y0 = Math.min(y0, c.y0); x1 = Math.max(x1, c.x1); y1 = Math.max(y1, c.y1); }
+  const GX = 10, GY = 14, v = new Float32Array(GX * GY), n = new Float32Array(GX * GY);
+  const bw = x1 - x0 + 1, bh = y1 - y0 + 1, lab = A.cc.lab, W = A.w;
+  for(let y = y0; y <= y1; y++){
+    const gy = Math.min(GY - 1, Math.floor((y - y0) * GY / bh));
+    for(let x = x0; x <= x1; x++){
+      const gx = Math.min(GX - 1, Math.floor((x - x0) * GX / bw));
+      n[gy * GX + gx]++;
+      if(ids.has(lab[y * W + x])) v[gy * GX + gx]++;
+    }
+  }
+  for(let i = 0; i < v.length; i++) v[i] = n[i] ? v[i] / n[i] : 0;
+  return { v, w: bw, h: bh };
+}
+function wxPrintSim_(p, q){
+  let dot = 0, a = 0, b = 0;
+  for(let i = 0; i < p.v.length; i++){ dot += p.v[i] * q.v[i]; a += p.v[i] * p.v[i]; b += q.v[i] * q.v[i]; }
+  return (a && b) ? dot / Math.sqrt(a * b) : 0;
+}
+const WX_COL_SIM_MIN = 0.62;     // độ giống hình dạng tối thiểu để coi là "cùng từ"
+const WX_COL_WIDTH_TOL = 0.22;   // sai lệch độ rộng cho phép
+
+async function wxFixTableColumnsOcr_(A, lines){
+  const ocrLines = lines.filter(L => L.table >= 0 && L.cell && !L.native && L.words && L.words.length && L.comps && L.comps.length);
+  if(!ocrLines.length) return { split:0, repaired:0, numbered:0 };
+  const stat = { split:0, repaired:0, numbered:0 };
+
+  // ---- 1) Từ dính: OCR lại riêng từng nhóm nét ----
+  let worker = null;
+  for(const L of ocrLines){
+    const groups = wxInkGroups_(A, L);
+    if(groups.length < 2 || groups.length <= L.words.length) continue;
+    if(!L.words.some(w => wxIsGarbageMixed_(w.text) || (/[A-Za-zÀ-ỹĐđ]+[0-9]+/.test(w.text) && w.text.length >= 4))) continue;
+    try{
+      if(!worker){ worker = await wxGetOcrWorker(); await worker.setParameters({ tessedit_pageseg_mode:'7', preserve_interword_spaces:'1', user_defined_dpi:'216' }); }
+      const base = Math.max(0.6, Math.min(1.6, 24 / Math.max(10, A.medH)));
+      const words = [];
+      for(const g of groups){
+        const sub = { x0:g.xa, x1:g.xb, y0:L.y0, y1:L.y1, comps:g.comps };
+        const cv = wxLineCanvas(A, sub, 8, base);
+        const { data } = await worker.recognize(cv);
+        const t = wxNormOcr(data.text);
+        words.push({ text: t || '', conf: data.confidence || 0, x0:g.xa, x1:g.xb, y0:L.y0, y1:L.y1 });
+      }
+      if(words.every(w => w.text)){
+        L.words = words; L.ocrWords = words; L.ocrText = words.map(w => w.text).join(' ');
+        L.ocrConf = words.reduce((s, w) => s + w.conf, 0) / words.length;
+        stat.split++;
+      }
+    }catch(err){ console.warn('WORD/COL: không tách được từ dính', err); }
+  }
+
+  const byCol = new Map();
+  for(const L of ocrLines){ const k = L.table + ':' + L.cell.c0; if(!byCol.has(k)) byCol.set(k, []); byCol.get(k).push(L); }
+  const tt = L => (L.words[0].text || '').replace(WX_TOK_TRIM, '');
+  // Chữ hay bị OCR nhầm với chữ số -> chữ số tương ứng
+  const DIGIT_LOOKALIKE = { 'O':'0','o':'0','Ũ':'0','ũ':'0','Ủ':'0','ủ':'0','U':'0','u':'0','D':'0','d':'0','Đ':'0','đ':'0',
+                            'I':'1','l':'1','|':'1','!':'1','i':'1','ị':'1','Ị':'1','S':'5','s':'5','B':'8','Z':'2','z':'2' };
+  const numericCols = new Set();
+
+  // ---- 2) Cột SỐ THỨ TỰ tăng dần: sửa ô hỏng từ quy luật của cả cột ----
+  for(const [key, ls] of byCol){
+    const cells = ls.filter(L => L.words.length === 1 && tt(L).length >= 1 && tt(L).length <= 4 && L.cell.r0 != null);
+    if(cells.length < 3) continue;
+    let pure = cells.filter(L => /^[0-9]{1,3}$/.test(tt(L)));
+    if(pure.length < 2) continue;                          // cần ít nhất 2 ô số thật làm bằng chứng đây là cột số
+    numericCols.add(key);
+    // 2a) ô chỉ gồm ký tự "giống số" (ŨI, ũ3, 0I...) -> đổi sang số
+    const val = new Map();                                 // L -> {text}
+    for(const L of cells){
+      const t = tt(L);
+      if(/^[0-9]{1,3}$/.test(t)){ val.set(L, t); continue; }
+      if(t.length <= 3 && [...t].every(ch => /[0-9]/.test(ch) || DIGIT_LOOKALIKE[ch] !== undefined)){
+        val.set(L, [...t].map(ch => /[0-9]/.test(ch) ? ch : DIGIT_LOOKALIKE[ch]).join(''));
+      }
+    }
+    // 2b) quy luật tăng dần theo hàng: số = offset + chỉ số hàng
+    const votes = new Map();
+    for(const [L, t] of val){ const o = parseInt(t, 10) - L.cell.r0; votes.set(o, (votes.get(o) || 0) + 1); }
+    let bestO = null, bestN = 0;
+    for(const [o, n] of votes) if(n > bestN){ bestN = n; bestO = o; }
+    const seqOk = bestN >= 3 && bestN >= 0.5 * cells.length;
+    const zeroPad = [...val.values()].some(t => /^0[0-9]/.test(t));
+    const padLen = Math.max(2, ...[...val.values()].map(t => t.length));
+    for(const L of cells){
+      const t = tt(L);
+      if(/^[0-9]{1,3}$/.test(t)) continue;                 // đã là số: giữ nguyên, không áp đặt
+      let out = val.get(L) || null;                        // kết quả đổi ký tự giống số
+      if(seqOk){
+        const exp = bestO + L.cell.r0;
+        if(exp >= 1 && exp <= 999 && (out === null ? /^[0-9OoÕõŨũUuỦủIl|!ịỊiDdĐđSsBbZzÂâÃãĂăẢảÁáÀàAa]{1,4}$/.test(t) : parseInt(out, 10) !== exp)){
+          out = String(exp);
+        }
+        if(out !== null && zeroPad) out = out.padStart(padLen, '0');
+      }
+      if(out === null || out === t) continue;
+      L.words[0] = Object.assign({}, L.words[0], { text:out, conf:Math.max(L.words[0].conf || 0, 60) });
+      stat.numbered++;
+    }
+  }
+
+  // ---- 3) Từ rác -> từ hợp lệ cùng cột, cùng độ rộng & hình dạng (bỏ qua cột số) ----
+  for(const [key, ls] of byCol){
+    if(numericCols.has(key)) continue;
+    const items = [];
+    for(const L of ls){
+      const groups = wxInkGroups_(A, L);
+      if(!groups.length || groups.length !== L.words.length) continue;     // chỉ khi số từ khớp số nhóm nét -> biết chắc từ nào là nhóm nào
+      items.push({ L, g:groups[0], print:wxGroupPrint_(A, groups[0]), w:L.words[0] });
+    }
+    if(items.length < 2) continue;
+    const refs = items.filter(it => wxViSyllableOk_(it.w.text) && it.w.text.replace(WX_TOK_TRIM, '').length >= 2 && (it.w.conf || 0) >= 40);
+    if(!refs.length) continue;
+    for(const it of items){
+      if(!wxIsGarbageMixed_(it.w.text)) continue;
+      let best = null;
+      for(const r of refs){
+        if(r === it) continue;
+        const wr = Math.abs(it.print.w - r.print.w) / Math.max(it.print.w, r.print.w);
+        if(wr > WX_COL_WIDTH_TOL) continue;
+        const sim = wxPrintSim_(it.print, r.print);
+        if(sim < WX_COL_SIM_MIN) continue;
+        const score = (r.w.conf || 0) + sim * 40;
+        if(!best || score > best.score) best = { r, sim, score };
+      }
+      if(best){
+        const m = /^([^A-Za-zÀ-ỹĐđ0-9]*)(.*?)([^A-Za-zÀ-ỹĐđ0-9]*)$/.exec(it.w.text);
+        const rc = best.r.w.text.replace(WX_TOK_TRIM, '');
+        it.L.words[0] = Object.assign({}, it.w, { text: m[1] + rc + m[3], conf: Math.max(it.w.conf || 0, 60) });
+        stat.repaired++;
+      }
+    }
+  }
+  if(stat.split || stat.repaired || stat.numbered) console.log('WORD/COL: sửa lỗi OCR theo cột bảng', stat);
+  return stat;
+}
+
 function wxFixDigitCells(A, lines){
   for(const L of lines){
     if(L.table < 0 || !L.cell || !L.words || L.words.length !== 1) continue;
@@ -19530,7 +20645,7 @@ function wxPicXml(rid, n, wPt, hPt, anchorPos, meta){
 function wxTableXml(tbl, ctx){
   const sumW = tbl.colW.reduce((a,b)=>a+b,0);
   const bs = tbl.borderSz;
-  const bd = (n)=>'<w:'+n+' w:val="single" w:sz="'+bs+'" w:space="0" w:color="000000"/>';
+  const bd = tbl.borderless ? ((n)=>'<w:'+n+' w:val="nil"/>') : ((n)=>'<w:'+n+' w:val="single" w:sz="'+bs+'" w:space="0" w:color="000000"/>');
   let x = '<w:tbl><w:tblPr><w:tblW w:w="'+tw(sumW)+'" w:type="dxa"/>'+
     (tbl.indent ? '<w:tblInd w:w="'+tw(tbl.indent)+'" w:type="dxa"/>' : '')+
     '<w:tblBorders>'+bd('top')+bd('left')+bd('bottom')+bd('right')+bd('insideH')+bd('insideV')+'</w:tblBorders>'+
