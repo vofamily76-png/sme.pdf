@@ -2352,7 +2352,7 @@ function renderOnlineUsersModal_(){
     const isAdm = (u.role === 'admin');
     const devs = (u.deviceList || []).map(function(d){
       return '<div style="display:flex;flex-wrap:wrap;justify-content:space-between;gap:4px 12px;font-size:11.5px;color:#c4c9d0;padding:4px 0 0 12px;border-left:2px solid #3a3f47;margin-left:2px;">'+
-        '<span>💻 '+escapeHtml(d.deviceLabel || 'Thiết bị không rõ')+(d.isCurrent ? ' <span style="color:#8bd17c;">(thiết bị này)</span>' : '')+'</span>'+
+        '<span>'+ouDeviceIcon_(d.deviceLabel)+' '+escapeHtml(d.deviceLabel || 'Thiết bị không rõ')+(d.isCurrent ? ' <span style="color:#8bd17c;">(thiết bị này)</span>' : '')+' <span style="color:#9aa0a8;">· IP: </span><span style="font-family:Consolas,monospace;color:#eceff1;user-select:all;">'+escapeHtml(d.ipAddress || 'không rõ')+'</span></span>'+
         '<span style="color:#9aa0a8;">Đăng nhập: '+escapeHtml(ouFormatTime_(d.loginAt))+' · Hoạt động: '+escapeHtml(ouAgo_(d.lastActivityAt, r.serverTime))+'</span>'+
       '</div>';
     }).join('');
@@ -2479,6 +2479,64 @@ function showLoginError(msg){
   if(el) el.textContent = msg || '';
 }
 
+/* ---------- Thông tin thiết bị gửi kèm khi đăng nhập (admin xem trong cửa sổ "User đang truy cập") ----------
+   deviceLabel: "Laptop/PC | Điện thoại | Máy tính bảng · Hệ điều hành · Trình duyệt".
+   clientIp: IP công khai, lấy qua ipify (Apps Script không đọc được IP người gọi). Lỗi/quá 2,5 giây -> bỏ qua,
+   KHÔNG chặn đăng nhập. */
+function detectDeviceLabel_(){
+  const ua = navigator.userAgent || '';
+  const uad = navigator.userAgentData;
+  const isTablet = /iPad|Tablet|PlayBook|Silk/i.test(ua) ||
+    (/Android/i.test(ua) && !/Mobile/i.test(ua)) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);   // iPadOS giả danh Mac
+  const isPhone = !isTablet && ((uad && uad.mobile === true) || /iPhone|iPod|Android.*Mobile|Windows Phone|Mobile/i.test(ua));
+  const type = isTablet ? 'Máy tính bảng' : (isPhone ? 'Điện thoại' : 'Laptop/PC');
+  let os = 'HĐH không rõ';
+  if(/Windows Phone/i.test(ua)) os = 'Windows Phone';
+  else if(/Windows/i.test(ua)) os = 'Windows';
+  else if(/iPhone|iPad|iPod/i.test(ua) || (isTablet && navigator.platform === 'MacIntel')) os = 'iOS';
+  else if(/Android/i.test(ua)) os = 'Android';
+  else if(/CrOS/i.test(ua)) os = 'ChromeOS';
+  else if(/Mac OS X|Macintosh/i.test(ua)) os = 'macOS';
+  else if(/Linux|X11/i.test(ua)) os = 'Linux';
+  let br = 'Trình duyệt khác';
+  if(/Electron\//i.test(ua)) br = 'Ứng dụng desktop';
+  else if(/Edg(e|A|iOS)?\//i.test(ua)) br = 'Edge';
+  else if(/OPR\/|Opera/i.test(ua)) br = 'Opera';
+  else if(/Firefox\/|FxiOS\//i.test(ua)) br = 'Firefox';
+  else if(/CriOS\/|Chrome\//i.test(ua)) br = 'Chrome';
+  else if(/Safari\//i.test(ua)) br = 'Safari';
+  return type + ' · ' + os + ' · ' + br;
+}
+let publicIpCache_ = '';
+async function fetchPublicIp_(){
+  if(publicIpCache_) return publicIpCache_;
+  const urls = ['https://api64.ipify.org?format=json', 'https://api.ipify.org?format=json'];
+  for(const url of urls){
+    const ctl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+    const timer = ctl ? setTimeout(function(){ ctl.abort(); }, 2500) : null;
+    try{
+      const res = await fetch(url, ctl ? { signal: ctl.signal, credentials: 'omit' } : { credentials: 'omit' });
+      if(!res.ok) continue;
+      const j = await res.json();
+      const ip = String((j && j.ip) || '').trim();
+      if(ip && ip.length <= 45 && /^[0-9a-fA-F:.]+$/.test(ip)){ publicIpCache_ = ip; return ip; }
+    }catch(e){ /* thử địa chỉ dự phòng */ }
+    finally{ if(timer) clearTimeout(timer); }
+  }
+  return '';
+}
+async function buildLoginPayload_(username, password){
+  const clientIp = await fetchPublicIp_();
+  return { action: 'login', username: username, password: password, deviceLabel: detectDeviceLabel_(), clientIp: clientIp };
+}
+function ouDeviceIcon_(label){
+  const t = String(label || '');
+  if(t.indexOf('Điện thoại') === 0) return '📱';
+  if(t.indexOf('Máy tính bảng') === 0) return '📲';
+  return '💻';
+}
+
 async function callAuthApi(payload){
   if(!GAS_WEB_APP_URL || GAS_WEB_APP_URL.indexOf('PASTE_YOUR') === 0){
     throw new Error('Chưa cấu hình GAS_WEB_APP_URL trong file HTML (xem hướng dẫn trong code.gs).');
@@ -2510,7 +2568,7 @@ async function tryRestoreSession(){
     }
     // Phiên đã hết hạn -> tự đăng nhập lại bằng thông tin đã lưu (bản desktop, người dùng đã chọn ghi nhớ)
     if(hasSavedLogin){
-      const r = await callAuthApi({ action: 'login', username: saved.username, password: saved.password });
+      const r = await callAuthApi(await buildLoginPayload_(saved.username, saved.password));
       if(r && r.success){
         sessionStorage.setItem(SESSION_STORAGE_KEY, r.token);
         try{ await desktopAuth_.saveAuth({ token: r.token, username: saved.username, password: saved.password }); }catch(e){}
@@ -2540,7 +2598,7 @@ document.getElementById('loginForm').addEventListener('submit', async function(e
   btn.disabled = true;
   btn.textContent = 'Đang kiểm tra…';
   try{
-    const result = await callAuthApi({ action: 'login', username: username, password: password });
+    const result = await callAuthApi(await buildLoginPayload_(username, password));
     if(result && result.success){
       sessionStorage.setItem(SESSION_STORAGE_KEY, result.token);
       if(desktopAuth_){
