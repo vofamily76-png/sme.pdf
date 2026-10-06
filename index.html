@@ -242,12 +242,18 @@
      đặt đè lên đúng vị trí của nó trong danh sách; các trang khác chỉ hiển thị bản xem trước tĩnh
      (đã vẽ sẵn mọi chỉnh sửa) trong canvas.pageStatic của riêng chúng. Cuộn tới trang nào (hoặc bấm
      vào trang đó) sẽ tự động chuyển trang đó thành trang đang chỉnh sửa. */
+  /* [SỬA LỖI ZOOM LỚN BỊ CẮT] Trước đây dùng align-items:center: khi trang (sau zoom) RỘNG HƠN khung nhìn,
+     flex căn giữa làm phần tràn sang TRÁI nằm ở vị trí cuộn âm nên KHÔNG kéo/cuộn tới được (bị cắt mất).
+     Nay căn từ mép trái (align-items:flex-start) và để mỗi .pageSlot tự căn giữa bằng margin:auto:
+     trang nhỏ vẫn nằm giữa, trang to hơn khung thì bắt đầu từ mép trái và cuộn ngang được đủ cả hai
+     phía (thanh cuộn hoặc công cụ Hand). Thêm lề ngang 30px để trang không dính sát mép khi cuộn tới cuối. */
   #pagesScroll{
-    position:absolute;inset:0;overflow:auto;padding:30px 0 60px;
-    display:flex;flex-direction:column;align-items:center;gap:26px;
+    position:absolute;inset:0;overflow:auto;padding:30px 30px 60px;box-sizing:border-box;
+    display:flex;flex-direction:column;align-items:flex-start;gap:26px;
   }
   .pageSlot{
     position:relative;box-shadow:0 4px 24px rgba(0,0,0,.5);background:#fff;flex-shrink:0;
+    margin-left:auto;margin-right:auto;
   }
   .pageSlot.active-slot{outline:2px solid var(--accent);outline-offset:3px;}
   .pageSlot .pageLabel{
