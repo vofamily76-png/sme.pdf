@@ -8248,7 +8248,16 @@ function wrapText(ctx, text, x, y, maxWidth, lineHeight, underline, align, color
       for(let k=0;k<t.length;k++) colorAt.push(c);
     }
   }
-  let cy = y;
+  // [SỬA LỖI CHỮ LỆCH HÀNG GIỮA XEM TRƯỚC VÀ FILE XUẤT] Trước đây bản xem trước vẽ bằng textBaseline='top'
+  // (mép trên "ô em" của font, mỗi font một khác: Times/Arial/Noto...) còn bản xuất PDF đặt đường cơ sở
+  // (baseline) CỐ ĐỊNH tại y + fontSize*0.85 (baseYDisp = ed.y + fontSize*0.85) nên cùng một chữ lúc xem
+  // thì thẳng hàng, lúc xuất ra lại lệch lên/xuống vài px tuỳ font & cỡ chữ. Nay xem trước cũng vẽ theo
+  // textBaseline='alphabetic' tại ĐÚNG y + fontSize*0.85 (giống đường vẽ Rich Text ở richDrawCanvas_)
+  // => thấy sao xuất ra vậy. Tham số y do nơi gọi truyền vào là mép trên + 1px nên trừ 1 lại.
+  const fsPx_ = lineHeight / 1.15;                 // nơi gọi luôn truyền lineHeight = fontSize*scale*1.15
+  const prevBaseline_ = ctx.textBaseline;
+  ctx.textBaseline = 'alphabetic';
+  let cy = (y - 1) + fsPx_*0.85;
   // Vẽ 1 dòng đã "chốt" (không còn bẻ tiếp) + gạch chân ngay bên dưới nếu bật Underline — dùng
   // đúng chiều rộng thật của dòng đó (đo bằng ctx.measureText, đã áp cỡ/kiểu chữ hiện tại của ctx.font)
   // để gạch chân khớp đúng độ dài chữ, không bị ngắn/dài hơn thực tế.
@@ -8296,7 +8305,7 @@ function wrapText(ctx, text, x, y, maxWidth, lineHeight, underline, align, color
     }
     if(usedJustifySpacing) ctx.wordSpacing = '0px'; // trả lại ngay để không ảnh hưởng dòng kế tiếp
     if(underline && line.trim()){
-      const uy = cy + lineHeight*0.83;
+      const uy = cy + fsPx_*0.10; // cy giờ là đường cơ sở; gạch chân nằm ngay dưới đường cơ sở (như trước)
       ctx.save();
       ctx.strokeStyle = colorAt ? baseColor : ctx.fillStyle;
       ctx.lineWidth = Math.max(1, lineHeight*0.055);
@@ -8305,6 +8314,7 @@ function wrapText(ctx, text, x, y, maxWidth, lineHeight, underline, align, color
     }
   }
   for(const item of allLines){ drawLine(item); cy += lineHeight; }
+  ctx.textBaseline = prevBaseline_;
 }
 
 function hexToRgba(hex, a){
@@ -11192,6 +11202,46 @@ function openEditInput(screenX, screenY, screenW, screenH, initialText, onCommit
    thứ tự nạp được quy định bởi các thẻ <script> trong index.html (xem README.md).
    ===================================================================================== */
 // ---------- Tương tác canvas ----------
+/* =====================================================================================
+   [SỬA LỖI ADD TEXT KHÔNG THẲNG HÀNG] Canh đường cơ sở (baseline) của chữ mới theo hàng chữ đã có.
+   Nguyên nhân cũ: điểm bấm chuột được dùng làm MÉP TRÊN của chữ mới; người dùng thường bấm vào GIỮA hàng
+   (hoặc hơi thấp/cao tuỳ tay) nên mỗi lần chữ mới nằm lệch 1 khoảng khác nhau so với hàng chữ bên cạnh
+   (lúc nằm dưới, lúc nằm trên). Nay: nếu điểm bấm rơi vào (hoặc sát) một hàng chữ có sẵn — chữ PDF thật,
+   hoặc chữ đã thêm/sửa trước đó — thì đường cơ sở của chữ mới được đặt TRÙNG đường cơ sở của hàng đó,
+   bất kể cỡ chữ khác nhau. Giữ Alt khi bấm để tắt tính năng này (đặt đúng điểm bấm như cũ).
+   Trả về đường cơ sở theo toạ độ PDF (đơn vị pt, trục y hướng xuống) hoặc null nếu không có hàng nào gần.
+   Công thức đường cơ sở trùng với bản xuất PDF: baseline = mép trên + fontSize*0.85.
+   ===================================================================================== */
+function nativeLineBaselineY_(L){
+  return L.y0 + (L.fontSize || 10)*0.85;
+}
+function findSnapBaseline_(p, pdfX, pdfY){
+  if(!p) return null;
+  const cands = []; // {b: đường cơ sở, fs: cỡ chữ của hàng, dx: khoảng cách ngang tới điểm bấm}
+  const gapX = (x0, x1)=> pdfX < x0 ? x0 - pdfX : (pdfX > x1 ? pdfX - x1 : 0);
+  for(const L of (p.nativeLines || [])){
+    if(!L || !isFinite(L.y0) || !isFinite(L.y1)) continue;
+    cands.push({ b: nativeLineBaselineY_(L), fs: L.fontSize || 10, dx: gapX(L.x0, L.x1) });
+  }
+  for(const e of (p.edits || [])){
+    if(!e || !e.text || !(e.type === 'text' || e.type === 'textfix' || e.type === 'ocrfix')) continue;
+    const fsE = e.fontSize || 12;
+    const n = Math.max(1, Math.round((e.h - fsE*0.3) / (fsE*1.15)));
+    for(let k=0; k<n && k<50; k++){
+      cands.push({ b: e.y + fsE*0.85 + k*fsE*1.15, fs: fsE, dx: gapX(e.x, e.x + e.w) });
+    }
+  }
+  let best = null, bestScore = Infinity;
+  for(const c of cands){
+    // Điểm bấm phải nằm trong dải đứng của hàng: từ đỉnh chữ (≈ b - 1.1*fs) tới ngay dưới đường cơ sở (≈ b + 0.45*fs).
+    if(pdfY < c.b - c.fs*1.1 || pdfY > c.b + c.fs*0.45) continue;
+    const dy = Math.abs(pdfY - (c.b - c.fs*0.3));        // so với tâm thân chữ
+    const score = dy + Math.min(c.dx, 400)*0.01;          // ưu tiên hàng sát chiều dọc, rồi tới gần theo chiều ngang
+    if(score < bestScore){ bestScore = score; best = c; }
+  }
+  return best ? best.b : null;
+}
+
 overlayCanvas.addEventListener('mousedown', (e)=>{
   if(!pages.length) return;
   // QUAN TRỌNG (sửa lỗi "bấm Edit Text chỉ hiện khung viền rồi biến mất, không gõ được"):
@@ -11207,13 +11257,18 @@ overlayCanvas.addEventListener('mousedown', (e)=>{
 
   if(activeTool === 'addtext'){
     setActiveEditFont(currentFontFamily, currentFontSize);
-    openEditInput(px, py, 160, 26, '', (val, colorRuns)=>{
+    // Canh theo hàng chữ gần điểm bấm (giữ Alt để tắt) — ô nhập cũng mở đúng vị trí đã canh để thấy trước.
+    const snapB_ = e.altKey ? null : findSnapBaseline_(cur(), pdfP.x, pdfP.y);
+    const openTopPx_ = snapB_ != null ? Math.max(0, (snapB_ - currentFontSize*0.85)*scale) : py;
+    openEditInput(px, openTopPx_, 160, 26, '', (val, colorRuns)=>{
       val = normalizeEditText(val);
       if(val && val.trim()){
         pushUndo(currentIndex);
         const newIdx = cur().edits.length;
         const auto = computeAutoBoxSize(val, currentFontFamily, currentFontSize, pdfP.x, currentBold, currentItalic, colorRuns);
-        cur().edits.push({type:'text', x:pdfP.x, y:pdfP.y, w:auto.w, h:auto.h, text:val, fontSize:currentFontSize, fontFamily: currentFontFamily, color: currentFontColor, colorRuns, bold: currentBold, italic: currentItalic, underline: currentUnderline, align: currentAlign, bg:false, ...newTextOpacityProps_()});
+        // Tính lại mép trên theo cỡ chữ CUỐI CÙNG (người dùng có thể đổi cỡ chữ trong lúc gõ) để đường cơ sở vẫn trùng hàng.
+        const yTop_ = snapB_ != null ? Math.max(0, snapB_ - currentFontSize*0.85) : pdfP.y;
+        cur().edits.push({type:'text', x:pdfP.x, y:yTop_, w:auto.w, h:auto.h, text:val, fontSize:currentFontSize, fontFamily: currentFontFamily, color: currentFontColor, colorRuns, bold: currentBold, italic: currentItalic, underline: currentUnderline, align: currentAlign, bg:false, ...newTextOpacityProps_()});
         selectedEditIndex = newIdx;
         redrawOverlay();
       }
@@ -11797,15 +11852,19 @@ function editLineAt(px, py, editType, customLines){
     const pdfP = toPdfSpace(px, py);
     setActiveEditFont(currentFontFamily, currentFontSize || 14);
     const defaultFS = currentFontSize || 14;
-    openEditInput(px, py, 150, defaultFS*1.4, '', (val, colorRuns)=>{
+    // Cùng cách canh theo hàng chữ gần điểm bấm như công cụ Add text (xem findSnapBaseline_).
+    const snapB2_ = findSnapBaseline_(p, pdfP.x, pdfP.y);
+    const openTopPx2_ = snapB2_ != null ? Math.max(0, (snapB2_ - defaultFS*0.85)*scale) : py;
+    openEditInput(px, openTopPx2_, 150, defaultFS*1.4, '', (val, colorRuns)=>{
       val = normalizeEditText(val);
       if(val && val.trim()){
         pushUndo(currentIndex);
         const auto = computeAutoBoxSize(val, currentFontFamily, currentFontSize, pdfP.x, currentBold, currentItalic, colorRuns);
-        removeOverlappingTextEdits(p, pdfP.x, pdfP.y, pdfP.x+auto.w, pdfP.y+auto.h);
+        const yTop2_ = snapB2_ != null ? Math.max(0, snapB2_ - (currentFontSize || defaultFS)*0.85) : pdfP.y;
+        removeOverlappingTextEdits(p, pdfP.x, yTop2_, pdfP.x+auto.w, yTop2_+auto.h);
         const newIdx = p.edits.length;
         p.edits.push({
-          type:'text', x:pdfP.x, y:pdfP.y, w:auto.w, h:auto.h,
+          type:'text', x:pdfP.x, y:yTop2_, w:auto.w, h:auto.h,
           text:val, fontSize: currentFontSize, fontFamily: currentFontFamily, color: currentFontColor, colorRuns,
           bold: currentBold, italic: currentItalic, underline: currentUnderline, align: currentAlign, bg:false,
           ...newTextOpacityProps_()
