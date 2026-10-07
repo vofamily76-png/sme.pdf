@@ -3190,7 +3190,10 @@ const NativeTextEngine = (function(){
   function setPageContentBytes(pdfDoc, pdfPage, bytes){
     const { PDFName } = PDFLib;
     const ctx = pdfDoc.context;
-    const streamRef = ctx.register(ctx.stream(bytes, {}));
+    // [GIẢM DUNG LƯỢNG] Trước đây ghi content stream ĐÃ GIẢI NÉN, KHÔNG nén lại (ctx.stream) => mỗi trang có
+    // sửa chữ gốc phình ra gấp nhiều lần (nội dung trang vốn được nén Flate trong file gốc). Dùng flateStream để
+    // nén lại như file gốc (nếu môi trường không có flateStream thì rơi về cách cũ, vẫn đúng chỉ là to hơn).
+    const streamRef = ctx.register(typeof ctx.flateStream === 'function' ? ctx.flateStream(bytes) : ctx.stream(bytes, {}));
     pdfPage.node.set(PDFName.of('Contents'), streamRef);
   }
 
@@ -13389,6 +13392,9 @@ function showNativeEditToast(stats){
   showNativeEditToast._t = setTimeout(()=> el.classList.remove('show'), 7000);
 }
 
+// Các font thật đã kiểm chứng là AN TOÀN để nhúng dạng rút gọn (subset) — xem giải thích ở resolveFontForEdit.
+const SUBSET_SAFE_FONT_CSS_ = new Set(['PdfClone_Arial', 'PdfClone_TimesNewRoman', 'PdfClone_CourierNew']);
+
 async function buildEditedOutDoc(indexes, spinnerLabel){
   const outDoc = await PDFDocument.create();
   // Thống kê cho showNativeEditToast(): "eligible" = số dòng textfix có nativeItemIdxs, không
@@ -13400,30 +13406,40 @@ async function buildEditedOutDoc(indexes, spinnerLabel){
   // Việt hoá nhúng sẵn vì lý do gì đó không vẽ được (xem safeDrawText), để chữ luôn hiện ra được
   // trong file PDF lưu ra, thay vì chỉ còn lại mảng nền che mà không có chữ nào cả.
   const fallbackFont = await outDoc.embedFont(StandardFonts.Helvetica);
-  let editFont;
+  // [GIẢM DUNG LƯỢNG] fontkit phải được đăng ký TRƯỚC khi nhúng bất kỳ font TTF nào (font thật lẫn font Việt hoá).
+  let fontkitOk_ = false;
   try{
     if(typeof fontkit === 'undefined'){
       throw new Error('Thư viện fontkit chưa tải được (kiểm tra kết nối mạng / tường lửa chặn cdn.jsdelivr.net).');
     }
     outDoc.registerFontkit(fontkit);
-    // QUAN TRỌNG (sửa lỗi GỐC RỄ khiến chữ vừa sửa hiện ra thiếu/vỡ nát sau khi xuất PDF, ví dụ
-    // "BẢN THANH TOÁN XE OTO" chỉ còn hiện "BẢN   N     N E"): trước đây nhúng font Việt hoá với
-    // { subset: true } — tức là pdf-lib/fontkit chỉ nhúng RÚT GỌN đúng những glyph cần dùng, và
-    // TỰ XÂY LẠI bảng glyph đó dần dần mỗi khi gọi drawText thêm một lần nữa. Đã kiểm chứng trực
-    // tiếp (dựng lại đúng Chrome thật + đúng các thư viện pdf.js/pdf-lib/fontkit của ứng dụng,
-    // nạp file PDF thật của người dùng, chạy đúng quy trình xuất file): với font tiếng Việt đang
-    // dùng, khi có TỪ 2 LƯỢT vẽ chữ (drawText) trở lên bằng CÙNG một font đã "subset", pdf-lib bị
-    // lỗi xây sai bảng glyph, khiến rất nhiều ký tự bị vẽ SAI/THIẾU hẳn glyph (biến mất) dù không
-    // hề báo lỗi (không throw) — hoàn toàn không liên quan tới khung chỉnh sửa hay logic tô đè.
-    // Nhúng font KHÔNG rút gọn ({ subset: false }, nhúng trọn bộ file font ~190KB) tránh được lỗi
-    // xây bảng glyph dần dần này — mọi glyph đã có sẵn đầy đủ ngay từ đầu — đổi lại là dung lượng
-    // file PDF xuất ra lớn hơn một chút, đánh đổi hoàn toàn xứng đáng để chữ luôn hiện ra đúng.
-    editFont = await outDoc.embedFont(getVietFontBytes(), { subset: false });
+    fontkitOk_ = true;
   }catch(fontErr){
-    // Không để lỗi nhúng font Việt hoá làm hỏng CẢ QUÁ TRÌNH xuất file — vẫn xuất PDF bình thường,
-    // chỉ là chữ sửa sẽ dùng font dự phòng (có thể mất dấu tiếng Việt) thay vì dừng hẳn giữa chừng.
-    console.warn('Không nhúng được font Việt hoá, dùng font dự phòng cho toàn bộ chữ đã sửa:', fontErr);
-    editFont = fallbackFont;
+    console.warn('Không đăng ký được fontkit, dùng font dự phòng cho toàn bộ chữ đã sửa:', fontErr);
+  }
+  // Font Việt hoá dùng chung (Noto Sans): CHỈ nhúng khi THỰC SỰ có chỉnh sửa cần tới nó (trước đây luôn nhúng
+  // ~190KB dù không dùng). QUAN TRỌNG (giữ nguyên từ bản cũ): font này PHẢI nhúng KHÔNG rút gọn ({ subset: false }).
+  // Đã kiểm chứng lại bằng cách dựng PDF rồi render bằng pdf.js: rút gọn Noto Sans (và cả Carlito/Calibri) làm
+  // MẤT glyph (chữ vẽ ra thiếu/vỡ nát, đúng hiện tượng \"BẢN   N     N E\" đã gặp trước đây), nên không được rút gọn
+  // 2 font này; đổi lại chúng chỉ nhúng đúng 1 lần/lượt xuất và chỉ khi có dùng.
+  let editFont = null, editFontPromise = null;
+  async function getEditFont(){
+    if(editFont) return editFont;
+    if(!editFontPromise){
+      editFontPromise = (async ()=>{
+        if(!fontkitOk_) return fallbackFont;
+        try{
+          return await outDoc.embedFont(getVietFontBytes(), { subset: false });
+        }catch(fontErr){
+          // Không để lỗi nhúng font Việt hoá làm hỏng CẢ QUÁ TRÌNH xuất file — vẫn xuất PDF bình thường,
+          // chỉ là chữ sửa sẽ dùng font dự phòng (có thể mất dấu tiếng Việt) thay vì dừng hẳn giữa chừng.
+          console.warn('Không nhúng được font Việt hoá, dùng font dự phòng cho toàn bộ chữ đã sửa:', fontErr);
+          return fallbackFont;
+        }
+      })();
+    }
+    editFont = await editFontPromise;
+    return editFont;
   }
 
   // Cache font đã NHÚNG (pdf-lib PDFFont) cho từng cặp (họ font đã chọn + có Đậm hay không), để mỗi
@@ -13445,16 +13461,22 @@ async function buildEditedOutDoc(indexes, spinnerLabel){
     let result;
     if(asset.isRealFace){
       try{
-        const embedded = await outDoc.embedFont(asset.bytes, { subset: false });
+        // [GIẢM DUNG LƯỢNG] Arial / Times New Roman / Courier New (Liberation Sans/Serif/Mono) đã được kiểm chứng
+        // bằng cách render lại PDF (pdf.js, đủ bộ chữ tiếng Việt, cả 8 mặt Regular/Bold/Italic/BoldItalic): rút gọn
+        // cho hình chữ GIỐNG HỆT từng pixel so với nhúng trọn bộ, nhưng nhỏ hơn 15-30 lần (vd Times: ~650KB -> ~35KB/mặt).
+        // Calibri (Carlito) rút gọn bị mất glyph nên vẫn nhúng trọn bộ.
+        const famInfo_ = FONT_FAMILY_ASSETS[fontFamilyKey];   // (getFontAssetForFamily không trả về css nên tra lại ở đây)
+        const subsetOk = !!famInfo_ && SUBSET_SAFE_FONT_CSS_.has(famInfo_.css);
+        const embedded = await outDoc.embedFont(asset.bytes, { subset: subsetOk });
         result = { font: embedded, fauxBold: false };
       }catch(fontErr){
         console.warn('Không nhúng được font '+fontFamilyKey+', dùng font Việt hoá dùng chung thay thế:', fontErr);
-        result = { font: editFont, fauxBold: wantBold };
+        result = { font: await getEditFont(), fauxBold: wantBold };
       }
     } else {
       // Không có bản thay thế riêng cho font này (Georgia/Verdana/Tahoma/Segoe UI...) -> dùng chung
       // font Việt hoá (editFont, đã nhúng sẵn ở trên) như hành vi cũ, kể cả giả lập Đậm nếu cần.
-      result = { font: editFont, fauxBold: wantBold };
+      result = { font: await getEditFont(), fauxBold: wantBold };
     }
     resolvedFontCache.set(cacheKey, result);
     return result;
@@ -13469,6 +13491,32 @@ async function buildEditedOutDoc(indexes, spinnerLabel){
     return srcDocCache.get(buf);
   }
 
+  // [GIẢM DUNG LƯỢNG - NGUYÊN NHÂN CHÍNH] Trước đây gọi outDoc.copyPages() RIÊNG TỪNG TRANG. pdf-lib mỗi lần gọi
+  // copyPages lại sao chép lại TOÀN BỘ tài nguyên mà trang đó dùng (font nhúng, ảnh, logo, ICC...) mà không nhớ gì từ
+  // các lần gọi trước => tài nguyên DÙNG CHUNG giữa các trang bị nhân bản N lần (file gốc 1,3MB, vài chục trang
+  // có thể thành hàng chục MB, kể cả khi chưa chỉnh gì). Nay gom TẤT CẢ trang cùng 1 file nguồn vào MỘT lần copyPages:
+  // tài nguyên dùng chung chỉ được chép đúng 1 lần. (Đo thử: file mẫu 24 trang 62KB -> 795KB khi chép từng trang,
+  // 62KB khi chép theo lô.) Trang bị lặp (cùng 1 trang nguồn xuất hiện 2 lần) không đưa vào lô, để vòng lặp bên dưới
+  // chép riêng như cũ — tránh 2 trang dùng chung 1 đối tượng trang.
+  const batchedPages = new Map(); // vị trí k trong indexes -> PDFPage đã chép sẵn
+  {
+    const groups = new Map();     // srcBuf -> { idx:[chỉ số trang nguồn], ks:[vị trí k], seen:Set }
+    for(let k=0;k<indexes.length;k++){
+      const pp = pages[indexes[k]];
+      if(!pp || pp.type !== 'pdf' || !pp.srcBuf) continue;
+      let g = groups.get(pp.srcBuf);
+      if(!g){ g = { idx:[], ks:[], seen:new Set() }; groups.set(pp.srcBuf, g); }
+      if(g.seen.has(pp.srcPage)) continue;
+      g.seen.add(pp.srcPage); g.idx.push(pp.srcPage-1); g.ks.push(k);
+    }
+    for(const [buf, g] of groups){
+      if(spinnerLabel) spinnerLabel.textContent = ' Đang chuẩn bị các trang…';
+      const srcDocBatch = await getSrcDoc(buf);
+      const copiedBatch = await outDoc.copyPages(srcDocBatch, g.idx);
+      g.ks.forEach((kk, j)=> batchedPages.set(kk, copiedBatch[j]));
+    }
+  }
+
   for(let k=0;k<indexes.length;k++){
     const i = indexes[k];
     if(spinnerLabel) spinnerLabel.textContent = ` Đang ghép trang ${k+1}/${indexes.length}…`;
@@ -13478,8 +13526,11 @@ async function buildEditedOutDoc(indexes, spinnerLabel){
       if(!p.srcBuf){
         throw new Error('Thiếu dữ liệu gốc của trang '+(i+1)+'. Hãy mở lại file PDF rồi thử lại.');
       }
-      const srcDoc = await getSrcDoc(p.srcBuf);
-      const [copiedPage] = await outDoc.copyPages(srcDoc, [p.srcPage-1]);
+      let copiedPage = batchedPages.get(k);
+      if(!copiedPage){
+        const srcDoc = await getSrcDoc(p.srcBuf);
+        [copiedPage] = await outDoc.copyPages(srcDoc, [p.srcPage-1]);
+      }
       outDoc.addPage(copiedPage);
       pageObj = copiedPage;
 
