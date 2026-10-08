@@ -154,6 +154,34 @@
      nó (position:relative) nên không bị ảnh hưởng bởi width:100% này. */
   .menu-dropdown .menu-wrap{width:100%;}
 
+  /* ===== THÊM TÍNH NĂNG: Menu "View" — Grid (lưới trên trang) + Snap to grid (bám lưới) =====
+     Lưới CHỈ để xem/canh chỉnh trên màn hình (vẽ bằng CSS lên từng .pageSlot, pointer-events:none nên không cản
+     chuột), KHÔNG được vẽ vào file PDF khi Save/Export/Snapshot. Kích thước ô tính theo đơn vị PDF (pt) và đổi theo
+     mức zoom qua biến CSS --grid-px (xem applyViewGrid_). Đường đậm mỗi 5 ô, đường nhạt mỗi ô. */
+  :root{--grid-px:24px;}
+  .pageSlot::after{
+    content:'';display:none;position:absolute;inset:0;pointer-events:none;z-index:6;
+    background-image:
+      linear-gradient(to right,  rgba(0,110,255,.50) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(0,110,255,.50) 1px, transparent 1px),
+      linear-gradient(to right,  rgba(0,110,255,.20) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(0,110,255,.20) 1px, transparent 1px);
+    background-size:
+      calc(var(--grid-px) * 5) calc(var(--grid-px) * 5),
+      calc(var(--grid-px) * 5) calc(var(--grid-px) * 5),
+      var(--grid-px) var(--grid-px),
+      var(--grid-px) var(--grid-px);
+  }
+  body.show-grid .pageSlot::after{display:block;}
+  .view-state{margin-left:auto;padding-left:18px;font-size:10.5px;color:var(--text-dim);font-weight:600;letter-spacing:.2px;}
+  .tbtn.active .view-state{color:#9fd3ff;}
+  #viewMenuDropdown{min-width:250px;}
+  #viewMenuDropdown .view-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:5px 8px 3px;font-size:12px;color:var(--text-dim);}
+  #viewMenuDropdown .view-row select{
+    background:#1c1e22;color:var(--text-light);border:1px solid var(--border);border-radius:5px;padding:4px 6px;font-size:12px;cursor:pointer;
+  }
+  #viewMenuDropdown .view-hint{padding:2px 8px 4px;font-size:10.5px;line-height:1.4;color:var(--text-dim);opacity:.85;}
+
   /* ===== THÊM TÍNH NĂNG: nút Opacity (độ mờ đục của CHỮ và HÌNH ẢNH) =====
      Dùng lại đúng cơ chế menu thả xuống (.menu-wrap/.menu-dropdown + setupToolbarMenu_) của các menu
      Document/Edit/Export/Tool. Bên trong menu là thanh trượt + ô nhập số + các nút chọn nhanh. Các
@@ -1954,6 +1982,32 @@
       </div>
     </div>
   </div>
+  <!-- ===== Menu "View" — các tuỳ chọn HIỂN THỊ trên trang (không đổi nội dung PDF):
+       • Grid: hiện/ẩn lưới ô vuông phủ lên mọi trang để canh thẳng hàng chữ/ảnh.
+       • Snap to grid: khi bật, kéo-di chuyển khối chữ/ảnh và đặt chữ mới (Add text / Edit Text vào chỗ trống) sẽ
+         "hít" vào giao điểm của lưới (giữ phím Alt để tạm tắt hít). Chọn kích thước ô ngay trong menu.
+       Cùng cơ chế mở/đóng menu (setupToolbarMenu_) với File/Document/Edit/Export/Tool. Logic ở khối "VIEW: GRID". ===== -->
+  <div class="menu-wrap" id="viewMenuWrap">
+    <button class="tbtn" id="btnViewMenu" title="Tuỳ chọn hiển thị: lưới (Grid) trên trang, bám lưới (Snap to grid)"><span class="ic">👁️</span>View ▾</button>
+    <div class="menu-dropdown" id="viewMenuDropdown">
+      <button class="tbtn" id="btnGridToggle" title="Hiện/ẩn lưới ô vuông trên các trang để canh chỉnh (chỉ để xem, không vẽ vào file PDF)"><span class="ic">▦</span>Grid<span class="view-state" id="gridStateBadge">Tắt</span></button>
+      <button class="tbtn" id="btnGridSnap" title="Bám lưới: kéo-di chuyển khối chữ/ảnh và đặt chữ mới sẽ hít vào giao điểm lưới (giữ Alt để tạm tắt)"><span class="ic">🧲</span>Snap to grid<span class="view-state" id="gridSnapBadge">Tắt</span></button>
+      <div class="sep"></div>
+      <div class="view-row"><span>Kích thước ô lưới</span>
+        <select id="gridSizeSelect" title="Kích thước mỗi ô lưới (đơn vị PDF: 1 pt = 1/72 inch)">
+          <option value="5">5 pt</option>
+          <option value="10">10 pt</option>
+          <option value="20">20 pt</option>
+          <option value="28.35">1 cm</option>
+          <option value="36">0,5 inch</option>
+          <option value="50">50 pt</option>
+          <option value="72">1 inch</option>
+        </select>
+      </div>
+      <div class="view-hint">Đường đậm = mỗi 5 ô. Lưới chỉ hiển thị trên màn hình, không xuất ra file PDF.</div>
+    </div>
+  </div>
+  <div class="sep"></div>
   <button class="tbtn" id="btnFind" title="Find — tìm từ/cụm từ trong toàn bộ tài liệu và tô sáng kết quả (Ctrl+F)"><span class="ic">🔍</span>Find</button>
   <div class="sep"></div>
 
@@ -4483,6 +4537,8 @@ setupToolbarMenu_('editMenuWrap', 'btnEditMenu', 'editMenuDropdown');
 setupToolbarMenu_('exportMenuWrap', 'btnExportMenu', 'exportMenuDropdown');
 // Menu "Tool": Insert Image/Copy/Paste/Selection area/Snapshot
 setupToolbarMenu_('toolMenuWrap', 'btnToolMenu', 'toolMenuDropdown');
+// Menu "View": Grid / Snap to grid / kích thước ô lưới
+setupToolbarMenu_('viewMenuWrap', 'btnViewMenu', 'viewMenuDropdown');
 
 // Cho phép chọn NHIỀU file PDF cùng lúc; mỗi file thành một tab (file đầu tiên hiện ngay, còn lại nạp nền).
 document.getElementById('fileInput').multiple = true;
@@ -6616,6 +6672,7 @@ function queuePreview_(idx){
 // Dựng lại toàn bộ danh sách ô (.pageSlot) cho đúng số trang hiện có — gọi mỗi khi mở file, chèn
 // PDF/trang trắng, xóa trang, hoặc đổi mức zoom (vì kích thước từng trang đổi theo scale).
 async function rebuildPageSlots(){
+  if(typeof applyViewGrid_ === 'function') applyViewGrid_();
   const gen = ++previewGen_;
   previewQueue_ = [];
   if(pageIO){ pageIO.disconnect(); pageIO = null; }
@@ -8436,6 +8493,7 @@ document.getElementById('zoomIn').onclick = ()=>{ scale = Math.min(3, scale+0.15
 document.getElementById('zoomOut').onclick = ()=>{ scale = Math.max(0.4, scale-0.15); updateZoom(); };
 async function updateZoom(){
   document.getElementById('zoomLabel').textContent = Math.round((scale/1.2)*100)+'%';
+  if(typeof applyViewGrid_ === 'function') applyViewGrid_();   // ô lưới theo pt -> px đổi theo zoom
   if(pages.length){
     // Đổi zoom làm thay đổi kích thước MỌI trang trong danh sách cuộn, không chỉ trang đang sửa,
     // nên phải dựng lại toàn bộ các ô xem trước theo scale mới.
@@ -11245,6 +11303,97 @@ function findSnapBaseline_(p, pdfX, pdfY){
   return best ? best.b : null;
 }
 
+/* =====================================================================================
+   [SỬA LỖI KHÔNG KÉO ĐƯỢC VIỀN XANH PHÍA TRÊN CỦA KHUNG CHỮ] Bắt đầu kéo tay cầm xoay/resize của đối tượng đang chọn.
+   Tách từ bộ xử lý mousedown của overlayCanvas (công cụ Select) để DÙNG CHUNG với công cụ Edit Text.
+   Nguyên nhân lỗi cũ: khi bật Edit Text, một lớp DOM (#textLayer) phủ kín trang, mỗi dòng chữ là 1 <span> bắt chuột
+   (xem buildEditTextClickLayer). Các tay cầm xanh chỉ được VẼ trên canvas bên dưới, còn phần tử bắt chuột nằm
+   trên cùng: 3 tay cầm cạnh TRÊN (nw/n/ne) nằm đè lên đúng <span> của dòng chữ vừa sửa nên bấm vào chỉ mở lại ô
+   sửa chữ chứ không bắt đầu kéo (và overlayCanvas cũng không nhận được mousemove để kéo tiếp).
+   Trả về true nếu bắt đầu một thao tác kéo (xoay hoặc resize), false nếu điểm bấm không trúng tay cầm nào.
+   ===================================================================================== */
+function beginSelectedHandleDrag_(px, py){
+  if(!pages.length || selectedEditIndex < 0) return false;
+  const pdfP = toPdfSpace(px, py);
+  const selectedEd = selectedEditIndex>=0 ? cur().edits[selectedEditIndex] : null;
+  // Rotate object: bấm trúng tay cầm tròn phía trên khung chọn -> bắt đầu xoay.
+  if(selectedEd && isOnRotateHandle_(selectedEd, px, py)){
+    pushUndo(currentIndex);
+    beginRotateDrag_(selectedEd, px, py);
+    return true;
+  }
+  const handle = getResizeHandleAt(selectedEd, px, py);
+  if(handle){
+    pushUndo(currentIndex);
+    const b = getEditBounds(selectedEd);
+    resizingImage = true;
+    resizeHandleName = handle;
+    resizeTargetEdit = selectedEd;
+    resizeAspect = (b.h > 0) ? (b.w / b.h) : 1;
+    // Rotate object: ghi nhớ góc + tâm lúc bắt đầu kéo để quy đổi chuột về khung chưa xoay.
+    resizeRotDeg = editRotation_(selectedEd);
+    resizeRotCenter = { x: b.x + b.w/2, y: b.y + b.h/2 };
+    // KHỐI CHỮ: ghi nhớ khung + vị trí chuột lúc BẮT ĐẦU kéo, để tính khung mới theo độ dời chuột
+    // (kéo tự do từng chiều, không ép tỉ lệ như ảnh). Đồng thời chốt luôn khung NỀN CHE hiện tại
+    // (ensureCoverRect) để dù kéo thu nhỏ khung chữ tới đâu, chữ gốc của PDF vẫn bị che kín.
+    if(isTextEdit(selectedEd)){
+      ensureCoverRect(selectedEd);
+      resizeStartBox = { x:b.x, y:b.y, w:b.w, h:b.h };
+      resizeStartPdf = resizeToLocal_({ x:pdfP.x, y:pdfP.y });
+    } else {
+      resizeStartBox = null; resizeStartPdf = null;
+    }
+    // Góc neo là góc ĐỐI DIỆN với tay cầm đang kéo — góc này giữ nguyên vị trí khi resize.
+    resizeAnchor = {
+      x: handle.includes('e') ? b.x : b.x + b.w,
+      y: handle.includes('s') ? b.y : b.y + b.h
+    };
+    return true;
+  }
+  return false;
+}
+
+// Công cụ Edit Text: nếu điểm bấm (trên lớp DOM click-sửa) trúng tay cầm của khối chữ ĐANG CHỌN thì bắt đầu kéo tay cầm
+// thay vì mở lại ô sửa chữ. Vì lớp DOM phủ lên canvas nên mousemove không còn tới overlayCanvas -> chuyển tiếp mousemove
+// của cửa sổ sang đúng bộ xử lý kéo của overlayCanvas (dùng lại 100% logic kéo/đồng bộ nền che đã có) cho tới khi nhả chuột.
+function tryHandleDragFromTextLayer_(ev){
+  if(activeTool !== 'edittext' || !pages.length || selectedEditIndex < 0) return false;
+  const ed = cur().edits[selectedEditIndex];
+  if(!ed || !isTextEdit(ed)) return false;
+  const {x:px, y:py} = clientToCanvasXY_(overlayCanvas, ev.clientX, ev.clientY);
+  if(!(isOnRotateHandle_(ed, px, py) || getResizeHandleAt(ed, px, py))) return false;
+  // Đang mở ô gõ chữ -> chốt nội dung đang gõ trước (cũng giống khi bấm ra ngoài), rồi mới kéo khung.
+  if(typeof activeEditInputEl !== 'undefined' && activeEditInputEl && activeEditInputEl.isConnected){
+    try{ flushPendingEdit(); }catch(e){ /* bỏ qua */ }
+  }
+  ev.preventDefault(); ev.stopPropagation();
+  if(!beginSelectedHandleDrag_(px, py)) return false;
+  const fwdMove = (m)=>{
+    if(!m.isTrusted) return;   // bỏ qua chính sự kiện giả lập bên dưới (tránh vòng lặp vô hạn)
+    overlayCanvas.dispatchEvent(new MouseEvent('mousemove', { clientX:m.clientX, clientY:m.clientY, bubbles:true, cancelable:true }));
+  };
+  const stopFwd = ()=>{
+    window.removeEventListener('mousemove', fwdMove, true);
+    window.removeEventListener('mouseup', stopFwd, true);
+  };
+  window.addEventListener('mousemove', fwdMove, true);
+  window.addEventListener('mouseup', stopFwd, true);
+  return true;
+}
+// Con trỏ chuột đổi thành mũi tên resize/xoay khi rê qua tay cầm của khối chữ đang chọn (công cụ Edit Text).
+function updateTextLayerHandleCursor_(ev){
+  let c = '';
+  if(activeTool === 'edittext' && pages.length && selectedEditIndex >= 0 && !resizingImage && !rotatingObject){
+    const ed = cur().edits[selectedEditIndex];
+    if(ed && isTextEdit(ed)){
+      const {x:px, y:py} = clientToCanvasXY_(overlayCanvas, ev.clientX, ev.clientY);
+      c = isOnRotateHandle_(ed, px, py) ? 'grab' : cursorForHandle(getResizeHandleAt(ed, px, py));
+    }
+  }
+  textLayer.style.cursor = c;
+  if(ev.target && ev.target !== textLayer && ev.target.style) ev.target.style.cursor = c;
+}
+
 overlayCanvas.addEventListener('mousedown', (e)=>{
   if(!pages.length) return;
   // QUAN TRỌNG (sửa lỗi "bấm Edit Text chỉ hiện khung viền rồi biến mất, không gõ được"):
@@ -11261,9 +11410,14 @@ overlayCanvas.addEventListener('mousedown', (e)=>{
   if(activeTool === 'addtext'){
     setActiveEditFont(currentFontFamily, currentFontSize);
     // Canh theo hàng chữ gần điểm bấm (giữ Alt để tắt) — ô nhập cũng mở đúng vị trí đã canh để thấy trước.
+    // [Snap to grid] khi bật (và không giữ Alt): X luôn hít vào lưới; Y hít vào lưới nếu không có hàng chữ nào để canh.
+    const gridOn_ = !e.altKey && viewGrid_.snap;
+    if(gridOn_) pdfP.x = gridSnapValue_(pdfP.x);
     const snapB_ = e.altKey ? null : findSnapBaseline_(cur(), pdfP.x, pdfP.y);
-    const openTopPx_ = snapB_ != null ? Math.max(0, (snapB_ - currentFontSize*0.85)*scale) : py;
-    openEditInput(px, openTopPx_, 160, 26, '', (val, colorRuns)=>{
+    if(gridOn_ && snapB_ == null) pdfP.y = gridSnapValue_(pdfP.y);
+    const openLeftPx_ = gridOn_ ? pdfP.x*scale : px;
+    const openTopPx_ = snapB_ != null ? Math.max(0, (snapB_ - currentFontSize*0.85)*scale) : (gridOn_ ? pdfP.y*scale : py);
+    openEditInput(openLeftPx_, openTopPx_, 160, 26, '', (val, colorRuns)=>{
       val = normalizeEditText(val);
       if(val && val.trim()){
         pushUndo(currentIndex);
@@ -11303,43 +11457,9 @@ overlayCanvas.addEventListener('mousedown', (e)=>{
       editLineAt(px,py,'textfix', editTextLinesFor(cur()));
     }
   } else if(activeTool === 'select'){
-    // Nếu đang có 1 ảnh được chọn sẵn, ưu tiên kiểm tra xem có bấm trúng tay cầm resize ở góc
-    // không, trước khi xử lý như một cú bấm chọn/kéo-di-chuyển bình thường.
-    const selectedEd = selectedEditIndex>=0 ? cur().edits[selectedEditIndex] : null;
-    // Rotate object: bấm trúng tay cầm tròn phía trên khung chọn -> bắt đầu xoay.
-    if(selectedEd && isOnRotateHandle_(selectedEd, px, py)){
-      pushUndo(currentIndex);
-      beginRotateDrag_(selectedEd, px, py);
-      return;
-    }
-    const handle = getResizeHandleAt(selectedEd, px, py);
-    if(handle){
-      pushUndo(currentIndex);
-      const b = getEditBounds(selectedEd);
-      resizingImage = true;
-      resizeHandleName = handle;
-      resizeTargetEdit = selectedEd;
-      resizeAspect = (b.h > 0) ? (b.w / b.h) : 1;
-      // Rotate object: ghi nhớ góc + tâm lúc bắt đầu kéo để quy đổi chuột về khung chưa xoay.
-      resizeRotDeg = editRotation_(selectedEd);
-      resizeRotCenter = { x: b.x + b.w/2, y: b.y + b.h/2 };
-      // KHỐI CHỮ: ghi nhớ khung + vị trí chuột lúc BẮT ĐẦU kéo, để tính khung mới theo độ dời chuột
-      // (kéo tự do từng chiều, không ép tỉ lệ như ảnh). Đồng thời chốt luôn khung NỀN CHE hiện tại
-      // (ensureCoverRect) để dù kéo thu nhỏ khung chữ tới đâu, chữ gốc của PDF vẫn bị che kín.
-      if(isTextEdit(selectedEd)){
-        ensureCoverRect(selectedEd);
-        resizeStartBox = { x:b.x, y:b.y, w:b.w, h:b.h };
-        resizeStartPdf = resizeToLocal_({ x:pdfP.x, y:pdfP.y });
-      } else {
-        resizeStartBox = null; resizeStartPdf = null;
-      }
-      // Góc neo là góc ĐỐI DIỆN với tay cầm đang kéo — góc này giữ nguyên vị trí khi resize.
-      resizeAnchor = {
-        x: handle.includes('e') ? b.x : b.x + b.w,
-        y: handle.includes('s') ? b.y : b.y + b.h
-      };
-      return;
-    }
+    // Tay cầm XOAY / RESIZE của đối tượng đang chọn (ảnh hoặc khối chữ): xử lý trong beginSelectedHandleDrag_()
+    // (hàm dùng chung — công cụ Edit Text cũng gọi lại đúng hàm này, xem buildEditTextClickLayer).
+    if(beginSelectedHandleDrag_(px, py)) return;
     const idx = hitTestEdits(px, py);
     // FIX: Đổi màu text bằng Select không cần Edit Text — nếu người dùng bấm chọn một khối chữ
     // KHÁC (hoặc bấm ra vùng trống) trong khi vẫn còn một màu "đang chờ áp dụng" (pendingSelectedTextColor)
@@ -11683,10 +11803,16 @@ function syncCoverToSafeArea_(ed){
 
   // (4) Cover cuối = giao giữa (2) và (3): co giãn ĐÚNG theo khung chữ, chỉ bị chặn bớt khi khung
   // được kéo lớn tới mức chạm dòng/cột lân cận.
-  const cX0 = Math.max(wantX0, safeH.left);
-  const cY0 = Math.max(wantY0, safeV.top);
-  const cX1 = Math.min(wantX1, safeH.right);
-  const cY1 = Math.min(wantY1, safeV.bottom);
+  // [SỬA LỖI] Trước đây MỌI cạnh đều bị kẹp bởi điểm giữa với dòng/cột lân cận, nên khi dòng chữ phía TRÊN nằm sát
+  // thì viền trắng phía trên không nới ra theo thao tác kéo được (kéo ra 12pt chỉ nới ~1-2pt), trong khi phía dưới
+  // (thường không có dòng sát) thì nới thoải mái -> trên/dưới không đồng đều. Nay cạnh nào người dùng ĐÃ chủ động
+  // kéo (ed.coverFree.top/bottom/left/right, xem bộ xử lý kéo khung chữ) thì viền trắng ở cạnh đó bám đúng khung kéo
+  // (cả trên lẫn dưới đều như nhau); cạnh người dùng chưa kéo vẫn được bảo vệ như cũ để không tự đè lên chữ lân cận.
+  const fr = ed.coverFree || {};
+  const cX0 = fr.left   ? wantX0 : Math.max(wantX0, safeH.left);
+  const cY0 = fr.top    ? wantY0 : Math.max(wantY0, safeV.top);
+  const cX1 = fr.right  ? wantX1 : Math.min(wantX1, safeH.right);
+  const cY1 = fr.bottom ? wantY1 : Math.min(wantY1, safeV.bottom);
 
   ed.coverX = cX0;
   ed.coverY = cY0;
@@ -11856,9 +11982,13 @@ function editLineAt(px, py, editType, customLines){
     setActiveEditFont(currentFontFamily, currentFontSize || 14);
     const defaultFS = currentFontSize || 14;
     // Cùng cách canh theo hàng chữ gần điểm bấm như công cụ Add text (xem findSnapBaseline_).
+    const gridOn2_ = !gridAltDown_ && viewGrid_.snap;          // [Snap to grid] (Alt tạm tắt)
+    if(gridOn2_) pdfP.x = gridSnapValue_(pdfP.x);
     const snapB2_ = findSnapBaseline_(p, pdfP.x, pdfP.y);
-    const openTopPx2_ = snapB2_ != null ? Math.max(0, (snapB2_ - defaultFS*0.85)*scale) : py;
-    openEditInput(px, openTopPx2_, 150, defaultFS*1.4, '', (val, colorRuns)=>{
+    if(gridOn2_ && snapB2_ == null) pdfP.y = gridSnapValue_(pdfP.y);
+    const openLeftPx2_ = gridOn2_ ? pdfP.x*scale : px;
+    const openTopPx2_ = snapB2_ != null ? Math.max(0, (snapB2_ - defaultFS*0.85)*scale) : (gridOn2_ ? pdfP.y*scale : py);
+    openEditInput(openLeftPx2_, openTopPx2_, 150, defaultFS*1.4, '', (val, colorRuns)=>{
       val = normalizeEditText(val);
       if(val && val.trim()){
         pushUndo(currentIndex);
@@ -12146,6 +12276,7 @@ window.addEventListener('keydown', (e)=>{
       e.preventDefault();
       pushUndo(currentIndex);
       edF.manualBox = false;
+      edF.coverFree = null;
       resizeTextEditToFitContent(edF);
       redrawOverlay();
       if(typeof setStatus === 'function') setStatus('Đã trả khung chữ về chế độ tự động vừa khít nội dung.');
@@ -12251,6 +12382,14 @@ overlayCanvas.addEventListener('mousemove', (e)=>{
     const fbT_ = resizeFixBox_(nx, ny, nw, nh); // bù tâm xoay (không xoay thì giữ nguyên)
     edT.x = fbT_.x; edT.y = fbT_.y; edT.w = fbT_.w; edT.h = fbT_.h;
     edT.manualBox = true; // <- CHỐT kích thước khung tại thời điểm này
+    // [SỬA LỖI VIỀN TRẮNG (NỀN CHE) PHÍA TRÊN KHÔNG KÉO TO ĐƯỢC NHƯ PHÍA DƯỚI] Cạnh nào người dùng đang kéo bằng tay
+    // thì nền che (viền trắng) ở cạnh đó được đi theo ĐÚNG khung đang kéo, không bị chặn bởi dòng lân cận nữa
+    // (xem syncCoverToSafeArea_). Cờ được GHI NHỚ theo từng cạnh nên các lần kéo sau vẫn giữ nguyên.
+    edT.coverFree = edT.coverFree || {};
+    if(resizeHandleName.indexOf('n') >= 0) edT.coverFree.top = true;
+    if(resizeHandleName.indexOf('s') >= 0) edT.coverFree.bottom = true;
+    if(resizeHandleName.indexOf('w') >= 0) edT.coverFree.left = true;
+    if(resizeHandleName.indexOf('e') >= 0) edT.coverFree.right = true;
     // FIX: Prevent Whiteout from covering neighboring text lines — mỗi lần khung chữ đổi kích
     // thước, tính lại NGAY khung nền che (coverX/Y/W/H) theo khung chữ mới, giới hạn trong vùng an
     // toàn quanh dòng lân cận. Nhờ đó: kéo khung NHỎ lại -> whiteout cũng thu nhỏ theo; kéo khung
@@ -12284,7 +12423,11 @@ overlayCanvas.addEventListener('mousemove', (e)=>{
       const b = getEditBounds(ed);
       const ddx = newX-b.x, ddy = newY-b.y;
       ed.points = ed.points.map(pt=>({x:pt.x+ddx, y:pt.y+ddy}));
-    } else { ed.x = newX; ed.y = newY; }
+    } else {
+      // [Snap to grid] khi bật: góc trên-trái của khung "hít" vào giao điểm lưới (giữ Alt để tạm tắt).
+      ed.x = (e.altKey ? newX : gridSnapValue_(newX));
+      ed.y = (e.altKey ? newY : gridSnapValue_(newY));
+    }
     redrawOverlay();
   } else if(activeTool==='select' && selectedEditIndex>=0 && cur().edits[selectedEditIndex] &&
             (cur().edits[selectedEditIndex].type==='image' || isTextEdit(cur().edits[selectedEditIndex]))){
@@ -12522,6 +12665,8 @@ function buildEditTextClickLayer(idx){
         ev.preventDefault();
         ev.stopPropagation();
         if(activeTool !== 'edittext' || currentIndex !== idx) return;
+        // Bấm trúng tay cầm (nhất là 3 tay cầm cạnh TRÊN đè lên dòng chữ) của khung đang chọn -> kéo khung, không mở ô sửa.
+        if(tryHandleDragFromTextLayer_(ev)) return;
         const cx = (line.x0 + (line.x1-line.x0)/2) * scale;
         const cy = (line.y0 + (line.y1-line.y0)/2) * scale;
         editLineAt(cx, cy, 'textfix', editTextLinesFor(cur()));
@@ -12536,10 +12681,13 @@ function buildEditTextClickLayer(idx){
   textLayer.onmousedown = (ev)=>{
     if(ev.target !== textLayer) return; // đã có span riêng xử lý phía trên
     if(activeTool !== 'edittext' || currentIndex !== idx) return;
+    if(tryHandleDragFromTextLayer_(ev)) return;   // bấm trúng tay cầm của khung đang chọn (vùng trống) -> kéo khung
     ev.preventDefault();
     const {x:px, y:py} = clientToCanvasXY_(overlayCanvas, ev.clientX, ev.clientY);
     editLineAt(px, py, 'textfix', editTextLinesFor(cur()));
   };
+  // Đổi con trỏ khi rê qua tay cầm (mousemove của span nổi bọt lên #textLayer).
+  textLayer.onmousemove = updateTextLayerHandleCursor_;
 }
 
 // Chuẩn bị dữ liệu dòng chữ (native + OCR) cho trang đang mở rồi dựng lớp DOM click-sửa ở trên —
@@ -23404,6 +23552,84 @@ window.arrangeSelected = arrange; window.toggleLayersPanel = togglePanel;
   });
 })();
 
+</script>
+<script>
+/* =====================================================================================
+   VIEW: GRID — menu "View" (Grid / Snap to grid / kích thước ô lưới)
+   - Grid: bật/tắt class "show-grid" trên <body>; CSS vẽ lưới lên mọi .pageSlot (xem .pageSlot::after).
+     Ô lưới tính theo pt PDF; --grid-px = size * scale nên tự co giãn theo zoom (xem applyViewGrid_, được gọi từ
+     updateZoom/rebuildPageSlots). Lưới KHÔNG nằm trong dữ liệu trang nên không bao giờ bị xuất ra PDF/ảnh chụp.
+   - Snap to grid: gridSnapValue_() làm tròn toạ độ PDF (pt) tới bội số gần nhất của kích thước ô. Dùng khi kéo-di chuyển
+     khối chữ/ảnh (mousemove của overlayCanvas) và khi đặt chữ mới (Add text / Edit Text vào chỗ trống). Giữ Alt để tạm tắt.
+   - Cài đặt (bật/tắt, kích thước ô) được nhớ trong localStorage của trình duyệt.
+   ===================================================================================== */
+const VIEW_GRID_KEY_ = 'seahorse_view_grid_v1';
+const viewGrid_ = { on:false, snap:false, size:20 };
+let gridAltDown_ = false;               // phím Alt đang giữ -> tạm tắt hít lưới (dùng cho nơi không có sự kiện chuột)
+window.addEventListener('keydown', (e)=>{ if(e.key === 'Alt') gridAltDown_ = true; });
+window.addEventListener('keyup',   (e)=>{ if(e.key === 'Alt') gridAltDown_ = false; });
+window.addEventListener('blur',    ()=>{ gridAltDown_ = false; });
+
+function gridSnapValue_(v){
+  if(!viewGrid_.snap) return v;
+  const s = viewGrid_.size;
+  if(!(s > 0)) return v;
+  return Math.round(v / s) * s;
+}
+function loadViewGrid_(){
+  try{
+    const j = JSON.parse(localStorage.getItem(VIEW_GRID_KEY_) || 'null');
+    if(j && typeof j === 'object'){
+      viewGrid_.on = !!j.on;
+      viewGrid_.snap = !!j.snap;
+      const s = Number(j.size);
+      if(s >= 1 && s <= 200) viewGrid_.size = s;
+    }
+  }catch(e){ /* trình duyệt chặn localStorage -> dùng mặc định */ }
+}
+function saveViewGrid_(){
+  try{ localStorage.setItem(VIEW_GRID_KEY_, JSON.stringify(viewGrid_)); }catch(e){ /* bỏ qua */ }
+}
+function applyViewGrid_(){
+  document.body.classList.toggle('show-grid', !!viewGrid_.on);
+  let sc = 1.2;
+  try{ sc = scale; }catch(e){ /* chưa khai báo -> mặc định */ }
+  document.documentElement.style.setProperty('--grid-px', (viewGrid_.size * sc) + 'px');
+  const bGrid = document.getElementById('btnGridToggle'), bSnap = document.getElementById('btnGridSnap');
+  const tGrid = document.getElementById('gridStateBadge'), tSnap = document.getElementById('gridSnapBadge');
+  const sel = document.getElementById('gridSizeSelect');
+  if(bGrid) bGrid.classList.toggle('active', !!viewGrid_.on);
+  if(bSnap) bSnap.classList.toggle('active', !!viewGrid_.snap);
+  if(tGrid) tGrid.textContent = viewGrid_.on ? 'Bật' : 'Tắt';
+  if(tSnap) tSnap.textContent = viewGrid_.snap ? 'Bật' : 'Tắt';
+  if(sel){
+    // Kích thước đã lưu có thể không nằm trong danh sách dựng sẵn -> thêm tuỳ chọn tương ứng để hiển thị đúng.
+    const v = String(viewGrid_.size);
+    if(![...sel.options].some(o => Number(o.value) === viewGrid_.size)){
+      const o = document.createElement('option'); o.value = v; o.textContent = v + ' pt'; sel.appendChild(o);
+    }
+    sel.value = [...sel.options].find(o => Number(o.value) === viewGrid_.size).value;
+  }
+}
+(function initViewGrid_(){
+  loadViewGrid_();
+  const bGrid = document.getElementById('btnGridToggle');
+  const bSnap = document.getElementById('btnGridSnap');
+  const sel = document.getElementById('gridSizeSelect');
+  if(bGrid) bGrid.addEventListener('click', ()=>{
+    viewGrid_.on = !viewGrid_.on; saveViewGrid_(); applyViewGrid_();
+    if(typeof setStatus === 'function') setStatus(viewGrid_.on ? 'Đã bật lưới (Grid).' : 'Đã tắt lưới (Grid).');
+  });
+  if(bSnap) bSnap.addEventListener('click', ()=>{
+    viewGrid_.snap = !viewGrid_.snap; saveViewGrid_(); applyViewGrid_();
+    if(typeof setStatus === 'function') setStatus(viewGrid_.snap ? 'Đã bật bám lưới (Snap to grid) — giữ Alt để tạm tắt.' : 'Đã tắt bám lưới (Snap to grid).');
+  });
+  if(sel) sel.addEventListener('change', ()=>{
+    const s = Number(sel.value);
+    if(s >= 1 && s <= 200){ viewGrid_.size = s; saveViewGrid_(); applyViewGrid_(); }
+  });
+  applyViewGrid_();
+})();
 </script>
 </body>
 </html>
