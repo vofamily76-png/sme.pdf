@@ -1910,10 +1910,11 @@
     <div class="menu-dropdown" id="toolMenuDropdown">
       <button class="tbtn" id="btnInsertImage" data-perm="insertImage" style="display:none" title="Chèn ảnh (PNG/JPG) — sau khi chọn ảnh, bạn CHỌN TRANG cần chèn (một hoặc nhiều trang), chỉnh vị trí/kích thước rồi bấm Chèn; ảnh chèn xong có thể kéo để di chuyển, kéo 4 góc để đổi kích thước"><span class="ic">🖼️</span>Insert Image</button>
       <input type="file" id="insertImageInput" accept="image/png,image/jpeg,image/jpg,image/webp,image/gif,image/bmp" style="display:none">
-      <button class="tbtn" id="btnCopyImage" title="Copy — copy CHỮ đang bôi đen (công cụ 'Select text to copy') hoặc khối chữ đang chọn, hoặc copy ẢNH đang chọn (Ctrl+C). Dùng Paste để dán lại."><span class="ic">📋</span>Copy</button>
+      <button class="tbtn" id="btnCopyImage" title="Copy — copy VÙNG CHỌN (sau khi kéo chọn bằng 'Selection area': copy cả ảnh vùng đó kèm chữ bên trong; Ctrl+C), hoặc CHỮ đang bôi đen (công cụ 'Select text to copy') / khối chữ đang chọn, hoặc ẢNH đang chọn. Dùng Paste để dán lại."><span class="ic">📋</span>Copy</button>
+      <button class="tbtn" id="btnCopyAreaText" title="Copy Area Text — chỉ copy CHỮ nằm trong vùng đã chọn bằng 'Selection area' (dán lại bằng Paste thành khối chữ mới, hoặc dán sang Word/Notepad)"><span class="ic">🔤</span>Copy Area Text</button>
       <button class="tbtn" id="btnPasteImage" title="Paste (Ctrl+V) — dán CHỮ vừa chọn/copy thành khối chữ mới trên trang (kéo để di chuyển, đúp chuột để sửa); nếu vừa copy ảnh thì dán ảnh"><span class="ic">📌</span>Paste</button>
       <div class="sep"></div>
-      <button class="tbtn" data-tool="region" id="toolRegion" title="Kéo chọn một vùng trên trang, sau đó bấm 'Edit Text' hoặc 'Sửa văn bản (OCR)' để sửa nhanh cả vùng"><span class="ic">🔲</span>Selection area</button>
+      <button class="tbtn" data-tool="region" id="toolRegion" title="Kéo chọn một vùng trên trang, sau đó: bấm Tool ▸ Copy (Ctrl+C) để copy vùng (ảnh + chữ), 'Copy Area Text' để copy chữ, 'Snapshot' để lưu ảnh, hoặc 'Edit Text' / 'Sửa văn bản (OCR)' để sửa nhanh cả vùng"><span class="ic">🔲</span>Selection area</button>
       <button class="tbtn" id="btnSnapshot" title="Dùng công cụ 'Selection area' để kéo chọn một vùng trên trang, sau đó bấm nút này để chụp đúng vùng đó (kèm mọi chỉnh sửa đã thêm) và lưu thành file ảnh PNG"><span class="ic">📸</span>Snapshot</button>
       <button class="tbtn" data-tool="crop" id="toolCrop" title="Crop — kéo một khung chữ nhật quanh vùng muốn GIỮ LẠI, phần ngoài khung bị ẩn (CropBox). Dùng để bỏ lề trắng, vệt đen khi scan, header/footer, số trang; nội dung phóng to hơn khi đọc trên điện thoại/Kindle."><span class="ic">📐</span>Crop</button>
       <div class="sep"></div>
@@ -6562,6 +6563,11 @@ function activateSlot(idx, prevIdx, w, h){
 // Vẽ nội dung PDF/trang trắng + mọi chỉnh sửa (edits) của trang idx lên canvas xem trước TĨNH
 // (không tương tác) trong ô của nó — dùng cho các trang đang không phải trang "sống" đang chỉnh
 // sửa, để khi cuộn tới, người dùng vẫn thấy đúng nội dung mới nhất của trang đó.
+// Xem trước TĨNH của các trang không phải trang đang sửa: nếu ảnh quá lớn (zoom rất cao, tới 1000%) thì vẽ ở độ phân
+// giải thấp hơn (tối đa ~16 triệu điểm ảnh) rồi phóng bằng CSS tới đúng kích thước hiển thị — chỉ là ảnh tạm trong lúc cuộn,
+// trang đang sửa luôn được vẽ sắc nét ở độ phân giải đầy đủ.
+const PREVIEW_MAX_PX_ = 16e6;
+function previewQuality_(w, h){ const px = w * h; return px > PREVIEW_MAX_PX_ ? Math.sqrt(PREVIEW_MAX_PX_ / px) : 1; }
 async function renderStaticPreview(idx){
   const slot = pageSlots[idx];
   const p = pages[idx];
@@ -6574,10 +6580,13 @@ async function renderStaticPreview(idx){
     try{ slot.renderTask.cancel(); }catch(err){}
     slot.renderTask = null;
   }
-  let w,h;
+  let w,h,q = 1, fullW = 0, fullH = 0;   // fullW/H: kích thước hiển thị (CSS) đầy đủ của trang ở scale hiện tại
   if(p.type==='pdf'){
     const page = await p.doc.getPage(p.srcPage);
-    const viewport = page.getViewport({scale});
+    const fullVp = page.getViewport({scale});
+    q = previewQuality_(fullVp.width, fullVp.height);
+    fullW = fullVp.width; fullH = fullVp.height;
+    const viewport = q < 1 ? page.getViewport({scale: scale * q}) : fullVp;
     w = viewport.width; h = viewport.height;
     c.width = w; c.height = h;
     c.style.width = ''; c.style.height = '';
@@ -6592,7 +6601,9 @@ async function renderStaticPreview(idx){
       if(slot.renderTask === task) slot.renderTask = null;
     }
   } else {
-    w = p.width*scale; h = p.height*scale;
+    q = previewQuality_(p.width*scale, p.height*scale);
+    fullW = p.width*scale; fullH = p.height*scale;
+    w = p.width*scale*q; h = p.height*scale*q;
     c.width = w; c.height = h;
     c.style.width = ''; c.style.height = '';
     const ctx = c.getContext('2d');
@@ -6600,18 +6611,27 @@ async function renderStaticPreview(idx){
     ctx.fillRect(0,0,w,h);
   }
   const ctx = c.getContext('2d');
-  for(const e of p.edits) drawEdit(ctx, e, scale);
-  try{ findDrawHighlights_(ctx, p, scale); }catch(err){ /* tô sáng kết quả Find (chỉ hiển thị, không ghi vào PDF) */ }
-  try{ redactDrawMarksOn_(ctx, p, scale, false); }catch(err){ /* viền đỏ Redaction (chỉ hiển thị) */ }
+  const sc = scale * q;   // q = 1 ở mọi mức zoom thường; chỉ < 1 khi ảnh xem trước quá lớn
+  for(const e of p.edits) drawEdit(ctx, e, sc);
+  try{ findDrawHighlights_(ctx, p, sc); }catch(err){ /* tô sáng kết quả Find (chỉ hiển thị, không ghi vào PDF) */ }
+  try{ redactDrawMarksOn_(ctx, p, sc, false); }catch(err){ /* viền đỏ Redaction (chỉ hiển thị) */ }
   // Xoay ảnh xem trước tĩnh này theo đúng góc xoay đã đặt cho trang (nếu có) — chỉ ảnh hưởng hiển
   // thị, KHÔNG đụng gì tới toạ độ edits vừa vẽ ở trên (đã vẽ xong trước khi xoay raster).
   // Crop: chỉ giữ vùng crop của trang (cắt TRƯỚC khi xoay, vì crop tính theo hệ toạ độ chưa xoay).
-  const hasCrop = cropCanvasToRect_(c, p.crop, scale);
+  const hasCrop = cropCanvasToRect_(c, p.crop, sc);
   slot.el.classList.toggle('cropped', hasCrop);
   const rot = getPageRotation_(p);
   if(rot) applyCanvasRotation_(c, rot);
-  slot.el.style.width = c.width+'px';
-  slot.el.style.height = c.height+'px';
+  let cssW = c.width, cssH = c.height;
+  if(q < 1){
+    // Trang không crop/xoay: dùng đúng kích thước đầy đủ (làm tròn như ô giữ chỗ) để không lệch 1px so với bố cục;
+    // trang có crop/xoay: suy ra từ tỉ lệ giảm độ phân giải.
+    if(!hasCrop && !rot){ cssW = Math.max(1, Math.round(fullW)); cssH = Math.max(1, Math.round(fullH)); }
+    else { cssW = c.width / q; cssH = c.height / q; }
+    c.style.width = cssW+'px'; c.style.height = cssH+'px';
+  }
+  slot.el.style.width = cssW+'px';
+  slot.el.style.height = cssH+'px';
   slot.rendered = true; // đã có ảnh xem trước thật -> không cần vẽ lười nữa
 }
 
@@ -8489,18 +8509,118 @@ document.getElementById('pageNumInput').onchange = (e)=>{
 };
 
 // ---------- Zoom ----------
-document.getElementById('zoomIn').onclick = ()=>{ scale = Math.min(3, scale+0.15); updateZoom(); };
-document.getElementById('zoomOut').onclick = ()=>{ scale = Math.max(0.4, scale-0.15); updateZoom(); };
+// Mức zoom hiển thị (%) = scale / ZOOM_BASE_ x 100  (scale 1.2 = 100%). Tối đa 1000% (scale 12).
+// Các bậc zoom (Zoom in/out, Ctrl+=/Ctrl+-, Ctrl+lăn chuột, danh sách chọn nhanh khi bấm vào số %):
+const ZOOM_BASE_ = 1.2;
+const ZOOM_MIN_PCT_ = 33;
+const ZOOM_MAX_PCT_ = 1000;
+const ZOOM_LEVELS_ = [33, 50, 67, 75, 100, 125, 150, 200, 300, 400, 500, 600, 800, 1000];
+// Giới hạn bộ nhớ: canvas của trang đang sửa (pdfCanvas + overlayCanvas + baseCanvas) có kích thước = trang x scale.
+// Trang A4/Letter ở 1000% ~ 7000x10000 px (~72 triệu điểm ảnh/canvas) vẫn được; trang rất lớn (A3, A0...) tự bị giới hạn
+// mức zoom tối đa thấp hơn để không làm tràn bộ nhớ/trắng canvas. Tính theo TRANG LỚN NHẤT trong file (cuộn sang
+// trang đó vẫn an toàn).
+const ZOOM_MAX_CANVAS_PX_ = 76e6;
+function zoomCapPct_(){
+  let maxArea = 595 * 842;
+  for(const p of (typeof pages !== 'undefined' ? pages : [])){
+    const sz = p && p._baseSize ? p._baseSize : (p && p.type !== 'pdf' && p.width ? { w: p.width, h: p.height } : null);
+    if(sz && sz.w * sz.h > maxArea) maxArea = sz.w * sz.h;
+  }
+  const capScale = Math.sqrt(ZOOM_MAX_CANVAS_PX_ / maxArea);
+  return Math.max(ZOOM_MIN_PCT_, Math.min(ZOOM_MAX_PCT_, Math.floor(capScale / ZOOM_BASE_ * 100)));
+}
+function currentZoomPct_(){ return scale / ZOOM_BASE_ * 100; }
+let zoomBusy_ = false;
+async function setZoomPct_(pct){
+  if(zoomBusy_) return;
+  const cap = zoomCapPct_();
+  let target = Math.max(ZOOM_MIN_PCT_, Math.min(ZOOM_MAX_PCT_, pct));
+  if(target > cap){
+    target = cap;
+    if(typeof toast_ === 'function') toast_('Trang lớn nhất trong file này chỉ zoom tối đa ' + cap + '% (giới hạn bộ nhớ).', 4000);
+  }
+  if(Math.abs(target - currentZoomPct_()) < 0.5) return;
+  scale = target / 100 * ZOOM_BASE_;
+  await updateZoom();
+}
+function zoomStep_(dir){
+  const cur = currentZoomPct_();
+  let next;
+  if(dir > 0){ next = ZOOM_LEVELS_.find(l => l > cur + 0.5); if(next === undefined) next = ZOOM_MAX_PCT_; }
+  else { for(const l of ZOOM_LEVELS_){ if(l < cur - 0.5) next = l; } if(next === undefined) next = ZOOM_MIN_PCT_; }
+  return setZoomPct_(next);
+}
+document.getElementById('zoomIn').onclick = ()=>{ zoomStep_(+1); };
+document.getElementById('zoomOut').onclick = ()=>{ zoomStep_(-1); };
 async function updateZoom(){
-  document.getElementById('zoomLabel').textContent = Math.round((scale/1.2)*100)+'%';
-  if(typeof applyViewGrid_ === 'function') applyViewGrid_();   // ô lưới theo pt -> px đổi theo zoom
-  if(pages.length){
-    // Đổi zoom làm thay đổi kích thước MỌI trang trong danh sách cuộn, không chỉ trang đang sửa,
-    // nên phải dựng lại toàn bộ các ô xem trước theo scale mới.
-    await rebuildPageSlots();
-    await renderPage(currentIndex);
+  zoomBusy_ = true;
+  try{
+    document.getElementById('zoomLabel').textContent = Math.round((scale/ZOOM_BASE_)*100)+'%';
+    if(typeof applyViewGrid_ === 'function') applyViewGrid_();   // ô lưới theo pt -> px đổi theo zoom
+    if(pages.length){
+      // Giữ nguyên vùng đang nhìn (tâm khung nhìn) khi đổi zoom, thay vì nhảy về đầu trang.
+      const sc = pagesScroll;
+      const rx = (sc.scrollLeft + sc.clientWidth/2) / Math.max(1, sc.scrollWidth);
+      const ry = (sc.scrollTop + sc.clientHeight/2) / Math.max(1, sc.scrollHeight);
+      // Đổi zoom làm thay đổi kích thước MỌI trang trong danh sách cuộn, không chỉ trang đang sửa,
+      // nên phải dựng lại toàn bộ các ô xem trước theo scale mới.
+      await rebuildPageSlots();
+      await renderPage(currentIndex, { scrollIntoView:false });
+      sc.scrollLeft = Math.max(0, rx * sc.scrollWidth - sc.clientWidth/2);
+      sc.scrollTop = Math.max(0, ry * sc.scrollHeight - sc.clientHeight/2);
+    }
+  }finally{
+    zoomBusy_ = false;
   }
 }
+
+// Bấm vào số % -> danh sách chọn nhanh mức zoom (tới 1000%).
+(function setupZoomPresetMenu_(){
+  const label = document.getElementById('zoomLabel');
+  if(!label) return;
+  label.style.cursor = 'pointer';
+  label.title = 'Chọn mức zoom (tối đa 1000%). Ctrl + lăn chuột để zoom nhanh.';
+  const menu = document.createElement('div');
+  menu.id = 'zoomPresetMenu';
+  menu.style.cssText = 'position:fixed;z-index:100002;display:none;background:#2b2e34;border:1px solid #454a52;border-radius:8px;padding:4px;box-shadow:0 8px 28px rgba(0,0,0,.5);min-width:96px;max-height:70vh;overflow:auto;font-size:13px;color:#eceff1;';
+  document.body.appendChild(menu);
+  function close(){ menu.style.display = 'none'; document.removeEventListener('mousedown', onDoc, true); document.removeEventListener('keydown', onKey, true); }
+  function onDoc(e){ if(!menu.contains(e.target) && e.target !== label) close(); }
+  function onKey(e){ if(e.key === 'Escape'){ e.preventDefault(); close(); } }
+  label.addEventListener('click', ()=>{
+    if(menu.style.display === 'block'){ close(); return; }
+    const cap = zoomCapPct_(), cur = Math.round(currentZoomPct_());
+    menu.innerHTML = '';
+    for(const lv of ZOOM_LEVELS_.slice().reverse()){
+      const b = document.createElement('button');
+      b.type = 'button'; b.textContent = lv + '%';
+      const disabled = lv > cap;
+      b.disabled = disabled;
+      b.title = disabled ? 'Vượt giới hạn bộ nhớ của trang lớn nhất trong file' : '';
+      b.style.cssText = 'display:block;width:100%;text-align:left;background:' + (lv === cur ? '#e2402c' : 'transparent') + ';color:' + (disabled ? '#6b7078' : '#eceff1') + ';border:none;border-radius:5px;padding:6px 12px;cursor:' + (disabled ? 'not-allowed' : 'pointer') + ';font-size:13px;';
+      if(!disabled){
+        b.onmouseenter = ()=>{ if(lv !== cur) b.style.background = 'rgba(255,255,255,.1)'; };
+        b.onmouseleave = ()=>{ if(lv !== cur) b.style.background = 'transparent'; };
+        b.onclick = ()=>{ close(); setZoomPct_(lv); };
+      }
+      menu.appendChild(b);
+    }
+    const r = label.getBoundingClientRect();
+    menu.style.display = 'block';
+    menu.style.left = Math.max(4, Math.min(window.innerWidth - menu.offsetWidth - 4, r.left + r.width/2 - menu.offsetWidth/2)) + 'px';
+    menu.style.top = Math.min(window.innerHeight - menu.offsetHeight - 4, r.bottom + 6) + 'px';
+    document.addEventListener('mousedown', onDoc, true);
+    document.addEventListener('keydown', onKey, true);
+  });
+  // Ctrl + lăn chuột trên vùng xem trang: zoom in/out theo bậc.
+  pagesScroll.addEventListener('wheel', (e)=>{
+    if(!e.ctrlKey || !pages.length) return;
+    e.preventDefault();
+    if(zoomBusy_) return;
+    zoomStep_(e.deltaY < 0 ? +1 : -1);
+  }, { passive:false });
+})();
+
 
 
 </script>
@@ -8522,7 +8642,7 @@ const toolLabels = {
   crop:'Crop — kéo khung quanh vùng muốn GIỮ LẠI (kéo cạnh/góc để chỉnh, kéo trong khung để dời), rồi bấm Áp dụng hoặc Enter. Phần ngoài khung sẽ bị ẩn khi lưu PDF.',
   addtext:'Add text',
   edittext:'Edit Text — trỏ chuột vào bất kỳ đoạn chữ nào (chữ PDF thật hoặc chữ trong ảnh/scan) rồi bấm để sửa ngay, không cần chọn vùng.',
-  region:'Selection area — kéo để chọn một vùng trên trang, sau đó bấm "Edit Text" hoặc "Edit Document (OCR-PDF scan)" để sửa nhanh toàn bộ chữ trong vùng cùng lúc',
+  region:'Selection area — kéo để chọn một vùng trên trang, sau đó bấm Ctrl+C (hoặc Tool ▸ Copy) để copy vùng đó (ảnh + chữ) rồi Paste/Ctrl+V để dán; hoặc bấm "Edit Text" / "Edit Document (OCR-PDF scan)" để sửa nhanh toàn bộ chữ trong vùng cùng lúc',
   ocr:'Edit Document (OCR-PDF scan) — dùng cho PDF scan/ảnh, trỏ chuột vào dòng chữ để thấy khung cam báo có thể sửa, bấm vào để sửa ngay. Mẹo: dùng "Selection area" trước để sửa nhanh cả đoạn nhiều dòng.',
   highlight:'Marker — kéo để chọn vùng',
   draw:'Paint',
@@ -12289,6 +12409,13 @@ window.addEventListener('keydown', (e)=>{
     if(ed && ed.type==='image'){ e.preventDefault(); copySelectedImage(); }
     else if(isTextEdit(ed)){ e.preventDefault(); copyAny_(); }
   }
+  // [MỚI] Ctrl/Cmd+C khi đang dùng công cụ "Selection area" và đã có vùng chọn -> copy vùng chọn (ảnh + chữ).
+  if((e.ctrlKey || e.metaKey) && e.key.toLowerCase()==='c' && activeTool==='region' && pages.length && getUsableRegion_()){
+    const ae = document.activeElement;
+    if(!(ae && (ae.tagName==='INPUT' || ae.tagName==='TEXTAREA' || ae.isContentEditable)) && !(window.getSelection && String(window.getSelection()).length)){
+      e.preventDefault(); copyAny_();
+    }
+  }
   // Ctrl/Cmd+V: dán ảnh — bỏ qua nếu người dùng đang bấm Ctrl+V vào một ô nhập liệu/contenteditable
   // khác (đã lọc INPUT/TEXTAREA ở trên; còn lại kiểm tra thêm contenteditable cho các ô soạn chữ).
   if((e.ctrlKey || e.metaKey) && e.key.toLowerCase()==='v' && pages.length){
@@ -12996,16 +13123,178 @@ async function storeTextClip_(clip, silent){
   if(!silent) showToast_('📋 Đã copy chữ: "' + previewText_(clip.text) + '" — vào Tool ▸ Paste (hoặc Ctrl+V) để dán.');
 }
 
-// Nút Copy chung: ảnh đang chọn -> copy ảnh; chữ đang bôi đen / khối chữ đang chọn -> copy chữ.
+// Nút Copy chung. Thứ tự ưu tiên:
+//  1) ảnh đang chọn (công cụ Select) -> copy ảnh;
+//  2) [MỚI] đang dùng công cụ "Selection area" và có vùng chọn -> copy VÙNG CHỌN (ảnh vùng + chữ bên trong);
+//  3) chữ đang bôi đen / khối chữ đang chọn -> copy chữ;
+//  4) [MỚI] còn vùng chọn trên trang -> copy vùng chọn;
+//  5) chữ vừa copy trước đó (clipboard nội bộ).
 async function copyAny_(){
   const ed = (pages.length && selectedEditIndex>=0) ? cur().edits[selectedEditIndex] : null;
-  if(ed && ed.type==='image'){ return copySelectedImage(); }
-  const clip = getTextLayerSelectionClip_()
-    || (ed && isTextEdit(ed) && ed.text ? clipFromTextEdit_(ed) : null)
-    || (clipboardKind_==='text' ? appTextClipboard : null);
+  const regionTool = (typeof activeTool !== 'undefined' && activeTool === 'region') && !!getUsableRegion_();
+  if(ed && ed.type==='image' && !regionTool){ return copySelectedImage(); }
+  if(regionTool && !getTextLayerSelectionClip_()){ return copyRegionSelection_(); }
+  const live = getTextLayerSelectionClip_()
+    || (ed && isTextEdit(ed) && ed.text ? clipFromTextEdit_(ed) : null);
+  if(live){ return storeTextClip_(live); }
+  if(getUsableRegion_()){ return copyRegionSelection_(); }
+  const clip = (clipboardKind_==='text' ? appTextClipboard : null);
   if(clip){ return storeTextClip_(clip); }
-  showToast_('Hãy bôi đen chữ bằng "Select text to copy" (hoặc chọn một ảnh/khối chữ) rồi bấm Copy.');
+  showToast_('Hãy bôi đen chữ bằng "Select text to copy", chọn một ảnh/khối chữ, hoặc kéo chọn một vùng bằng "Selection area" rồi bấm Copy.');
 }
+
+// ---------- [MỚI] Copy VÙNG CHỌN (công cụ "Selection area") ----------
+// Sau khi kéo chọn một vùng bằng Tool ▸ Selection area, bấm Tool ▸ Copy (hoặc Ctrl+C):
+//  - ẢNH của đúng vùng đó (nét, kèm mọi chỉnh sửa đã thêm: chữ, ảnh chèn, tô, che...) được ghi vào clipboard nội bộ và
+//    clipboard hệ thống -> Tool ▸ Paste (Ctrl+V) dán thành một ảnh mới trên trang đúng kích thước vùng chọn;
+//  - CHỮ nằm trong vùng (nếu có) được ghi kèm vào clipboard hệ thống để dán sang Word/Notepad.
+// Nút "Copy Area Text" chỉ copy chữ trong vùng (dán lại thành khối chữ).
+function getUsableRegion_(){
+  if(!pages.length) return null;
+  const r = regionSelections[cur().id];
+  if(!r || Math.abs(r.w) < 4 || Math.abs(r.h) < 4) return null;
+  return { x: Math.min(r.x, r.x + r.w), y: Math.min(r.y, r.y + r.h), w: Math.abs(r.w), h: Math.abs(r.h) };
+}
+
+// Vẽ riêng đúng vùng cần copy (không dựng cả trang -> nhẹ bộ nhớ ngay cả với trang khổ lớn). Trả về { canvas, wPt, hPt } hoặc null.
+async function renderRegionToCanvas_(p, idx, region){
+  const pg = await getPageSizePt_(idx);
+  const x0 = Math.max(0, region.x), y0 = Math.max(0, region.y);
+  const x1 = Math.min(pg.w, region.x + region.w), y1 = Math.min(pg.h, region.y + region.h);
+  if(x1 - x0 < 1 || y1 - y0 < 1) return null;                       // vùng nằm ngoài trang
+  const wPt = x1 - x0, hPt = y1 - y0;
+  let S = Math.min(8, Math.max(3, 2000 / Math.max(wPt, hPt)));       // đủ nét nhưng không quá nặng
+  const MAX_PX = 25e6;
+  while(Math.ceil(wPt * S) * Math.ceil(hPt * S) > MAX_PX) S *= 0.8;
+  const sx = Math.floor(x0 * S), sy = Math.floor(y0 * S);
+  const sw = Math.max(1, Math.ceil(wPt * S)), sh = Math.max(1, Math.ceil(hPt * S));
+  const out = document.createElement('canvas');
+  out.width = sw; out.height = sh;
+  const ctx = out.getContext('2d');
+  ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, sw, sh);
+  if(p.type === 'pdf'){
+    const page = await p.doc.getPage(p.srcPage);
+    const vp = page.getViewport({ scale: S });
+    await page.render({ canvasContext: ctx, viewport: vp, transform: [1, 0, 0, 1, -sx, -sy] }).promise;
+  }
+  ctx.save();
+  ctx.translate(-sx, -sy);
+  for(const e of p.edits) drawEdit(ctx, e, S);                      // vẽ đè mọi chỉnh sửa đã thêm
+  ctx.restore();
+  return { canvas: out, wPt, hPt };
+}
+
+// Gom CHỮ trong vùng: chữ PDF thật (+ chữ OCR nếu đã chạy OCR trước đó, không tự chạy OCR vì chậm), bỏ phần chữ gốc đã bị che/sửa,
+// thêm chữ của các khối chữ do người dùng chèn/sửa. Trả về { text, avgFontSize }.
+async function getRegionText_(p, idx, region){
+  let native = [];
+  if(p.type === 'pdf'){
+    if(p.textItems === null || p.textItems === undefined) await extractNativeText(idx);
+    native = p.textItems || [];
+  }
+  let items = native;
+  if(p.ocrWords && p.ocrWords.length){
+    items = native.concat(p.ocrWords.filter(o => !native.some(n => boxesOverlapMostly(o, n))));
+  }
+  const covers = [], added = [];
+  const rx2 = region.x + region.w, ry2 = region.y + region.h;
+  for(const ed of p.edits){
+    try{
+      if(isTextEdit(ed)){
+        const cb = getCoverRect(ed);
+        if(cb) covers.push({ x0: cb.x, y0: cb.y, x1: cb.x + cb.w, y1: cb.y + cb.h });
+        if(ed.text && String(ed.text).trim()){
+          const fs = ed.fontSize || 12;
+          const w = ed.w || Math.max(fs, String(ed.text).length * fs * 0.5);
+          const h = ed.h || fs * 1.3 * (String(ed.text).split('\n').length);
+          if(ed.x < rx2 && ed.x + w > region.x && ed.y < ry2 && ed.y + h > region.y){
+            added.push({ text: String(ed.text), x0: ed.x, y0: ed.y, x1: ed.x + w, y1: ed.y + h, fontSize: fs });
+          }
+        }
+      } else if(ed.type === 'whiteout' && ed.w && ed.h){
+        covers.push({ x0: ed.x, y0: ed.y, x1: ed.x + ed.w, y1: ed.y + ed.h });
+      }
+    }catch(err){ /* bỏ qua edit lạ, vẫn lấy được chữ gốc */ }
+  }
+  if(covers.length) items = items.filter(it => !covers.some(c => boxesOverlapMostly(it, c)));
+  items = items.concat(added);
+  const { lines, avgFontSize } = collectRegionLines(items, region);
+  const text = lines.map(l => l.text).join('\n').replace(/[ \t]+\n/g, '\n').trim();
+  return { text, avgFontSize };
+}
+
+async function copyRegionSelection_(){
+  const region = getUsableRegion_();
+  if(!region){ showToast_('Hãy dùng Tool ▸ Selection area để kéo chọn một vùng trên trang trước, rồi bấm Copy.'); return; }
+  flushPendingEdit();                                                // chốt chỉnh sửa dang dở trước khi chụp
+  const p = cur(), idx = currentIndex;
+  const spinner = document.getElementById('spinner');
+  const spinnerLabel = spinner.lastChild;
+  spinner.classList.add('show');
+  spinnerLabel.textContent = ' Đang copy vùng chọn…';
+  try{
+    let text = '';
+    try{ text = (await getRegionText_(p, idx, region)).text; }catch(err){ console.warn('Không lấy được chữ trong vùng:', err); }
+    // Ghi clipboard hệ thống NGAY (kèm Promise ảnh) để còn nằm trong "thao tác của người dùng" — dựng ảnh lớn có thể mất vài giây.
+    const rendered = renderRegionToCanvas_(p, idx, region);
+    const blobPromise = rendered.then(r => {
+      if(!r) throw new Error('Vùng chọn nằm ngoài trang.');
+      return new Promise((resolve, reject) => r.canvas.toBlob(b => b ? resolve(b) : reject(new Error('Không tạo được ảnh vùng chọn.')), 'image/png'));
+    });
+    let sysOk = false;
+    const sysWrite = (async () => {
+      if(!(navigator.clipboard && window.ClipboardItem)) return;
+      const data = { 'image/png': blobPromise };
+      if(text) data['text/plain'] = new Blob([text], { type: 'text/plain' });
+      try{ await navigator.clipboard.write([ new ClipboardItem(data) ]); sysOk = true; }
+      catch(err){
+        console.warn('Không ghi được ảnh+chữ vào clipboard hệ thống, thử chỉ ảnh:', err);
+        try{ await navigator.clipboard.write([ new ClipboardItem({ 'image/png': blobPromise }) ]); sysOk = true; }
+        catch(err2){ console.warn('Không ghi được clipboard hệ thống (vẫn copy được trong app):', err2); }
+      }
+    })();
+    const r = await rendered;
+    if(!r){ showToast_('Vùng chọn nằm ngoài trang — hãy chọn lại.'); return; }
+    const blob = await blobPromise;
+    await sysWrite;
+    const dataUrl = await new Promise((resolve, reject) => {
+      const fr = new FileReader();
+      fr.onload = () => resolve(fr.result);
+      fr.onerror = () => reject(new Error('Không đọc được ảnh vùng chọn.'));
+      fr.readAsDataURL(blob);
+    });
+    // Clipboard nội bộ: dán lại ĐÚNG kích thước (pt) của vùng chọn.
+    appImageClipboard = { dataUrl, w: r.wPt, h: r.hPt, pxW: r.canvas.width, pxH: r.canvas.height };
+    clipboardKind_ = 'image';
+    const info = text ? ' + ' + text.length + ' ký tự chữ' : '';
+    showToast_(sysOk
+      ? '📋 Đã copy vùng chọn (ảnh' + info + ') — Tool ▸ Paste (Ctrl+V) để dán; dán sang Word/Paint/Notepad cũng được.'
+      : '📋 Đã copy vùng chọn (ảnh' + info + ') — dán được trong PDF này (Tool ▸ Paste / Ctrl+V); trình duyệt không cho dán sang ứng dụng khác.');
+  }catch(err){
+    console.error('Lỗi khi copy vùng chọn:', err);
+    showToast_('Không copy được vùng chọn: ' + (err && err.message ? err.message : err));
+  }finally{
+    spinner.classList.remove('show');
+    spinnerLabel.textContent = ' Đang xử lý OCR…';
+  }
+}
+
+// Chỉ copy CHỮ trong vùng chọn -> Paste dán thành khối chữ mới.
+async function copyRegionText_(){
+  const region = getUsableRegion_();
+  if(!region){ showToast_('Hãy dùng Tool ▸ Selection area để kéo chọn một vùng trên trang trước, rồi bấm Copy Area Text.'); return; }
+  flushPendingEdit();
+  try{
+    const { text, avgFontSize } = await getRegionText_(cur(), currentIndex, region);
+    if(!text.trim()){ showToast_('Vùng chọn không có chữ để copy (PDF scan: hãy chạy OCR trước rồi chọn lại vùng; hoặc dùng Copy để copy ảnh vùng).'); return; }
+    const fs = avgFontSize ? Math.max(6, Math.min(96, Math.round(avgFontSize * 2) / 2)) : null;
+    return storeTextClip_({ text, fontSize: fs, x: region.x, y: region.y, page: currentIndex });
+  }catch(err){
+    console.error('Lỗi khi copy chữ trong vùng:', err);
+    showToast_('Không copy được chữ trong vùng: ' + (err && err.message ? err.message : err));
+  }
+}
+document.getElementById('btnCopyAreaText').onclick = ()=>{ copyRegionText_(); };
 
 // Vùng ĐANG NHÌN THẤY của trang đang xem, theo toạ độ PDF (đơn vị gốc, chưa nhân scale).
 function getVisiblePdfRect_(){
